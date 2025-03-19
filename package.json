@@ -1,0 +1,27 @@
+{
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "echo 'Nada para compilar, mas o script build foi adicionado!'",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@wppconnect-team/wppconnect": "^1.35.2",
+    "axios": "^1.8.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "form-data": "^4.0.2",
+    "is-plain-object": "^5.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "kind-of": "^6.0.3",
+    "open": "^10.1.0",
+    "openai": "^4.87.3",
+    "puppeteer": "^22.15.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "sox-audio": "^0.3.0"
+  }
+}

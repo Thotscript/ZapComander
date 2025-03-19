@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autenticação via QR Code</title>
+</head>
+<body>
+    <h1>Escaneie o QR Code para autenticar</h1>
+    <img id="qrCodeImg" src="" alt="QR Code" width="250">
+    <p id="status">Aguardando QR Code...</p>
+    <p id="countdown"></p> <!-- Exibe o tempo restante -->
+
+    <script>
+        const sessionName = window.location.pathname.split('/').pop(); 
+        const NGROK_URL = "https://eff7-2804-14c-55-80ac-267e-a39a-4198-f1f9.ngrok-free.app"; // Troque pelo seu domínio ngrok
+        const socketUrl = NGROK_URL.replace("https", "wss"); // Transforma HTTPS em WSS
+        let socket;
+
+        function connectWebSocket() {
+            socket = new WebSocket(socketUrl);
+
+            socket.onopen = () => {
+                console.log('📡 Conectado ao WebSocket.');
+                socket.send(JSON.stringify({ type: 'requestQR', sessionName })); // Solicita QR ao conectar
+            };
+
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type === 'qr' && data.sessionName === sessionName) {
+                        document.getElementById('status').innerText = 'QR Code recebido! Escaneie para autenticar.';
+                        document.getElementById('qrCodeImg').src = `${NGROK_URL}${data.qrPath}`; // Caminho correto do ngrok
+                        startCountdown();
+                    }
+                } catch (error) {
+                    console.error('❌ Erro ao processar mensagem:', error);
+                }
+            };
+
+            socket.onerror = (error) => {
+                console.error('⚠️ Erro no WebSocket:', error);
+            };
+
+            socket.onclose = () => {
+                console.log('❌ Conexão com WebSocket fechada. Tentando reconectar...');
+                document.getElementById('status').innerText = 'Conexão perdida. Tentando reconectar...';
+                setTimeout(connectWebSocket, 3000); // Tenta reconectar após 3 segundos
+            };
+        }
+
+        connectWebSocket();
+
+        // Contagem regressiva de 30 segundos
+        function startCountdown() {
+            let timeLeft = 30;
+            const countdownElement = document.getElementById("countdown");
+            countdownElement.innerText = `Tempo restante: ${timeLeft}s`;
+
+            const timer = setInterval(() => {
+                timeLeft--;
+                countdownElement.innerText = `Tempo restante: ${timeLeft}s`;
+                
+                if (timeLeft <= 0) {
+                    clearInterval(timer);
+                    countdownElement.innerText = "⏳ Tempo expirado! Fechando aba...";
+                    document.getElementById("status").innerText = "QR Code expirado. Tente novamente.";
+                    deleteSession();
+                    setTimeout(() => {
+                        window.close(); // Fecha a aba
+                    }, 2000);
+                }
+            }, 1000);
+        }
+
+        // Enviar requisição para deletar a sessão no backend
+        function deleteSession() {
+            fetch(`${NGROK_URL}/delete-session`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionName })
+            })
+            .then(response => response.json())
+            .then(data => console.log("🗑️ Sessão deletada:", data))
+            .catch(error => console.error("❌ Erro ao deletar sessão:", error));
+        }
+    </script>
+</body>
+</html>
