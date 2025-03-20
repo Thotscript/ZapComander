@@ -1,4 +1,4 @@
-require('dotenv').config({path:'./chave.env'});
+require('dotenv').config({ path: './chave.env' });
 const wppconnect = require('@wppconnect-team/wppconnect');
 const express = require('express');
 const http = require('http');
@@ -11,12 +11,12 @@ const FormData = require('form-data');
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-const EU = '5511994297562@c.us'
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PORT = process.env.PORT || 3000;
 const SESSIONS = new Map();
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
+
 if (!fs.existsSync(QR_CODES_DIR)) {
     fs.mkdirSync(QR_CODES_DIR, { recursive: true });
 }
@@ -44,48 +44,32 @@ app.get('/auth/:sessionName', async (req, res) => {
             session: sessionName,
             catchQR: (base64Qr) => {
                 saveQRCode(base64Qr, sessionName);
-
-                // **Definir timeout para encerrar sessão se não for escaneado**
-                setTimeout(() => {
-                  if (SESSIONS.has(sessionName)) {
-                      const client = SESSIONS.get(sessionName);
-                      client.getConnectionState().then(state => {
-                          if (state !== 'CONNECTED') {
-                              console.log(`⏳ QR Code da sessão ${sessionName} expirou. Encerrando sessão.`);
-                              cleanupSession(sessionName);
-                          }
-                      });
-                  }
-              }, 30000);
-              
             },
+            
             headless: true,
             autoClose: false,
             qrTimeout: 0,
-            puppeteerOptions: {
-                userDataDir: sessionPath,
+            puppeteerOptions: { userDataDir: sessionPath }
+        });
+
+        SESSIONS.set(sessionName, { client, myNumber: null });
+
+        client.onStateChange(async (state) => {
+            console.log(`Estado da sessão ${sessionName}: ${state}`);
+            if (state === 'CONNECTED') {
+                console.log(`✅ Sessão ${sessionName} autenticada.`);
+                broadcastSessionAuthenticated(sessionName);
+
+                const myNumber = await client.getWid();
+                SESSIONS.get(sessionName).myNumber = myNumber;
+                console.log(`Número Logado para ${sessionName}: ${myNumber}`);
             }
         });
 
-        SESSIONS.set(sessionName, client);
-
-        client.onStateChange((state) => {
-          console.log(`📡 Estado da sessão ${sessionName}: ${state}`);
-          if (state === 'CONNECTED') {
-              console.log(`✅ Sessão ${sessionName} autenticada com sucesso.`);
-              broadcastSessionAuthenticated(sessionName);
-      
-              // Evita apagar a sessão se já foi autenticada
-              if (SESSIONS.has(sessionName)) {
-                  clearTimeout(SESSIONS.get(sessionName).timeoutId);
-              }
-          }
-      });
-
         client.onMessage(async (message) => {
             if (message.type === 'ptt' || message.mimetype?.startsWith('audio/')) {
-                console.log('🔊 Mensagem de áudio recebida. Processando...');
-                await processAudio(client, message, sessionName);
+                console.log(`🔊 Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+                await processAudio(sessionName, message);
             }
         });
 
@@ -112,40 +96,34 @@ function saveQRCode(base64Qr, sessionName) {
 }
 
 app.delete('/delete-session/:sessionName', (req, res) => {
-  const { sessionName } = req.params;
-  
-  if (!SESSIONS.has(sessionName)) {
-      return res.status(404).json({ message: `Sessão ${sessionName} não encontrada.` });
-  }
-  
-  cleanupSession(sessionName);
-  res.json({ message: `Sessão ${sessionName} encerrada e limpa.` });
+    const { sessionName } = req.params;
+
+    if (!SESSIONS.has(sessionName)) {
+        return res.status(404).json({ message: `Sessão ${sessionName} não encontrada.` });
+    }
+
+    cleanupSession(sessionName);
+    res.json({ message: `Sessão ${sessionName} encerrada e limpa.` });
 });
 
-function cleanupSession(sessionName) {
-  console.log(`🗑️ Limpando sessão ${sessionName}...`);
-  
-  // Remover QR Code
-  const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-  if (fs.existsSync(qrFilePath)) {
-      fs.unlinkSync(qrFilePath);
-      console.log(`🗑️ QR Code da sessão ${sessionName} removido.`);
-  }
+async function cleanupSession(sessionName) {
+    console.log(`🗑️ Limpando sessão ${sessionName}...`);
 
-  // Remover pasta da sessão
-  const sessionPath = path.join(__dirname, 'tokens', sessionName);
-  if (fs.existsSync(sessionPath)) {
-      fs.rmSync(sessionPath, { recursive: true, force: true });
-      console.log(`🗑️ Pasta da sessão ${sessionName} removida.`);
-  }
+    if (SESSIONS.has(sessionName)) {
+        const session = SESSIONS.get(sessionName);
+        await session.client.close();
+        SESSIONS.delete(sessionName);
+        console.log(`🔴 Sessão ${sessionName} encerrada.`);
+    }
 
-  // Remover sessão do mapa
-  if (SESSIONS.has(sessionName)) {
-      SESSIONS.delete(sessionName);
-      console.log(`🔴 Sessão ${sessionName} encerrada.`);
-  }
+    const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
+    if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
+
+    const sessionPath = path.join(__dirname, 'tokens', sessionName);
+    if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { recursive: true, force: true });
+
+    console.log(`🗑️ Dados da sessão ${sessionName} foram removidos.`);
 }
-
 
 wss.on('connection', (ws) => {
     console.log('📡 Cliente conectado ao WebSocket');
@@ -183,10 +161,18 @@ function broadcastSessionAuthenticated(sessionName) {
     });
 }
 
-async function processAudio(client, message, sessionName) {
+async function processAudio(sessionName, message) {
     try {
+        if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+
         const session = SESSIONS.get(sessionName);
-        if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
+        const client = session.client;
+        const myNumber = session.myNumber;
+
+        if (!myNumber) {
+            console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
+            return;
+        }
 
         const contact = await client.getContact(message.from);
         const senderName = contact?.pushname || contact?.name || message.from;
@@ -210,14 +196,14 @@ async function processAudio(client, message, sessionName) {
                 'Authorization': `Bearer ${OPENAI_API_KEY}`
             }
         });
-        const transcricao = response.data.text;
-        console.log(`✅ Transcrição concluída para ${senderName}: ${transcricao}`);
 
-        await session.sendText(EU, `🎤 Transcrição do áudio de ${senderName}: ${transcricao}`);
+        const transcricao = response.data.text;
+        console.log(`✅ Transcrição concluída para ${senderName}`);
+
+        await client.sendText(myNumber, `Transcrição do áudio de ${senderName}: ${transcricao}`);
 
     } catch (error) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
-        await client.sendText(message.from, 'Erro ao transcrever o áudio. ❌');
     }
 }
 
