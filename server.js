@@ -107,6 +107,18 @@ app.get('/auth/:sessionName', async (req, res) => {
         });
 
 
+        client.onMessage(async (message) => {
+            try {
+                if (message.type === 'chat') {
+                    console.log(`Mensagem de texto recebida na sessão ${sessionName}. Processando...`);
+                    await processTextMessage(sessionName, message);
+                }
+            } catch (error) {
+                console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
+            }
+        });
+
+
     } catch (error) {
         console.error(`Erro ao criar sessão:[${sessionName}]: => `, error);
     }
@@ -264,6 +276,85 @@ async function processAudio(sessionName, message) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
+
+const CONVERSATION_HISTORY = new Map(); // Armazena histórico das conversas
+
+async function processTextMessage(sessionName, message) {
+    try {
+        if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+
+        const session = SESSIONS.get(sessionName);
+        const client = session.client;
+        const myNumber = session.myNumber;
+
+        if (!myNumber) {
+            console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
+            return;
+        }
+
+        const contact = await client.getContact(message.from);
+        const senderName = contact?.pushname || contact?.name || message.from;
+
+        // Inicializa histórico da conversa se ainda não existir
+        if (!CONVERSATION_HISTORY.has(message.from)) {
+            CONVERSATION_HISTORY.set(message.from, []);
+        }
+
+        // Adiciona a mensagem do usuário ao histórico
+        const conversation = CONVERSATION_HISTORY.get(message.from);
+        conversation.push({ role: "user", content: message.body });
+
+        // Verifica se a mensagem contém "Compra de Casas" ou se já está em um contexto ativo
+        const isActiveConversation = conversation.some(msg => msg.content.toLowerCase().includes("compra de casas"));
+
+        if (isActiveConversation) {
+            console.log(`🏡 Acionando ChatGPT para continuar a conversa sobre compra de casas...`);
+
+            // Adiciona o contexto do assistente inicial
+            const messages = [
+                {
+                    role: "system",
+                    content: "Você é um assistente de vendas da The Florida Lounge, você deve responder perguntas sobre financiamento, localização, preços e processos de compra de forma clara e objetiva. Como teste, você pode inventar as informações da casa."
+                },
+                ...conversation // Histórico da conversa com o usuário
+            ];
+
+            // Chamada para o ChatGPT com o histórico da conversa
+            const response_gpt = await axios.post(
+                'https://api.openai.com/v1/chat/completions',
+                {
+                    model: "gpt-4o-mini",
+                    messages: messages
+                },
+                {
+                    headers: {
+                        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            const resposta = response_gpt.data.choices[0].message.content;
+
+            // Adiciona a resposta do assistente ao histórico
+            conversation.push({ role: "assistant", content: resposta });
+
+            // Gera um delay aleatório entre 2 e 5 segundos
+            const delay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
+            console.log(`⏳ Aguardando ${delay / 1000} segundos antes de responder...`);
+
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            // Envia a resposta ao usuário
+            await client.sendText(message.from, `*Agente:* \n${resposta}`);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao processar mensagem de texto:', error?.response?.data || error.message);
+    }
+}
+
+
+
 
 
 server.listen(PORT, () => {
