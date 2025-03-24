@@ -44,25 +44,30 @@ app.get('/auth/:sessionName', async (req, res) => {
     }
 
     try {
-        console.log(`🟡 Criando sessão: ${sessionName}`);
+        console.log(`Criando sessão: ${sessionName}`);
 
         const sessionPath = path.join(TOKEN_DIR, sessionName);
         if (!fs.existsSync(sessionPath)) {
             fs.mkdirSync(sessionPath, { recursive: true });
         }
 
+        let capturedWarning = null;
+
         // Adicionando um timeout para garantir que o `create()` não trave
         const client = await Promise.race([
             wppconnect.create({
                 session: sessionName,
+                statusFind: (statusSession, sessionName) => {
+                    if(statusSession === 'autocloseCalled'){
+                        cleanupSession(sessionName)
+                    }
+                },
                 deviceName: 'The Broker VIP',
                 catchQR: (base64Qr) => saveQRCode(base64Qr, sessionName),
                 headless: true,
-                autoClose: 15000,
-                qrTimeout: 15000,
+                autoClose: 30000,
                 puppeteerOptions: { userDataDir: sessionPath }
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout na criação da sessão')), 20000)) // Timeout de 20 segundos
+            })
         ]);
 
         SESSIONS.set(sessionName, { client, myNumber: null });
@@ -85,10 +90,6 @@ app.get('/auth/:sessionName', async (req, res) => {
                         console.log(`Sessão ${sessionName} autenticada, QR Code de autenticação removido!`);
                     }
                 } 
-                else if (state === 'TIMEOUT' || state === 'DISCONNECTED' || state === 'UNPAIRED' || state === 'UNPAIRED_IDLE') {
-                    console.log(`❌ Sessão ${sessionName} não foi conectada. Removendo dados...`);
-                    await cleanupSession(sessionName);
-                }
             } catch (error) {
                 console.error(`⚠️ Erro no evento onStateChange da sessão ${sessionName}:`, error);
             }
@@ -97,21 +98,17 @@ app.get('/auth/:sessionName', async (req, res) => {
         client.onMessage(async (message) => {
             try {
                 if (message.type === 'ptt' || message.mimetype?.startsWith('audio/')) {
-                    console.log(`🔊 Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+                    console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
                 }
             } catch (error) {
-                console.error(`⚠️ Erro ao processar mensagem na sessão ${sessionName}:`, error);
+                console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
             }
         });
 
-    } catch (error) {
-        console.error('❌ Erro ao criar sessão:', error);
 
-        if (error.message === 'Auto Close Called'){
-            console.log(`⏳ Timeout ou erro fatal na sessão ${sessionName}, limpando...`);
-            await cleanupSession(sessionName);
-        }
+    } catch (error) {
+        console.error(`Erro ao criar sessão:[${sessionName}]: => `, error);
     }
 });
 
@@ -127,7 +124,6 @@ function saveQRCode(base64Qr, sessionName) {
         if (err) {
             console.error('Erro ao salvar QR Code:', err);
         } else {
-            console.log(`✅ QR Code salvo em: ${qrFilePath}`);
             broadcastQR(sessionName);
         }
     });
@@ -145,7 +141,6 @@ app.delete('/delete-session/:sessionName', (req, res) => {
 });
 
 async function cleanupSession(sessionName) {
-    console.log(`🗑️ Limpando sessão ${sessionName}...`);
 
     if (SESSIONS.has(sessionName)) {
         const session = SESSIONS.get(sessionName);
@@ -161,16 +156,12 @@ async function cleanupSession(sessionName) {
     setTimeout(() => {
         if (fs.existsSync(sessionPath)) {
             fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log(`🗑️ Dados da sessão ${sessionName} foram removidos.`);
+            console.log(`Sessão:[${sessionName}] => Removida por falha na autenticação!`);
         }
     }, 3000);
-
-    console.log(`🗑️ Dados da sessão ${sessionName} foram removidos.`);
 }
 
-wss.on('connection', (ws) => {
-    console.log('📡 Cliente conectado ao WebSocket');
-
+wss.on('connection', (ws) => {;
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
@@ -187,8 +178,6 @@ wss.on('connection', (ws) => {
 
 function broadcastQR(sessionName) {
     const qrPath = `/qrcodes/qrcode_${sessionName}.png?t=${Date.now()}`;
-    console.log(`📡 Enviando QR Code para o frontend: ${qrPath}`);
-
     wss.clients.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'qr', sessionName, qrPath }));

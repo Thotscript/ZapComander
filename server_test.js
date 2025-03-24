@@ -61,8 +61,7 @@ app.get('/auth/:sessionName', async (req, res) => {
                 autoClose: 15000,
                 qrTimeout: 15000,
                 puppeteerOptions: { userDataDir: sessionPath }
-            }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout na criação da sessão')), 20000)) // Timeout de 20 segundos
+            })
         ]);
 
         SESSIONS.set(sessionName, { client, myNumber: null });
