@@ -9,11 +9,12 @@
     <h1>Escaneie o QR Code para autenticar</h1>
     <img id="qrCodeImg" src="" alt="QR Code" width="250">
     <p id="status">Aguardando QR Code...</p>
-    <p id="countdown"></p> <!-- Exibe o tempo restante -->
 
     <script>
+
+        
         const sessionName = window.location.pathname.split('/').pop(); 
-        const NGROK_URL = "https://1b17-2804-14c-55-80ac-d243-b05d-76f9-a3fc.ngrok-free.app"; // Troque pelo seu domínio ngrok
+        const NGROK_URL = "http://localhost:3000"; // Troque pelo seu domínio ngrok
         const socketUrl = NGROK_URL.replace("https", "wss"); // Transforma HTTPS em WSS
         let socket;
 
@@ -32,8 +33,16 @@
                     if (data.type === 'qr' && data.sessionName === sessionName) {
                         document.getElementById('status').innerText = 'QR Code recebido! Escaneie para autenticar.';
                         document.getElementById('qrCodeImg').src = `${NGROK_URL}${data.qrPath}`; // Caminho correto do ngrok
-                        startCountdown();
                     }
+
+                    if (data.type === 'error' && data.sessionName === sessionName) {
+                        document.getElementById('error').innerText = `Erro: ${data.error}`;
+                        if (data.error === "Auto Close Called") {
+                            console.log("🚫 Fechando a página devido ao erro 'Auto Close Called'");
+                            window.close(); // Fecha a aba do navegador
+                        }
+                    }
+                    
                 } catch (error) {
                     console.error('❌ Erro ao processar mensagem:', error);
                 }
@@ -51,40 +60,6 @@
         }
 
         connectWebSocket();
-
-        // Contagem regressiva de 30 segundos
-        function startCountdown() {
-            let timeLeft = 30;
-            const countdownElement = document.getElementById("countdown");
-            countdownElement.innerText = `Tempo restante: ${timeLeft}s`;
-
-            const timer = setInterval(() => {
-                timeLeft--;
-                countdownElement.innerText = `Tempo restante: ${timeLeft}s`;
-                
-                if (timeLeft <= 0) {
-                    clearInterval(timer);
-                    countdownElement.innerText = "⏳ Tempo expirado! Fechando aba...";
-                    document.getElementById("status").innerText = "QR Code expirado. Tente novamente.";
-                    deleteSession();
-                    setTimeout(() => {
-                        window.close(); // Fecha a aba
-                    }, 2000);
-                }
-            }, 1000);
-        }
-
-        // Enviar requisição para deletar a sessão no backend
-        function deleteSession() {
-            fetch(`${NGROK_URL}/delete-session`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ sessionName })
-            })
-            .then(response => response.json())
-            .then(data => console.log("🗑️ Sessão deletada:", data))
-            .catch(error => console.error("❌ Erro ao deletar sessão:", error));
-        }
     </script>
 </body>
 </html>

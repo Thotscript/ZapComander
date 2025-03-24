@@ -1,6 +1,7 @@
 {
   "name": "whatsapp-bot",
   "version": "1.0.0",
+  "type": "module",
   "scripts": {
     "build": "echo 'Nada para compilar, mas o script build foi adicionado!'",
     "start": "node index.js"
