@@ -14,7 +14,7 @@
 
         
         const sessionName = window.location.pathname.split('/').pop(); 
-        const NGROK_URL = "http://localhost:3000"; // Troque pelo seu domínio ngrok
+        const NGROK_URL = "https://04b4-2804-14c-55-80ac-49a2-6a1-6a24-8e42.ngrok-free.app"; // Troque pelo seu domínio ngrok
         const socketUrl = NGROK_URL.replace("https", "wss"); // Transforma HTTPS em WSS
         let socket;
 
@@ -42,7 +42,7 @@
                             window.close(); // Fecha a aba do navegador
                         }
                     }
-                    
+
                 } catch (error) {
                     console.error('❌ Erro ao processar mensagem:', error);
                 }

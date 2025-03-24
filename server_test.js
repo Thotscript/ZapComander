@@ -98,6 +98,8 @@ app.get('/auth/:sessionName', async (req, res) => {
             try {
                 if (message.type === 'ptt' || message.mimetype?.startsWith('audio/')) {
                     console.log(`🔊 Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+                    const audioDuration = await client.message.size();
+                    console.log(`Duração do audio: ${audioDuration}`);
                     await processAudio(sessionName, message);
                 }
             } catch (error) {
@@ -107,11 +109,6 @@ app.get('/auth/:sessionName', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Erro ao criar sessão:', error);
-
-        if (error.message === 'Auto Close Called'){
-            console.log(`⏳ Timeout ou erro fatal na sessão ${sessionName}, limpando...`);
-            await cleanupSession(sessionName);
-        }
     }
 });
 
