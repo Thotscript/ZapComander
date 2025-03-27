@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
+
 import wppconnect from '@wppconnect-team/wppconnect';
 import express from 'express';
 import http from 'http';
@@ -9,11 +10,11 @@ import path from 'path';
 import axios from 'axios';
 import FormData from 'form-data';
 import { fileURLToPath } from 'url';
+import ffmpeg from 'fluent-ffmpeg';
 
 // Definir __dirname corretamente para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -50,8 +51,6 @@ app.get('/auth/:sessionName', async (req, res) => {
         if (!fs.existsSync(sessionPath)) {
             fs.mkdirSync(sessionPath, { recursive: true });
         }
-
-        let capturedWarning = null;
 
         // Adicionando um timeout para garantir que o `create()` não trave
         const client = await Promise.race([
@@ -105,19 +104,6 @@ app.get('/auth/:sessionName', async (req, res) => {
                 console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
             }
         });
-
-
-        client.onMessage(async (message) => {
-            try {
-                if (message.type === 'chat') {
-                    console.log(`Mensagem de texto recebida na sessão ${sessionName}. Processando...`);
-                    await processTextMessage(sessionName, message);
-                }
-            } catch (error) {
-                console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
-            }
-        });
-
 
     } catch (error) {
         console.error(`Erro ao criar sessão:[${sessionName}]: => `, error);
@@ -205,6 +191,18 @@ function broadcastSessionAuthenticated(sessionName) {
     });
 }
 
+async function getAudioDuration(inputPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(inputPath, (err, metadata) => {
+            if (err) {
+                reject('❌ Erro ao obter metadados do áudio: ' + err.message);
+            } else {
+                resolve(metadata.format.duration); // Retorna a duração em segundos
+            }
+        });
+    });
+}
+
 async function processAudio(sessionName, message) {
     try {
         if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
@@ -219,13 +217,20 @@ async function processAudio(sessionName, message) {
         }
 
         const contact = await client.getContact(message.from);
-        const senderName = contact?.pushname || contact?.name || message.from;
+        const senderName = contact.name || contact.pushname || message.from;
 
         console.log(`🔊 Processando áudio de ${senderName} na sessão ${sessionName}...`);
 
+
         const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
         const buffer = await client.decryptFile(message);
+
+        
         fs.writeFileSync(inputPath, buffer);
+
+        const duration = await getAudioDuration(inputPath);
+        const roundduration = parseFloat(duration.toFixed(2));
+        console.log(`Audio de ${roundduration} sec`);
 
         const formData = new FormData();
         formData.append('file', fs.createReadStream(inputPath));
@@ -267,7 +272,6 @@ async function processAudio(sessionName, message) {
         );
 
         const resumo = response_gpt.data.choices[0].message.content;
-        
         const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n\n📌 *Resumo:* \n${resumo}`;
         await new Promise(resolve => setTimeout(resolve, 10));
         await client.sendText(myNumber, legenda);
@@ -276,86 +280,6 @@ async function processAudio(sessionName, message) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
-
-const CONVERSATION_HISTORY = new Map(); // Armazena histórico das conversas
-
-async function processTextMessage(sessionName, message) {
-    try {
-        if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
-
-        const session = SESSIONS.get(sessionName);
-        const client = session.client;
-        const myNumber = session.myNumber;
-
-        if (!myNumber) {
-            console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
-            return;
-        }
-
-        const contact = await client.getContact(message.from);
-        const senderName = contact?.pushname || contact?.name || message.from;
-
-        // Inicializa histórico da conversa se ainda não existir
-        if (!CONVERSATION_HISTORY.has(message.from)) {
-            CONVERSATION_HISTORY.set(message.from, []);
-        }
-
-        // Adiciona a mensagem do usuário ao histórico
-        const conversation = CONVERSATION_HISTORY.get(message.from);
-        conversation.push({ role: "user", content: message.body });
-
-        // Verifica se a mensagem contém "Compra de Casas" ou se já está em um contexto ativo
-        const isActiveConversation = conversation.some(msg => msg.content.toLowerCase().includes("compra de casas"));
-
-        if (isActiveConversation) {
-            console.log(`🏡 Acionando ChatGPT para continuar a conversa sobre compra de casas...`);
-
-            // Adiciona o contexto do assistente inicial
-            const messages = [
-                {
-                    role: "system",
-                    content: "Você é um assistente de vendas da The Florida Lounge, você deve responder perguntas sobre financiamento, localização, preços e processos de compra de forma clara e objetiva. Como teste, você pode inventar as informações da casa."
-                },
-                ...conversation // Histórico da conversa com o usuário
-            ];
-
-            // Chamada para o ChatGPT com o histórico da conversa
-            const response_gpt = await axios.post(
-                'https://api.openai.com/v1/chat/completions',
-                {
-                    model: "gpt-4o-mini",
-                    messages: messages
-                },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            const resposta = response_gpt.data.choices[0].message.content;
-
-            // Adiciona a resposta do assistente ao histórico
-            conversation.push({ role: "assistant", content: resposta });
-
-            // Gera um delay aleatório entre 2 e 5 segundos
-            const delay = Math.floor(Math.random() * (5000 - 2000 + 1)) + 2000;
-            console.log(`⏳ Aguardando ${delay / 1000} segundos antes de responder...`);
-
-            await new Promise(resolve => setTimeout(resolve, delay));
-
-            // Envia a resposta ao usuário
-            await client.sendText(message.from, `*Agente:* \n${resposta}`);
-        }
-    } catch (error) {
-        console.error('❌ Erro ao processar mensagem de texto:', error?.response?.data || error.message);
-    }
-}
-
-
-
-
 
 server.listen(PORT, () => {
     console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
