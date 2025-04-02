@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
-
+import cors from 'cors';
 import wppconnect from '@wppconnect-team/wppconnect';
 import express from 'express';
 import http from 'http';
@@ -11,6 +11,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
+import helmet from 'helmet';
 
 // Definir __dirname corretamente para ES Modules
 const __filename = fileURLToPath(import.meta.url);
@@ -33,48 +34,79 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
     }
 });
 
+app.use(cors());
+
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'", "http://jrssolutions.com.br"],
+            imgSrc: ["'self'", "data:", "http://jrssolutions.com.br"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "http://jrssolutions.com.br"]
+        }
+    }
+}));
+
+app.use((req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); // Permite qualquer origem
+    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp"); // Para permitir uso em iframes e imagens
+    res.setHeader("Access-Control-Allow-Origin", "*"); // Libera acesso de qualquer domínio
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    next();
+});
+
+
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 
+    // Se a sessão já estiver autenticada, responda imediatamente.
     if (SESSIONS.has(sessionName)) {
         return res.json({ message: `Sessão ${sessionName} já autenticada.` });
     }
 
     try {
         console.log(`Criando sessão: ${sessionName}`);
-
         const sessionPath = path.join(TOKEN_DIR, sessionName);
         if (!fs.existsSync(sessionPath)) {
             fs.mkdirSync(sessionPath, { recursive: true });
         }
 
-        // Adicionando um timeout para garantir que o `create()` não trave
-        const client = await Promise.race([
-            wppconnect.create({
-                session: sessionName,
-                statusFind: (statusSession, sessionName) => {
-                    if(statusSession === 'autocloseCalled'){
-                        cleanupSession(sessionName)
-                    }
-                },
-                deviceName: 'The Broker VIP',
-                catchQR: (base64Qr) => saveQRCode(base64Qr, sessionName),
-                headless: true,
-                autoClose: 30000,
-                puppeteerOptions: { userDataDir: sessionPath }
-            })
-        ]);
+        let responseSent = false; // Flag para garantir envio único da resposta
 
+        const client = await wppconnect.create({
+            session: sessionName,
+            statusFind: (statusSession, sessionName) => {
+                if (statusSession === 'autocloseCalled') {
+                    cleanupSession(sessionName);
+                }
+            },
+            deviceName: 'The Broker VIP',
+            catchQR: async (base64Qr) => {
+                const qrFilePath = await saveQRCode(base64Qr, sessionName);
+                const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
+                // Envia a resposta apenas uma vez.
+                if (!responseSent) {
+                    responseSent = true;
+                    res.json({ qrCodeFile: qrCodeURL });
+                }
+                // Também notifica via WebSocket para o(s) cliente(s) conectado(s).
+                broadcastQR(sessionName);
+            },
+            headless: true,
+            autoClose: 45000,
+            puppeteerOptions: { userDataDir: sessionPath }
+        });
+
+        // Armazena a sessão ativa.
         SESSIONS.set(sessionName, { client, myNumber: null });
 
         client.onStateChange(async (state) => {
             try {
                 console.log(`Estado da sessão ${sessionName}: ${state}`);
-
                 if (state === 'CONNECTED') {
                     console.log(`✅ Sessão ${sessionName} autenticada.`);
                     broadcastSessionAuthenticated(sessionName);
@@ -83,14 +115,20 @@ app.get('/auth/:sessionName', async (req, res) => {
                     SESSIONS.get(sessionName).myNumber = myNumber;
                     console.log(`Número Logado para ${sessionName}: ${myNumber}`);
 
+                    // Em vez de remover imediatamente, podemos aguardar alguns segundos
                     const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
                     if (fs.existsSync(qrFilePath)) {
-                        fs.unlinkSync(qrFilePath);
-                        console.log(`Sessão ${sessionName} autenticada, QR Code de autenticação removido!`);
+                        setTimeout(() => {
+                            fs.unlink(qrFilePath, (err) => {
+                                if (!err) {
+                                    console.log(`Sessão ${sessionName} autenticada, QR Code removido!`);
+                                }
+                            });
+                        }, 10000); // Remove após 10 segundos
                     }
-                } 
+                }
             } catch (error) {
-                console.error(`⚠️ Erro no evento onStateChange da sessão ${sessionName}:`, error);
+                console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
             }
         });
 
@@ -106,10 +144,10 @@ app.get('/auth/:sessionName', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`Erro ao criar sessão:[${sessionName}]: => `, error);
+        console.error(`Erro ao criar sessão [${sessionName}]:`, error);
+        return res.status(500).json({ message: `Erro ao criar sessão: ${error.message}` });
     }
 });
-
 
 function saveQRCode(base64Qr, sessionName) {
     const matches = base64Qr.match(/^data:image\/png;base64,(.+)$/);
@@ -118,14 +156,19 @@ function saveQRCode(base64Qr, sessionName) {
     const imageBuffer = Buffer.from(matches[1], 'base64');
     const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
 
-    fs.writeFile(qrFilePath, imageBuffer, (err) => {
-        if (err) {
-            console.error('Erro ao salvar QR Code:', err);
-        } else {
-            broadcastQR(sessionName);
-        }
+    return new Promise((resolve, reject) => {
+        fs.writeFile(qrFilePath, imageBuffer, (err) => {
+            if (err) {
+                console.error('Erro ao salvar QR Code:', err);
+                reject(err);
+            } else {
+                resolve(qrFilePath);
+            }
+        });
     });
 }
+
+
 
 app.delete('/delete-session/:sessionName', (req, res) => {
     const { sessionName } = req.params;
@@ -133,9 +176,7 @@ app.delete('/delete-session/:sessionName', (req, res) => {
     if (!SESSIONS.has(sessionName)) {
         return res.status(404).json({ message: `Sessão ${sessionName} não encontrada.` });
     }
-
     cleanupSession(sessionName);
-    res.json({ message: `Sessão ${sessionName} encerrada e limpa.` });
 });
 
 async function cleanupSession(sessionName) {
