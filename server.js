@@ -19,7 +19,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PORT = process.env.PORT
 const SESSIONS = new Map();
@@ -33,6 +32,7 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
         fs.mkdirSync(dir, { recursive: true });
     }
 });
+
 
 app.use(cors());
 
@@ -55,7 +55,6 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
     next();
 });
-
 
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -96,6 +95,10 @@ app.get('/auth/:sessionName', async (req, res) => {
                 // Também notifica via WebSocket para o(s) cliente(s) conectado(s).
                 broadcastQR(sessionName);
             },
+            disableWelcome: false,
+            debug: true, // Opens a debug session
+            logQR: false, // Logs QR automatically in terminal
+            updatesLog: true,
             headless: true,
             autoClose: 45000,
             puppeteerOptions: { userDataDir: sessionPath }
@@ -134,7 +137,7 @@ app.get('/auth/:sessionName', async (req, res) => {
 
         client.onMessage(async (message) => {
             try {
-                if (message.type === 'ptt' || message.mimetype?.startsWith('audio/')) {
+                if (message.type === 'ptt' || message.type === 'audio') {
                     console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
                 }
@@ -296,7 +299,7 @@ async function processAudio(sessionName, message) {
                 messages: [
                     {
                         role: "system",
-                        content: "Você é um agente que recebe transcrições de audio e resume as mensagens sempre que ultrapassarem 200 caracteres, seu resumo de conter tópicos principais, você deve fornecer a transcrição original no final da mensagem"
+                        content: "Você é um agente que recebe transcrições de audio e resume as mensagens sempre que ultrapassarem 200 caracteres, seu resumo de conter tópicos principais, ao final do resumo adicione a url: https://thebroker.vip"
                     },
                     {
                         role: "user",
@@ -321,6 +324,7 @@ async function processAudio(sessionName, message) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
+
 
 server.listen(PORT, () => {
     console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
