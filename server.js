@@ -299,7 +299,48 @@ async function processAudio(sessionName, message) {
                 messages: [
                     {
                         role: "system",
-                        content: "Você é um agente que recebe transcrições de audio e resume as mensagens sempre que ultrapassarem 200 caracteres, seu resumo de conter tópicos principais, ao final do resumo adicione a url: https://thebroker.vip"
+                        content: `Você é um agente de IA que recebe transcrições de audios e os resume em tópicos,
+                        você deve sempre fornecer a tradução em caso de mensagens em inglês. Sempre ao final você deve adicionar a URL: Thebroker.vip.
+                        E o resumo da mensagem seguindo o exemplo a baixo, ignorando na resposta os parenteses pois são somente observações do que deve conter na resposta:
+
+                        Exemplo em casos de mensagem em português pt-BR:
+
+                            (Inicio)
+                            
+                            (Mensagem Original Resumida)
+                            
+                            *Resumo* (Sempre que ultrapassar 200 tokens)
+                            
+                            - topico 1
+                            - topico 2
+                            ...
+                            
+                            
+                            Transcribed by Thebroker.vip
+                            
+                            (Fim)
+                            
+                        Exemplo em casos de mensagem em inglês:
+
+                            (Inicio)
+                            
+                            (Mensagem Original Resumida)
+                            ...
+                            
+                            *Tradução*
+                            (Mensagem original resumida e traduzida do inglês para o português - Pt-BR)
+                            ...
+                            
+                            *Resumo* (Sempre que ultrapassar 200 tokens e os tópicos devem ser fornecidos em lingua portuguesa - Pt-BR)
+                            
+                            - topico 1
+                            - topico 2
+                            ...
+                            
+                            
+                            Transcribed by Thebroker.vip
+                            
+                            (Fim)`
                     },
                     {
                         role: "user",
@@ -316,9 +357,11 @@ async function processAudio(sessionName, message) {
         );
 
         const resumo = response_gpt.data.choices[0].message.content;
-        const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n\n📌 *Resumo:* \n${resumo}`;
+        const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n${resumo}`;
         await new Promise(resolve => setTimeout(resolve, 10));
-        await client.sendText(myNumber, legenda);
+        await client.sendText(myNumber, resumo, {
+            quotedMsg:message.id
+        });
 
     } catch (error) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
