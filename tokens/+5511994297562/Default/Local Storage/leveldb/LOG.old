@@ -1,0 +1,9 @@
+2025/04/07-17:52:13.897 4 Reusing MANIFEST /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/Local Storage/leveldb/MANIFEST-000001
+2025/04/07-17:52:13.906 4 Recovering log #3
+2025/04/07-17:52:13.907 4 Reusing old log /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/Local Storage/leveldb/000003.log 
+2025/04/07-18:18:14.442 5 Level-0 table #5: started
+2025/04/07-18:18:14.447 5 Level-0 table #5: 17174 bytes OK
+2025/04/07-18:18:14.452 5 Delete type=0 #3
+2025/04/07-19:22:32.000 5 Level-0 table #7: started
+2025/04/07-19:22:32.006 5 Level-0 table #7: 12339 bytes OK
+2025/04/07-19:22:32.010 5 Delete type=0 #4

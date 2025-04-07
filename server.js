@@ -18,7 +18,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ server }); 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PORT = process.env.PORT
 const SESSIONS = new Map();
@@ -32,7 +32,6 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
         fs.mkdirSync(dir, { recursive: true });
     }
 });
-
 
 app.use(cors());
 
@@ -59,6 +58,10 @@ app.use((req, res, next) => {
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
+    path: './tokens',
+});
+
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
 
@@ -76,33 +79,30 @@ app.get('/auth/:sessionName', async (req, res) => {
 
         let responseSent = false; // Flag para garantir envio único da resposta
 
-        const client = await wppconnect.create({
+          const client = await wppconnect.create({
             session: sessionName,
+            tokenStore: myTokenStore,
             statusFind: (statusSession, sessionName) => {
-                if (statusSession === 'autocloseCalled') {
-                    cleanupSession(sessionName);
-                }
+              if (statusSession === 'autocloseCalled') {
+                cleanupSession(sessionName);
+              }
             },
             deviceName: 'The Broker VIP',
             catchQR: async (base64Qr) => {
-                const qrFilePath = await saveQRCode(base64Qr, sessionName);
-                const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
-                // Envia a resposta apenas uma vez.
-                if (!responseSent) {
-                    responseSent = true;
-                    res.json({ qrCodeFile: qrCodeURL });
-                }
-                // Também notifica via WebSocket para o(s) cliente(s) conectado(s).
-                broadcastQR(sessionName);
+              const qrFilePath = await saveQRCode(base64Qr, sessionName);
+              const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
+              if (!responseSent) {
+                responseSent = true;
+                res.json({ qrCodeFile: qrCodeURL });
+              }
+              broadcastQR(sessionName);
             },
-            disableWelcome: false,
-            debug: true, // Opens a debug session
-            logQR: false, // Logs QR automatically in terminal
+            debug: true,
             updatesLog: true,
             headless: true,
             autoClose: 45000,
             puppeteerOptions: { userDataDir: sessionPath }
-        });
+          });
 
         // Armazena a sessão ativa.
         SESSIONS.set(sessionName, { client, myNumber: null });
@@ -117,6 +117,9 @@ app.get('/auth/:sessionName', async (req, res) => {
                     const myNumber = await client.getWid();
                     SESSIONS.get(sessionName).myNumber = myNumber;
                     console.log(`Número Logado para ${sessionName}: ${myNumber}`);
+                    const sessionToken = await client.getSessionTokenBrowser();
+                    await myTokenStore.setToken(sessionName, sessionToken);
+                    console.log('Token salvo com sucesso!');
 
                     // Em vez de remover imediatamente, podemos aguardar alguns segundos
                     const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
@@ -299,48 +302,10 @@ async function processAudio(sessionName, message) {
                 messages: [
                     {
                         role: "system",
-                        content: `Você é um agente de IA que recebe transcrições de audios e os resume em tópicos,
-                        você deve sempre fornecer a tradução em caso de mensagens em inglês. Sempre ao final você deve adicionar a URL: Thebroker.vip.
-                        E o resumo da mensagem seguindo o exemplo a baixo, ignorando na resposta os parenteses pois são somente observações do que deve conter na resposta:
-
-                        Exemplo em casos de mensagem em português pt-BR:
-
-                            (Inicio)
-                            
-                            (Mensagem Original Resumida)
-                            
-                            *Resumo* (Sempre que ultrapassar 200 tokens)
-                            
-                            - topico 1
-                            - topico 2
-                            ...
-                            
-                            
-                            Transcribed by Thebroker.vip
-                            
-                            (Fim)
-                            
-                        Exemplo em casos de mensagem em inglês:
-
-                            (Inicio)
-                            
-                            (Mensagem Original Resumida)
-                            ...
-                            
-                            *Tradução*
-                            (Mensagem original resumida e traduzida do inglês para o português - Pt-BR)
-                            ...
-                            
-                            *Resumo* (Sempre que ultrapassar 200 tokens e os tópicos devem ser fornecidos em lingua portuguesa - Pt-BR)
-                            
-                            - topico 1
-                            - topico 2
-                            ...
-                            
-                            
-                            Transcribed by Thebroker.vip
-                            
-                            (Fim)`
+                        content: `
+                                - Você é um agente de IA que recebe transcrições de audios e os resume em tópicos.
+                                - Você deve sempre fornecer a tradução em caso de mensagens em inglês.
+                                - Você deve primeiro enviar o resumo do audio e em seguida os tópicos e no final você deve adicionar "Transcribed by Thebroker.vip"`
                     },
                     {
                         role: "user",
@@ -368,7 +333,64 @@ async function processAudio(sessionName, message) {
     }
 }
 
+const restoreSessions = async () => {
+    const sessions = fs.readdirSync(TOKEN_DIR);
 
-server.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+    for (const sessionName of sessions) {
+        try {
+            const tokenData = await myTokenStore.getToken(sessionName);
+            if (!tokenData) continue;
+
+            console.log(`🔄 Restaurando sessão: ${sessionName}`);
+
+            const client = await wppconnect.create({
+                session: sessionName,
+                tokenStore: myTokenStore,
+                deviceName: 'The Broker VIP',
+                statusFind: (statusSession, sessionName) => {
+                    if (statusSession === 'autocloseCalled') {
+                        cleanupSession(sessionName);
+                    }
+                },
+                debug: true,
+                updatesLog: true,
+                headless: true,
+                puppeteerOptions: {
+                    userDataDir: path.join(TOKEN_DIR, sessionName),
+                },
+            });
+
+            SESSIONS.set(sessionName, { client, myNumber: null });
+
+            client.onStateChange(async (state) => {
+                console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
+                if (state === 'CONNECTED') {
+                    const myNumber = await client.getWid();
+                    SESSIONS.get(sessionName).myNumber = myNumber;
+                    console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
+                }
+            });
+
+            client.onMessage(async (message) => {
+                try {
+                    if (message.type === 'ptt' || message.type === 'audio') {
+                        console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+                        await processAudio(sessionName, message);
+                    }
+                } catch (error) {
+                    console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
+                }
+            });
+
+        } catch (error) {
+            console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+        }
+    }
+};
+
+restoreSessions().then(() => {
+    const port = process.env.PORT || 3001;
+    server.listen(port, () => {
+        console.log(`🚀 Servidor rodando na porta ${port}`);
+    });
 });
