@@ -17,6 +17,7 @@ import helmet from 'helmet';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+const FILTERS_FILE = './tokens/filters/filters.js'
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server }); 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -26,6 +27,34 @@ const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR = path.join(__dirname, 'audios');
 const TOKEN_DIR = path.join(__dirname, 'tokens');
 
+// Objeto para armazenar filtros em memória
+const SESSION_FILTERS = new Map();
+
+// Carregar filtros do arquivo JSON ao iniciar
+function loadFiltersFromFile() {
+    if (fs.existsSync(FILTERS_FILE)) {
+        const raw = fs.readFileSync(FILTERS_FILE, 'utf8');
+        const data = JSON.parse(raw);
+        for (const sessionName in data) {
+            SESSION_FILTERS.set(sessionName, data[sessionName]);
+        }
+        console.log('Filtros carregados do arquivo.');
+    }
+}
+
+// Salvar filtros no arquivo
+function saveFiltersToFile() {
+    const filtersObj = {};
+    for (const [sessionName, filters] of SESSION_FILTERS.entries()) {
+        filtersObj[sessionName] = filters;
+    }
+    fs.writeFileSync(FILTERS_FILE, JSON.stringify(filtersObj, null, 2), 'utf8');
+    console.log('Filtros salvos no arquivo.');
+}
+
+// Carregar ao iniciar
+loadFiltersFromFile();
+
 // Criar diretórios necessários caso não existam
 [QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR].forEach((dir) => {
     if (!fs.existsSync(dir)) {
@@ -34,6 +63,7 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
 });
 
 app.use(cors());
+app.use(express.json());
 
 app.use(helmet({
     contentSecurityPolicy: {
@@ -46,12 +76,16 @@ app.use(helmet({
 }));
 
 app.use((req, res, next) => {
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin"); // Permite qualquer origem
-    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp"); // Para permitir uso em iframes e imagens
-    res.setHeader("Access-Control-Allow-Origin", "*"); // Libera acesso de qualquer domínio
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  
+    // Adicionando o header necessário:
+    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
     next();
 });
 
@@ -62,10 +96,12 @@ const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
     path: './tokens',
 });
 
+app.use(express.json()); // Certifique-se de que isso esteja no topo para parsear JSON
+
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
+    const { email = null } = req.query; // Captura o e-mail do corpo
 
-    // Se a sessão já estiver autenticada, responda imediatamente.
     if (SESSIONS.has(sessionName)) {
         return res.json({ message: `Sessão ${sessionName} já autenticada.` });
     }
@@ -77,35 +113,39 @@ app.get('/auth/:sessionName', async (req, res) => {
             fs.mkdirSync(sessionPath, { recursive: true });
         }
 
-        let responseSent = false; // Flag para garantir envio único da resposta
+        let responseSent = false;
 
-          const client = await wppconnect.create({
+        const client = await wppconnect.create({
             session: sessionName,
             tokenStore: myTokenStore,
             statusFind: (statusSession, sessionName) => {
-              if (statusSession === 'autocloseCalled') {
-                cleanupSession(sessionName);
-              }
+                if (statusSession === 'autocloseCalled') {
+                    cleanupSession(sessionName);
+                }
             },
             deviceName: 'The Broker VIP',
             catchQR: async (base64Qr) => {
-              const qrFilePath = await saveQRCode(base64Qr, sessionName);
-              const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
-              if (!responseSent) {
-                responseSent = true;
-                res.json({ qrCodeFile: qrCodeURL });
-              }
-              broadcastQR(sessionName);
+                const qrFilePath = await saveQRCode(base64Qr, sessionName);
+                const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
+                if (!responseSent) {
+                    responseSent = true;
+                    res.json({ qrCodeFile: qrCodeURL });
+                }
+                broadcastQR(sessionName);
             },
             debug: true,
             updatesLog: true,
             headless: true,
             autoClose: 45000,
             puppeteerOptions: { userDataDir: sessionPath }
-          });
+        });
 
-        // Armazena a sessão ativa.
-        SESSIONS.set(sessionName, { client, myNumber: null });
+        // Salva a sessão incluindo o e-mail
+        SESSIONS.set(sessionName, {
+            client,
+            myNumber: null,
+            email: email || null
+        });
 
         client.onStateChange(async (state) => {
             try {
@@ -115,13 +155,16 @@ app.get('/auth/:sessionName', async (req, res) => {
                     broadcastSessionAuthenticated(sessionName);
 
                     const myNumber = await client.getWid();
-                    SESSIONS.get(sessionName).myNumber = myNumber;
+                    const session = SESSIONS.get(sessionName);
+                    session.myNumber = myNumber;
+
                     console.log(`Número Logado para ${sessionName}: ${myNumber}`);
+                    console.log(`E-mail associado: ${session.email}`);
+
                     const sessionToken = await client.getSessionTokenBrowser();
                     await myTokenStore.setToken(sessionName, sessionToken);
                     console.log('Token salvo com sucesso!');
 
-                    // Em vez de remover imediatamente, podemos aguardar alguns segundos
                     const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
                     if (fs.existsSync(qrFilePath)) {
                         setTimeout(() => {
@@ -130,7 +173,7 @@ app.get('/auth/:sessionName', async (req, res) => {
                                     console.log(`Sessão ${sessionName} autenticada, QR Code removido!`);
                                 }
                             });
-                        }, 10000); // Remove após 10 segundos
+                        }, 10000);
                     }
                 }
             } catch (error) {
@@ -140,20 +183,75 @@ app.get('/auth/:sessionName', async (req, res) => {
 
         client.onMessage(async (message) => {
             try {
+                const filters = SESSION_FILTERS.get(sessionName) || {};
+
+                if (filters.ignoreGroups && message.isGroupMsg) return;
+                if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
+                const hour = new Date().getHours();
+                if (filters.ignoreOffHours && (hour < 8 || hour >= 18)) return;
+
                 if (message.type === 'ptt' || message.type === 'audio') {
                     console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
                 }
+
             } catch (error) {
                 console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
             }
         });
 
-    } catch (error) {
-        console.error(`Erro ao criar sessão [${sessionName}]:`, error);
-        return res.status(500).json({ message: `Erro ao criar sessão: ${error.message}` });
+    } catch (err) {
+        console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Erro ao iniciar sessão.' });
+        }
     }
 });
+
+
+app.post('/auth/filtro', (req, res) => {
+    const {
+        email,
+        ignoreGroups,
+        blockedNumbers = [],
+        ignoreOffHours,
+        sendforword,
+        mainlanguage,
+    } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ message: 'Email é obrigatório.' });
+    }
+
+    // Buscar a sessão correspondente ao e-mail
+    const sessionEntry = [...SESSIONS.entries()].find(([_, value]) => value.email === email);
+
+    if (!sessionEntry) {
+        return res.status(404).json({ message: 'Sessão com este e-mail não encontrada.' });
+    }
+
+    const [sessionName] = sessionEntry;
+    const currentFilters = SESSION_FILTERS.get(sessionName) || {};
+
+    const updatedFilters = {
+        ...currentFilters,
+        ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
+        ...(ignoreOffHours !== undefined && { ignoreOffHours: !!ignoreOffHours }),
+        ...(blockedNumbers && { blockedNumbers: Array.isArray(blockedNumbers) ? blockedNumbers : [] }),
+        ...(sendforword && { sendforword }),
+        ...(mainlanguage && { mainlanguage }),
+    };
+
+    SESSION_FILTERS.set(sessionName, updatedFilters);
+    saveFiltersToFile();
+
+    res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
+});
+
+
+
+
 
 function saveQRCode(base64Qr, sessionName) {
     const matches = base64Qr.match(/^data:image\/png;base64,(.+)$/);
@@ -305,6 +403,7 @@ async function processAudio(sessionName, message) {
                         content: `
                                 - Você é um agente de IA que recebe transcrições de audios e os resume em tópicos.
                                 - Você deve sempre fornecer a tradução em caso de mensagens em inglês.
+                                - Você deve resumir mantendo o contexto e semântica da mensagem recebida, respondendo como se fosse o proprio remetente da mensagem.
                                 - Você deve primeiro enviar o resumo do audio e em seguida os tópicos e no final você deve adicionar "Transcribed by Thebroker.vip"`
                     },
                     {
@@ -387,6 +486,7 @@ const restoreSessions = async () => {
         }
     }
 };
+
 
 restoreSessions().then(() => {
     const port = process.env.PORT || 3001;
