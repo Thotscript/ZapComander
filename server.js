@@ -29,7 +29,21 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
 
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
+const SESSIONS_FILE = path.join(__dirname, 'tokens', 'sessions.json');
 
+export function saveSessionEmail(sessionName, email) {
+  let data = {};
+  if (fs.existsSync(SESSIONS_FILE)) {
+    data = JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+  }
+  data[sessionName] = email;
+  fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), 'utf8');
+}
+
+export function loadAllSessionEmails() {
+  if (!fs.existsSync(SESSIONS_FILE)) return {};
+  return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
+}
 // Carregar filtros do arquivo JSON ao iniciar
 function loadFiltersFromFile() {
     if (fs.existsSync(FILTERS_FILE)) {
@@ -163,6 +177,7 @@ app.get('/auth/:sessionName', async (req, res) => {
 
                     const sessionToken = await client.getSessionTokenBrowser();
                     await myTokenStore.setToken(sessionName, sessionToken);
+                    saveSessionEmail(sessionName, email);
                     console.log('Token salvo com sucesso!');
 
                     const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
@@ -188,9 +203,6 @@ app.get('/auth/:sessionName', async (req, res) => {
                 if (filters.ignoreGroups && message.isGroupMsg) return;
                 if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
-                const hour = new Date().getHours();
-                if (filters.ignoreOffHours && (hour < 8 || hour >= 18)) return;
-
                 if (message.type === 'ptt' || message.type === 'audio') {
                     console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
@@ -215,9 +227,8 @@ app.post('/auth/filtro', (req, res) => {
         email,
         ignoreGroups,
         blockedNumbers = [],
-        ignoreOffHours,
-        sendforword,
-        mainlanguage,
+        summaryzemessages,
+        longmessage
     } = req.body;
 
     if (!email) {
@@ -237,10 +248,9 @@ app.post('/auth/filtro', (req, res) => {
     const updatedFilters = {
         ...currentFilters,
         ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
-        ...(ignoreOffHours !== undefined && { ignoreOffHours: !!ignoreOffHours }),
+        ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
         ...(blockedNumbers && { blockedNumbers: Array.isArray(blockedNumbers) ? blockedNumbers : [] }),
-        ...(sendforword && { sendforword }),
-        ...(mainlanguage && { mainlanguage }),
+        ...(longmessage && { longmessage})
     };
 
     SESSION_FILTERS.set(sessionName, updatedFilters);
@@ -431,7 +441,7 @@ async function processAudio(sessionName, message) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
-
+  
 const restoreSessions = async () => {
     const sessions = fs.readdirSync(TOKEN_DIR);
 
@@ -459,7 +469,10 @@ const restoreSessions = async () => {
                 },
             });
 
-            SESSIONS.set(sessionName, { client, myNumber: null });
+            const sessionEmails = loadAllSessionEmails();
+            const email = sessionEmails[sessionName] || null;
+
+            SESSIONS.set(sessionName, { client, myNumber: null, email});
 
             client.onStateChange(async (state) => {
                 console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
@@ -472,6 +485,12 @@ const restoreSessions = async () => {
 
             client.onMessage(async (message) => {
                 try {
+
+                    const filters = SESSION_FILTERS.get(sessionName) || {}; 
+
+                    if (filters.ignoreGroups && message.isGroupMsg) return;
+                    if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
                     if (message.type === 'ptt' || message.type === 'audio') {
                         console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                         await processAudio(sessionName, message);
