@@ -1,3 +1,2 @@
-2025/04/12-22:54:14.079 7731 Reusing MANIFEST /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/shared_proto_db/MANIFEST-000001
-2025/04/12-22:54:14.080 7731 Recovering log #3
-2025/04/12-22:54:14.081 7731 Reusing old log /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/shared_proto_db/000003.log 
+2025/04/14-20:18:23.279 60fe3 Creating DB /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/shared_proto_db since it was missing.
+2025/04/14-20:18:23.284 60fe3 Reusing MANIFEST /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5511994297562/Default/shared_proto_db/MANIFEST-000001

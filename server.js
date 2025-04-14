@@ -13,11 +13,10 @@ import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import helmet from 'helmet';
 
-// Definir __dirname corretamente para ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-const FILTERS_FILE = './tokens/filters/filters.js'
+const FILTERS_FILE = './tokens/filters/filters.json'
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server }); 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -30,6 +29,7 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
 const SESSIONS_FILE = path.join(__dirname, 'tokens', 'sessions.json');
+
 
 export function saveSessionEmail(sessionName, email) {
   let data = {};
@@ -224,42 +224,93 @@ app.get('/auth/:sessionName', async (req, res) => {
 
 app.post('/auth/filtro', (req, res) => {
     const {
-        email,
-        ignoreGroups,
-        blockedNumbers = [],
-        summaryzemessages,
-        longmessage
+      email,
+      ignoreGroups,
+      blockedNumbers,
+      summaryzemessages,
+      longmessage
     } = req.body;
-
+  
     if (!email) {
-        return res.status(400).json({ message: 'Email é obrigatório.' });
+      return res.status(400).json({ message: 'Email é obrigatório.' });
     }
-
+  
     // Buscar a sessão correspondente ao e-mail
     const sessionEntry = [...SESSIONS.entries()].find(([_, value]) => value.email === email);
-
+  
     if (!sessionEntry) {
-        return res.status(404).json({ message: 'Sessão com este e-mail não encontrada.' });
+      return res.status(404).json({ message: 'Sessão com este e-mail não encontrada.' });
     }
-
+  
     const [sessionName] = sessionEntry;
     const currentFilters = SESSION_FILTERS.get(sessionName) || {};
-
+  
     const updatedFilters = {
-        ...currentFilters,
-        ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
-        ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
-        ...(blockedNumbers && { blockedNumbers: Array.isArray(blockedNumbers) ? blockedNumbers : [] }),
-        ...(longmessage && { longmessage})
+      ...currentFilters,
+      ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
+      ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
+      ...(longmessage !== undefined && { longmessage }),
+      ...(blockedNumbers !== undefined ? {
+        blockedNumbers: Array.from(new Set([
+          ...(Array.isArray(currentFilters.blockedNumbers) ? currentFilters.blockedNumbers : []),
+          ...(Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers])
+        ]))
+      } : {})
+      
     };
-
+  
     SESSION_FILTERS.set(sessionName, updatedFilters);
     saveFiltersToFile();
-
+  
     res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
+  });
+
+  async function loadFilters() {
+    const filtersPath = path.join(__dirname, 'tokens', 'filters', 'filters.json');
+    const data = fs.readFileSync(filtersPath, 'utf-8'); // Lê o conteúdo do arquivo
+    return JSON.parse(data); // Parseia o JSON para um objeto JavaScript
+}
+
+async function loadSessions() {
+    const sessionsPath = path.join(__dirname, 'tokens', 'sessions.json');
+    const data = fs.readFileSync(sessionsPath, 'utf-8');
+    return JSON.parse(data);
+}
+
+app.post('/auth/blockednumbers', async (req, res) => {
+    const { email, number } = req.body;
+  
+    if (!email || !number) {
+      return res.status(400).json({ error: 'Email e número são obrigatórios.' });
+    }
+  
+    try {
+      // Espera carregar as sessões e filtros
+      const sessions = await loadSessions();
+      const sessionEmail = sessions[number];
+  
+      if (!sessionEmail) {
+        return res.status(404).json({ error: 'Número não encontrado na sessão.' });
+      }
+  
+      if (sessionEmail !== email) {
+        return res.status(403).json({ error: 'Email não corresponde ao número informado.' });
+      }
+  
+      const filters = await loadFilters();
+      const userFilters = filters[number];
+  
+      if (!userFilters || !userFilters.blockedNumbers) {
+        return res.status(404).json({ error: 'Nenhum número bloqueado encontrado para esta sessão.' });
+      }
+  
+      const blockedNumbers = userFilters.blockedNumbers.map(num => num.replace('@c.us', ''));
+  
+      return res.json({ blockedNumbers });
+    } catch (err) {
+      return res.status(500).json({ error: 'Erro ao processar a requisição', details: err.message });
+    }
 });
-
-
 
 
 
@@ -436,6 +487,8 @@ async function processAudio(sessionName, message) {
         await client.sendText(myNumber, resumo, {
             quotedMsg:message.id
         });
+
+        fs.unlinkSync(inputPath);
 
     } catch (error) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
