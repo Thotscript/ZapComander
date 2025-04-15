@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import path from 'path';
 import axios from 'axios';
 import FormData from 'form-data';
+import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import helmet from 'helmet';
@@ -16,24 +17,32 @@ import helmet from 'helmet';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
-const FILTERS_FILE = './tokens/filters/filters.json'
+const FILTERS_FILE = './tokens/filters/filters.json';
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server }); 
+const wss = new WebSocket.Server({ server });
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const PORT = process.env.PORT
+// inicializa o cliente OpenAI
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+const PORT = process.env.PORT;
 const SESSIONS = new Map();
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR = path.join(__dirname, 'audios');
 const TOKEN_DIR = path.join(__dirname, 'tokens');
 
+// para disparar o bot e guardar o histórico por conversa
+const TRIGGER_KEYWORDS = ["@bot"];
+const CONVERSATIONS = new Map();
+const ASSISTANT_MODEL = "gpt-4o-mini";
+
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
 const SESSIONS_FILE = path.join(__dirname, 'tokens', 'sessions.json');
 const SESSION_LOGS_DIR = path.join(__dirname, 'tokens', 'sessions_logs');
-    
 
 if (!fs.existsSync(SESSION_LOGS_DIR)) {
-    fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
+  fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
 }
 
 export function saveSessionEmail(sessionName, email) {
@@ -49,71 +58,58 @@ export function loadAllSessionEmails() {
   if (!fs.existsSync(SESSIONS_FILE)) return {};
   return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
 }
-// Carregar filtros do arquivo JSON ao iniciar
+
 function loadFiltersFromFile() {
-    if (fs.existsSync(FILTERS_FILE)) {
-        const raw = fs.readFileSync(FILTERS_FILE, 'utf8');
-        const data = JSON.parse(raw);
-        for (const sessionName in data) {
-            SESSION_FILTERS.set(sessionName, data[sessionName]);
-        }
-        console.log('Filtros carregados do arquivo.');
+  if (fs.existsSync(FILTERS_FILE)) {
+    const raw = fs.readFileSync(FILTERS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    for (const sessionName in data) {
+      SESSION_FILTERS.set(sessionName, data[sessionName]);
     }
+    console.log('Filtros carregados do arquivo.');
+  }
 }
 
-// Salvar filtros no arquivo
 function saveFiltersToFile() {
-    const filtersObj = {};
-    for (const [sessionName, filters] of SESSION_FILTERS.entries()) {
-        filtersObj[sessionName] = filters;
-    }
-    fs.writeFileSync(FILTERS_FILE, JSON.stringify(filtersObj, null, 2), 'utf8');
-    console.log('Filtros salvos no arquivo.');
+  const filtersObj = {};
+  for (const [sessionName, filters] of SESSION_FILTERS.entries()) {
+    filtersObj[sessionName] = filters;
+  }
+  fs.writeFileSync(FILTERS_FILE, JSON.stringify(filtersObj, null, 2), 'utf8');
+  console.log('Filtros salvos no arquivo.');
 }
 
-// Carregar ao iniciar
 loadFiltersFromFile();
 
-// Criar diretórios necessários caso não existam
 [QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR].forEach((dir) => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 });
 
 app.use(cors());
 app.use(express.json());
-
 app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'", "http://jrssolutions.com.br"],
-            imgSrc: ["'self'", "data:", "http://jrssolutions.com.br"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "http://jrssolutions.com.br"]
-        }
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'", "http://jrssolutions.com.br"],
+      imgSrc: ["'self'", "data:", "http://jrssolutions.com.br"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "http://jrssolutions.com.br"]
     }
+  }
 }));
-
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
-    res.header('Access-Control-Allow-Headers', 'Content-Type');
-    res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  
-    // Adicionando o header necessário:
-    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-  
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-    next();
+  res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
 });
-
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
-    path: './tokens',
-});
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: './tokens' });
 
 app.use(express.json()); // Certifique-se de que isso esteja no topo para parsear JSON
 
@@ -274,6 +270,13 @@ app.get('/auth/:sessionName', async (req, res) => {
                 if (message.type === 'ptt' || message.type === 'audio') {
                     console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
+                }
+
+                console.log(message.type);
+
+                if (message.type === 'chat') {
+                    console.log(message);
+                    await processText(sessionName, message);
                 }
         
             } catch (error) {
@@ -586,46 +589,44 @@ async function processAudio(sessionName, message) {
     }
 }
 
-const TRIGGER_KEYWORDS = ["@bot"];
-const CONVERSATIONS = new Map(); // vai guardar histórico de mensagens por conversa
-const ASSISTANT_MODEL = "gpt-4o-mini"; // ou outro modelo de sua preferência
-
 async function processText(sessionName, message) {
-  try {
-    if (!SESSIONS.has(sessionName)) {
-      throw new Error(`Sessão ${sessionName} não encontrada.`);
-    }
+    try {
+        const session = SESSIONS.get(sessionName);
+        if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
+        
+        const { client, myNumber } = session;
+        if (!myNumber) {
+            console.log('[processText] Número da sessão não definido. Abortando.');
+            return;
+        }
 
-    const session = SESSIONS.get(sessionName);
-    const client = session.client;
-    const myNumber = session.myNumber;
-    if (!myNumber) {
-      console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
-      return;
-    }
+        // Ignora mensagens do próprio bot para evitar loop
+        if (message.from === myNumber) {
+            return;
+        }
 
-    const text = message.body?.trim();
-    if (!text) return;
+        const text = message.body?.trim();
+        if (!text) {
+            return;
+        }
 
-    const lower = text.toLowerCase();
-    const convoKey = `${sessionName}:${message.from}`;
+        console.log(`[processText] Mensagem recebida de ${message.from}: "${text}"`);
 
-    // Verifica se precisa iniciar ou continuar a conversa
-    const shouldTrigger = TRIGGER_KEYWORDS.some(kw => lower.includes(kw));
-    if (!shouldTrigger && !CONVERSATIONS.has(convoKey)) {
-      return; // nem começar nem continuar
-    }
-  
-      // Inicializa a thread por usuário
-      if (!CONVERSATIONS.has(convoKey)) {
-        const thread = await openai.beta.threads.create();
-        CONVERSATIONS.set(convoKey, {
-          thread_id: thread.id
-        });
-  
-        await openai.beta.threads.messages.create(thread.id, {
-          role: "user",
-          content: `
+        const lowerText = text.toLowerCase();
+        const convoKey = `${sessionName}:${message.from}`; // Usa message.from como identificador do chat
+        const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
+        const hasHistory = CONVERSATIONS.has(convoKey);
+
+        if (!containsTrigger && !hasHistory) {
+            return;
+        }
+
+        // Inicializa histórico se necessário
+        if (!CONVERSATIONS.has(convoKey)) {
+            CONVERSATIONS.set(convoKey, [
+                { 
+                    role: "system", 
+                    content: `
 Início e Contextualização:
 
 Apresente-se como assistente de pré-qualificação para financiamentos imobiliários e explique que a conversa reunirá as informações necessárias.
@@ -911,30 +912,28 @@ Pergunte se todas as informações estão corretas e se o cliente deseja revisar
 
 Agradeça a participação e reforce que os dados foram compilados com sucesso.
           `.trim()
-        });
-      }
-  
-       // Adiciona mensagem do usuário ao histórico
-    const history = CONVERSATIONS.get(convoKey);
-    history.push({ role: "user", content: text });
+        }
+    ]);
+}
 
-    // Chama o Chat Completions
-    const resp = await openai.chat.completions.create({
-      model: ASSISTANT_MODEL,
-      messages: history
-    });
+const history = CONVERSATIONS.get(convoKey);
+history.push({ role: "user", content: text });
 
-    const reply = resp.choices[0].message.content.trim();
+const resp = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: history,
+    temperature: 0.7
+});
 
-    // Adiciona resposta ao histórico
-    history.push({ role: "assistant", content: reply });
+const reply = resp.choices[0].message.content.trim();
 
-    // Envia pelo WhatsApp
-    await client.sendText(message.from, reply);
+// Atualiza histórico e envia resposta PARA O MESMO CHAT (message.from)
+history.push({ role: "assistant", content: reply });
+await client.sendText(message.from, reply); // Usa message.from para resposta
 
-  } catch (err) {
-    console.error(`❌ Erro em processText:`, err.response?.data || err.message);
-  }
+} catch (err) {
+console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
+}
 }
   
 const restoreSessions = async () => {
@@ -1010,9 +1009,11 @@ const restoreSessions = async () => {
   
         client.onAnyMessage(async (message) => {
           try {
+
             const filters = SESSION_FILTERS.get(sessionName) || {};
-            if (filters.ignoreGroups && message.isGroupMsg) return;
-            if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+        
+                if (filters.ignoreGroups && message.isGroupMsg) return;
+                if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
   
             if (message.type === 'ptt' || message.type === 'audio') {
               console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
@@ -1020,7 +1021,6 @@ const restoreSessions = async () => {
             }
 
             if (message.type === 'chat') {
-                console.log(`Mensagem de texto recebida na sessão ${sessionName}. Processando...`);
                 await processText(sessionName, message);
               }
 
