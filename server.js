@@ -29,7 +29,12 @@ const TOKEN_DIR = path.join(__dirname, 'tokens');
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
 const SESSIONS_FILE = path.join(__dirname, 'tokens', 'sessions.json');
+const SESSION_LOGS_DIR = path.join(__dirname, 'tokens', 'sessions_logs');
+    
 
+if (!fs.existsSync(SESSION_LOGS_DIR)) {
+    fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
+}
 
 export function saveSessionEmail(sessionName, email) {
   let data = {};
@@ -111,6 +116,69 @@ const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
 });
 
 app.use(express.json()); // Certifique-se de que isso esteja no topo para parsear JSON
+
+app.get('/auth/statusfinder', (req, res) => {
+    // Você pode receber pelo body ou pela query
+    const email = req.body.email || req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email é obrigatório.' });
+    }
+  
+    // 1) Encontra a sessão ativa com esse email
+    const sessionEntry = [...SESSIONS.entries()].find(
+      ([, sessionObj]) => sessionObj.email === email
+    );
+    if (!sessionEntry) {
+      return res.status(404).json({ error: 'Sessão ativa não encontrada para este email.' });
+    }
+    const [sessionName] = sessionEntry;
+  
+    // 2) Monta o caminho do arquivo de log
+    const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
+  
+    // 3) Verifica se o arquivo existe
+    if (!fs.existsSync(logFilePath)) {
+      return res
+        .status(404)
+        .json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
+    }
+  
+    // 4) Lê e retorna o conteúdo
+    try {
+      const raw = fs.readFileSync(logFilePath, 'utf8');
+      const logData = JSON.parse(raw);
+      return res.json({ sessionName, log: logData });
+    } catch (err) {
+      console.error(`❌ Erro ao ler log de ${sessionName}:`, err);
+      return res.status(500).json({ error: 'Falha ao ler o arquivo de log.' });
+    }
+  });
+
+app.get('/auth/logout', async (req, res) => {
+    const email = req.query.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Email é obrigatório.' });
+    }
+  
+    const sessionEntry = [...SESSIONS.entries()].find(
+      ([, sessionObj]) => sessionObj.email === email
+    );
+    if (!sessionEntry) {
+      return res.status(404).json({ error: 'Sessão não encontrada para este email.' });
+    }
+  
+    const [sessionName, sessionClient] = sessionEntry;
+  
+    try {
+      await sessionClient.logout(); // encerra a sessão no WhatsApp
+      await sessionClient.close();  // fecha o navegador/headless
+      SESSIONS.delete(sessionName); // remove do mapa
+      return res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
+    } catch (error) {
+      console.error(`Erro ao encerrar sessão ${sessionName}:`, error);
+      return res.status(500).json({ error: 'Erro ao encerrar a sessão.' });
+    }
+  });
 
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
@@ -196,22 +264,23 @@ app.get('/auth/:sessionName', async (req, res) => {
             }
         });
 
-        client.onMessage(async (message) => {
+        client.onAnyMessage(async (message) => {
             try {
                 const filters = SESSION_FILTERS.get(sessionName) || {};
-
+        
                 if (filters.ignoreGroups && message.isGroupMsg) return;
                 if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
-
+        
                 if (message.type === 'ptt' || message.type === 'audio') {
                     console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
                     await processAudio(sessionName, message);
                 }
-
+        
             } catch (error) {
                 console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
             }
         });
+        
 
     } catch (err) {
         console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
@@ -490,74 +559,482 @@ async function processAudio(sessionName, message) {
 
         fs.unlinkSync(inputPath);
 
+        const now = new Date();
+        const day   = now.getDate().toString().padStart(2, '0');
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const year  = now.getFullYear().toString();
+        const hours   = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const formattedDateTime = `${day}/${month}/${year} - ${hours}:${minutes}`;
+    
+        const logData = {
+          email: session.email,
+          numero: session.myNumber,
+          ultimo_acesso: formattedDateTime
+        };
+    
+        const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
+        try {
+          fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
+          console.log(`Log atualizado para a sessão ${sessionName}`);
+        } catch (err) {
+          console.error(`Falha ao salvar log para ${sessionName}:`, err);
+        }
+
     } catch (error) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
+
+const TRIGGER_KEYWORDS = ["@bot"];
+const CONVERSATIONS = new Map(); // vai guardar histórico de mensagens por conversa
+const ASSISTANT_MODEL = "gpt-4o-mini"; // ou outro modelo de sua preferência
+
+async function processText(sessionName, message) {
+  try {
+    if (!SESSIONS.has(sessionName)) {
+      throw new Error(`Sessão ${sessionName} não encontrada.`);
+    }
+
+    const session = SESSIONS.get(sessionName);
+    const client = session.client;
+    const myNumber = session.myNumber;
+    if (!myNumber) {
+      console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
+      return;
+    }
+
+    const text = message.body?.trim();
+    if (!text) return;
+
+    const lower = text.toLowerCase();
+    const convoKey = `${sessionName}:${message.from}`;
+
+    // Verifica se precisa iniciar ou continuar a conversa
+    const shouldTrigger = TRIGGER_KEYWORDS.some(kw => lower.includes(kw));
+    if (!shouldTrigger && !CONVERSATIONS.has(convoKey)) {
+      return; // nem começar nem continuar
+    }
+  
+      // Inicializa a thread por usuário
+      if (!CONVERSATIONS.has(convoKey)) {
+        const thread = await openai.beta.threads.create();
+        CONVERSATIONS.set(convoKey, {
+          thread_id: thread.id
+        });
+  
+        await openai.beta.threads.messages.create(thread.id, {
+          role: "user",
+          content: `
+Início e Contextualização:
+
+Apresente-se como assistente de pré-qualificação para financiamentos imobiliários e explique que a conversa reunirá as informações necessárias.
+
+Informe que, ao final, será gerada uma tabela com os dados para que o cliente possa copiá-la.
+
+Divisão das Seções e Perguntas a Serem Feitas:
+
+Direcionamento:
+1 - Não faca perguntas desnecessárias, como por exemplo o estado civil do cônjuge, se ele é cônjuge ja sabemos o estado civil
+2 - Não pergunte algo que você ja sabe, apenas peça confirmação
+3 - Faca UMA pergunta de cada vez, mesmo perguntas que estao em uma mesma seção
+4 - Seja sempre amigável
+
+Seção 1 – Informações Pessoais:
+
+Pergunte:
+
+Qual é o seu nome e sobrenome?
+
+Qual é o seu e-mail?
+
+Qual é o seu telefone?
+
+Qual é a sua data de nascimento?
+
+Qual é o seu estado civil?
+
+Qual é a sua nacionalidade (cidadania)?
+
+Você possui visto americano? (Sim/Não)
+
+Seção 2 – Informações do Cônjuge (será aplicado caso o cliente tiver estado civil = Casado):
+
+Se o cliente informar ser casado, pergunte:
+
+Qual é o nome e sobrenome do seu cônjuge?
+
+Qual é o e-mail do seu cônjuge?
+
+Qual é o telefone do seu cônjuge?
+
+Qual é o estado civil do seu cônjuge?
+
+O seu cônjuge possui visto americano? (Sim/Não)
+
+Seção 3 – Endereço Residencial:
+
+Pergunte:
+
+Qual é o seu endereço completo (rua, número, bairro e, se houver, complemento)?
+
+Em qual país você reside?
+
+Em qual estado?
+
+Qual é o CEP?
+
+Seu imóvel é próprio, alugado ou financiado?
+
+Se for financiado, pergunte: Qual o valor do financiamento?
+
+Se for alugado, pergunte: Qual o valor anual do aluguel?
+
+Qual o valor anual do seguro residencial (se aplicável)?
+
+Seção 4 – Outros Imóveis:
+
+Pergunte:
+
+Você possui outro imóvel? (Sim/Não)
+
+Se sim, pergunte:
+a. Esse outro imóvel está alugado? (Sim/Não)
+b. Esse outro imóvel está financiado? (Sim/Não)
+c. Qual é o endereço do outro imóvel?
+d. Qual é o valor do aluguel (se alugado)?
+e. Qual é o valor do financiamento (se financiado)?
+
+Seção 5 – Informações de Emprego:
+
+Pergunte:
+
+Qual é o nome do seu empregador atual?
+
+Em qual ramo de atividade a empresa atua?
+
+Qual é o tipo do seu contrato de trabalho (CLT, PJ, Autônomo, Empresário)?
+
+Seção 6 – Salário Bruto do Titular:
+
+Pergunte:
+
+Qual o valor acumulado do seu salário bruto em 2024?
+
+Qual o valor acumulado em 2023?
+
+Qual o valor acumulado em 2022?
+
+Qual é a sua profissão?
+
+Qual é o seu cargo atual?
+
+Há quantos anos você está neste emprego?
+
+Seção 7 – Bônus Anual:
+
+Pergunte:
+
+Qual o valor do seu bônus anual em 2024?
+
+Qual o valor do seu bônus em 2023?
+
+Qual o valor do seu bônus em 2022?
+
+Seção 8 – Informações da Sua Empresa (se aplicável):
+
+Pergunte:
+
+Qual é o nome da sua empresa?
+
+Qual é a área de atuação da empresa?
+
+Seção 9 – Faturamento Anual da Empresa:
+
+Pergunte:
+
+Qual o faturamento anual acumulado em 2024?
+
+Qual o faturamento acumulado em 2023?
+
+Qual o faturamento acumulado em 2022?
+
+Em que ano sua empresa foi criada?
+
+Seção 10 – Renda Anual Recebida da Empresa:
+
+Pergunte:
+
+Qual o valor da renda anual que você recebe da sua empresa em 2024?
+
+E em 2023?
+
+E em 2022?
+
+Seção 11 – Informações de Emprego do Cônjuge (se aplicável):
+
+Pergunte:
+
+Qual é o nome do empregador do seu cônjuge?
+
+Em qual ramo de atividade ele atua?
+
+Qual o tipo de contrato de trabalho do seu cônjuge (CLT, PJ, Autônomo, Empresário)?
+
+Seção 12 – Salário Bruto do Cônjuge (se aplicável):
+
+Pergunte:
+
+Qual o valor acumulado do salário bruto do seu cônjuge em 2024?
+
+Em 2023?
+
+Em 2022?
+
+Qual é a profissão do seu cônjuge?
+
+Qual é o cargo atual dele(a)?
+
+Há quantos anos ele(a) está neste emprego?
+
+Seção 13 – Investimentos:
+
+Pergunte:
+
+Qual o valor acumulado dos seus investimentos em 2024?
+
+Em 2023?
+
+Em 2022?
+
+Você possui investimentos fora do Brasil? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o tipo de investimento?
+b. Qual o valor acumulado total desses investimentos?
+c. Em qual moeda estão esses investimentos?
+
+Seção 14 – Informações Bancárias:
+
+Pergunte:
+
+Qual é o saldo total em todas as suas contas pessoais?
+
+Qual é o saldo total em todas as contas da sua empresa?
+
+Você possui conta bancária nos EUA? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o nome do seu banco principal?
+b. Qual é o banco da sua empresa?
+
+Seção 15 – Empréstimos e Financiamentos:
+
+Pergunte:
+
+Qual o valor total dos seus empréstimos e financiamentos?
+
+Qual o valor das parcelas?
+
+Quais são os empréstimos/financiamentos (por exemplo, carro, moto, maquinário, etc.)?
+
+Qual o saldo devedor atual?
+
+Caso possua mais de um, solicite que liste cada um com os mesmos detalhes.
+
+Seção 16 – Imóvel nos EUA:
+
+Pergunte:
+
+Você possui imóvel nos EUA? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o endereço do imóvel?
+b. Qual o valor da hipoteca?
+c. Qual o valor em dólar, se aplicável?
+
+Seção 17 – Dados do Imóvel a ser Financiado:
+
+Pergunte:
+
+Qual é o preço de venda do imóvel (em dólares, se for o caso)?
+
+Qual é o valor da entrada?
+
+Qual é o endereço do imóvel que deseja financiar?
+
+Qual a utilização prevista para o imóvel?
+
+Apresente as opções:
+
+Segunda casa somente para uso privado.
+
+Segunda casa para uso privado ou curtas temporadas de aluguel (renda para cobrir despesas).
+
+Propriedade de investimento destinada à locação majoritária.
+
+Confirmação dos Dados:
+
+Após cada pergunta ou seção, confirme o dado informado, por exemplo:
+"Anotado: [Campo] – [Resposta]."
+
+Permita que o cliente revise e, se necessário, corrija qualquer informação antes de prosseguir para a próxima seção.
+
+Geração do Resumo em Tabela:
+
+Ao término de todas as seções, compile todos os dados coletados em uma tabela estruturada com duas colunas:
+
+Coluna 1: Nome do Campo
+
+Coluna 2: Resposta do Cliente
+
+Exiba a tabela final na conversa, utilizando um formato simples (por exemplo, Markdown ou texto tabular), como no exemplo a seguir:
+
+less
+Copy
+| Campo                          | Resposta                      |
+|--------------------------------|-------------------------------|
+| Nome Completo                  | [Resposta do Cliente]         |
+| E-mail                         | [Resposta do Cliente]         |
+| Telefone                       | [Resposta do Cliente]         |
+| Data de Nascimento             | [Resposta do Cliente]         |
+| Estado Civil                   | [Resposta do Cliente]         |
+| Nacionalidade                  | [Resposta do Cliente]         |
+| Visto Americano                | [Resposta do Cliente]         |
+| Endereço Residencial           | [Resposta do Cliente]         |
+| ...                            | ...                           |
+Instrua o cliente a copiar a tabela e utilizar os dados conforme necessário.
+
+Finalização:
+
+Pergunte se todas as informações estão corretas e se o cliente deseja revisar ou alterar algum dado antes da finalização.
+
+Agradeça a participação e reforce que os dados foram compilados com sucesso.
+          `.trim()
+        });
+      }
+  
+       // Adiciona mensagem do usuário ao histórico
+    const history = CONVERSATIONS.get(convoKey);
+    history.push({ role: "user", content: text });
+
+    // Chama o Chat Completions
+    const resp = await openai.chat.completions.create({
+      model: ASSISTANT_MODEL,
+      messages: history
+    });
+
+    const reply = resp.choices[0].message.content.trim();
+
+    // Adiciona resposta ao histórico
+    history.push({ role: "assistant", content: reply });
+
+    // Envia pelo WhatsApp
+    await client.sendText(message.from, reply);
+
+  } catch (err) {
+    console.error(`❌ Erro em processText:`, err.response?.data || err.message);
+  }
+}
   
 const restoreSessions = async () => {
     const sessions = fs.readdirSync(TOKEN_DIR);
-
+  
     for (const sessionName of sessions) {
-        try {
-            const tokenData = await myTokenStore.getToken(sessionName);
-            if (!tokenData) continue;
+      try {
+        const tokenData = await myTokenStore.getToken(sessionName);
+        if (!tokenData) continue;
+  
+        console.log(`🔄 Restaurando sessão: ${sessionName}`);
+  
+        const client = await wppconnect.create({
+          session: sessionName,
+          tokenStore: myTokenStore,
+          deviceName: 'The Broker VIP',
+          statusFind: (statusSession, sessionName) => {
+            if (statusSession === 'autocloseCalled') {
+              cleanupSession(sessionName);
+            }
+          },
+          debug: true,
+          updatesLog: true,
+          headless: true,
+          puppeteerOptions: {
+            userDataDir: path.join(TOKEN_DIR, sessionName),
+          },
+        });
+  
+        // Insere na Map com myNumber inicialmente null
+        SESSIONS.set(sessionName, { client, myNumber: null, email: null });
+  
+        // Carrega email salvo
+        const sessionEmails = loadAllSessionEmails();
+        const email = sessionEmails[sessionName] || null;
+        SESSIONS.get(sessionName).email = email;
+  
+        // Função auxiliar de retry para obter myNumber
+        const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              const myNumber = await client.getWid();
+              if (myNumber) {
+                SESSIONS.get(sessionName).myNumber = myNumber;
+                console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
+                return;
+              }
+            } catch (err) {
+              console.warn(`Tentativa ${attempt} falhou ao obter myNumber para ${sessionName}: ${err.message}`);
+            }
+            // aguarda antes da próxima tentativa
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+          console.error(`❌ Não foi possível restaurar myNumber para ${sessionName} após várias tentativas.`);
+        };
+  
+        // Inicia o retry (não bloqueia a execução)
+        fetchMyNumberWithRetry();
+  
+        // Também atualiza no onStateChange, caso a sessão se reconecte
+        client.onStateChange(async (state) => {
+          console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
+          if (state === 'CONNECTED') {
+            try {
+              const myNumber = await client.getWid();
+              SESSIONS.get(sessionName).myNumber = myNumber;
+              console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
+            } catch (err) {
+              console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
+            }
+          }
+        });
+  
+        client.onAnyMessage(async (message) => {
+          try {
+            const filters = SESSION_FILTERS.get(sessionName) || {};
+            if (filters.ignoreGroups && message.isGroupMsg) return;
+            if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+  
+            if (message.type === 'ptt' || message.type === 'audio') {
+              console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+              await processAudio(sessionName, message);
+            }
 
-            console.log(`🔄 Restaurando sessão: ${sessionName}`);
+            if (message.type === 'chat') {
+                console.log(`Mensagem de texto recebida na sessão ${sessionName}. Processando...`);
+                await processText(sessionName, message);
+              }
 
-            const client = await wppconnect.create({
-                session: sessionName,
-                tokenStore: myTokenStore,
-                deviceName: 'The Broker VIP',
-                statusFind: (statusSession, sessionName) => {
-                    if (statusSession === 'autocloseCalled') {
-                        cleanupSession(sessionName);
-                    }
-                },
-                debug: true,
-                updatesLog: true,
-                headless: true,
-                puppeteerOptions: {
-                    userDataDir: path.join(TOKEN_DIR, sessionName),
-                },
-            });
-
-            const sessionEmails = loadAllSessionEmails();
-            const email = sessionEmails[sessionName] || null;
-
-            SESSIONS.set(sessionName, { client, myNumber: null, email});
-
-            client.onStateChange(async (state) => {
-                console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
-                if (state === 'CONNECTED') {
-                    const myNumber = await client.getWid();
-                    SESSIONS.get(sessionName).myNumber = myNumber;
-                    console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
-                }
-            });
-
-            client.onMessage(async (message) => {
-                try {
-
-                    const filters = SESSION_FILTERS.get(sessionName) || {}; 
-
-                    if (filters.ignoreGroups && message.isGroupMsg) return;
-                    if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
-
-                    if (message.type === 'ptt' || message.type === 'audio') {
-                        console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
-                        await processAudio(sessionName, message);
-                    }
-                } catch (error) {
-                    console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
-                }
-            });
-
-        } catch (error) {
-            console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
-        }
+          } catch (error) {
+            console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
+          }
+        });
+  
+      } catch (error) {
+        console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+      }
     }
-};
+  };
+  
 
 
 restoreSessions().then(() => {

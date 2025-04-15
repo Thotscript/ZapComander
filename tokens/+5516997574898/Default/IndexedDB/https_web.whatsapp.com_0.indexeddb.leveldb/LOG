@@ -1,0 +1,57 @@
+2025/04/15-17:41:43.194 44746 Reusing MANIFEST /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5516997574898/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/04/15-17:41:43.196 44746 Recovering log #1492
+2025/04/15-17:41:43.215 44746 Reusing old log /home/jurandirsantos/Desktop/Node_Projects/WhatsApp_Bot/tokens/+5516997574898/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/001492.log 
+2025/04/15-17:41:44.278 44748 Level-0 table #1525: started
+2025/04/15-17:41:44.291 44748 Level-0 table #1525: 343594 bytes OK
+2025/04/15-17:41:44.294 44748 Delete type=0 #1492
+2025/04/15-17:41:44.295 44746 Manual compaction at level-0 from '\x00 \x00\x00\x00' @ 72057594037927935 : 1 .. '\x00!\x00\x00\x00' @ 0 : 0; will stop at '\x00 \x00\x00\x05' @ 4547382 : 1
+2025/04/15-17:41:44.295 44746 Compacting 1@0 + 0@1 files
+2025/04/15-17:41:44.303 44746 Generated table #1526@0: 6886 keys, 151729 bytes
+2025/04/15-17:41:44.305 44746 Generated table #1527@0: 142 keys, 21039 bytes
+2025/04/15-17:41:44.307 44746 Generated table #1528@0: 72 keys, 2384 bytes
+2025/04/15-17:41:44.307 44746 Compacted 1@0 + 0@1 files => 175152 bytes
+2025/04/15-17:41:44.309 44746 compacted to: files[ 0 3 35 0 0 0 0 ]
+2025/04/15-17:41:44.310 44746 Delete type=2 #1525
+2025/04/15-17:41:44.310 44746 Manual compaction at level-0 from '\x00 \x00\x00\x05' @ 4547382 : 1 .. '\x00!\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/04/15-17:41:47.820 44747 Compacting 1@1 + 10@2 files
+2025/04/15-17:41:47.883 44747 Generated table #1529@1: 11470 keys, 2166836 bytes
+2025/04/15-17:41:48.041 44747 Generated table #1530@1: 38294 keys, 2245866 bytes
+2025/04/15-17:41:48.133 44747 Generated table #1531@1: 30637 keys, 2263725 bytes
+2025/04/15-17:41:48.214 44747 Generated table #1532@1: 31868 keys, 2255246 bytes
+2025/04/15-17:41:48.297 44747 Generated table #1533@1: 30239 keys, 2256768 bytes
+2025/04/15-17:41:48.335 44747 Generated table #1534@1: 9780 keys, 2142485 bytes
+2025/04/15-17:41:48.369 44747 Generated table #1535@1: 8301 keys, 2130981 bytes
+2025/04/15-17:41:48.405 44747 Generated table #1536@1: 7848 keys, 2129299 bytes
+2025/04/15-17:41:48.481 44747 Generated table #1537@1: 82188 keys, 2228049 bytes
+2025/04/15-17:41:48.602 44747 Generated table #1538@1: 98695 keys, 2247342 bytes
+2025/04/15-17:41:48.605 44747 Generated table #1539@1: 870 keys, 20799 bytes
+2025/04/15-17:41:48.605 44747 Compacted 1@1 + 10@2 files => 22087396 bytes
+2025/04/15-17:41:48.606 44747 compacted to: files[ 0 2 36 0 0 0 0 ]
+2025/04/15-17:41:48.607 44747 Delete type=2 #1499
+2025/04/15-17:41:48.607 44747 Delete type=2 #1472
+2025/04/15-17:41:48.607 44747 Delete type=2 #1498
+2025/04/15-17:41:48.608 44747 Delete type=2 #1527
+2025/04/15-17:41:48.608 44747 Delete type=2 #1502
+2025/04/15-17:41:48.608 44747 Delete type=2 #1503
+2025/04/15-17:41:48.608 44747 Delete type=2 #1504
+2025/04/15-17:41:48.608 44747 Delete type=2 #1497
+2025/04/15-17:41:48.608 44747 Delete type=2 #1505
+2025/04/15-17:41:48.608 44747 Delete type=2 #1501
+2025/04/15-17:41:48.608 44747 Delete type=2 #1500
+2025/04/15-17:41:48.773 44746 Compacting 1@1 + 6@2 files
+2025/04/15-17:41:48.854 44746 Generated table #1540@1: 50869 keys, 2224414 bytes
+2025/04/15-17:41:48.921 44746 Generated table #1541@1: 42354 keys, 2203207 bytes
+2025/04/15-17:41:48.948 44746 Generated table #1542@1: 2577 keys, 2148905 bytes
+2025/04/15-17:41:48.984 44746 Generated table #1543@1: 2416 keys, 2145234 bytes
+2025/04/15-17:41:49.013 44746 Generated table #1544@1: 3438 keys, 2151089 bytes
+2025/04/15-17:41:49.040 44746 Generated table #1545@1: 1895 keys, 2153859 bytes
+2025/04/15-17:41:49.042 44746 Generated table #1546@1: 33 keys, 53040 bytes
+2025/04/15-17:41:49.042 44746 Compacted 1@1 + 6@2 files => 13079748 bytes
+2025/04/15-17:41:49.050 44746 compacted to: files[ 0 1 37 0 0 0 0 ]
+2025/04/15-17:41:49.051 44746 Delete type=2 #1508
+2025/04/15-17:41:49.051 44746 Delete type=2 #1513
+2025/04/15-17:41:49.051 44746 Delete type=2 #1510
+2025/04/15-17:41:49.051 44746 Delete type=2 #1511
+2025/04/15-17:41:49.051 44746 Delete type=2 #1509
+2025/04/15-17:41:49.051 44746 Delete type=2 #1512
+2025/04/15-17:41:49.051 44746 Delete type=2 #1526
