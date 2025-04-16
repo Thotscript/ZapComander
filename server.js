@@ -22,7 +22,6 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-// inicializa o cliente OpenAI
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const PORT = process.env.PORT;
@@ -278,7 +277,6 @@ app.get('/auth/:sessionName', async (req, res) => {
                 console.log(message.type);
 
                 if (message.type === 'chat') {
-                    console.log(message);
                     await processText(sessionName, message);
                 }
         
@@ -930,7 +928,6 @@ const resp = await openai.chat.completions.create({
 
 const reply = resp.choices[0].message.content.trim();
 
-// Atualiza histórico e envia resposta PARA O MESMO CHAT (message.from)
 history.push({ role: "assistant", content: reply });
 await client.sendText(message.from, reply); // Usa message.from para resposta
 
@@ -963,6 +960,7 @@ const restoreSessions = async () => {
           headless: true,
           puppeteerOptions: {
             userDataDir: path.join(TOKEN_DIR, sessionName),
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
           },
         });
   
