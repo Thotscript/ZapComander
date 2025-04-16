@@ -18,8 +18,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
 const options = {
-  key: fs.readFileSync('/etc/ssl/private/selfsigned.key'),
-  cert: fs.readFileSync('/etc/ssl/certs/selfsigned.crt')
+  key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
+  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
 };
 const FILTERS_FILE = './tokens/filters/filters.json';
 const server = https.createServer(options,app);
