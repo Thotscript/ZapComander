@@ -157,57 +157,11 @@ app.get('/auth/statusfinder', (req, res) => {
 
 
   app.get('/auth/logout', async (req, res) => {
-    const email = req.query.email;
-    if (!email) {
-        return res.status(400).json({ error: 'Email é obrigatório.' });
+    const session = req.query.sessionName;
+    if (!session) {
+        return res.status(400).json({ error: 'Session é obrigatório.' });
     }
-
-    const sessionEntry = [...SESSIONS.entries()].find(
-        ([, sessionObj]) => sessionObj.email === email
-    );
-    if (!sessionEntry) {
-        return res.status(404).json({ error: 'Sessão não encontrada para este email.' });
-    }
-
-    const [sessionName, sessionClient] = sessionEntry;
-
-    try {
-        await logoutSession(sessionName, sessionClient);  // Usando a função de logout já com o método de limpeza
-        return res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
-    } catch (error) {
-        console.error(`Erro ao encerrar sessão ${sessionName}:`, error);
-        return res.status(500).json({ error: 'Erro ao encerrar a sessão.' });
-    }
-});
-
-
-
-async function logoutSession(sessionName, sessionClient) {
-    // Chamando o logout no client
-    await sessionClient.logout();  // Método de logout no cliente
-    console.log(`🔴 Sessão ${sessionName} deslogada com sucesso.`);
-    
-    // Fechando o navegador ou headless
-    await sessionClient.close();  // Fechando o navegador
-    console.log(`Sessão ${sessionName} encerrada e navegador fechado.`);
-    
-    // Remover a sessão do mapa
-    SESSIONS.delete(sessionName);
-    console.log(`Sessão ${sessionName} removida do mapa.`);
-  
-    // Remover o QR code
-    const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-    if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
-
-    // Remover os arquivos de sessão
-    const sessionPath = path.join(TOKEN_DIR, sessionName);
-    setTimeout(() => {
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log(`Sessão:[${sessionName}] => Removida após logout.`);
-        }
-    }, 3000);
-}
+  });
 
 
 
@@ -447,19 +401,30 @@ function saveQRCode(base64Qr, sessionName) {
 
 
 
-app.delete('/delete-session/:sessionName', (req, res) => {
-    const { sessionName } = req.params;
+app.get('/auth/logout', async (req, res) => {
+  const session = req.query.sessionName;
+  
+  if (!session) {
+      return res.status(400).json({ error: 'Session é obrigatório.' });
+  }
 
-    if (!SESSIONS.has(sessionName)) {
-        return res.status(404).json({ message: `Sessão ${sessionName} não encontrada.` });
-    }
-    cleanupSession(sessionName);
+  try {
+      // Chama a função de limpeza da sessão
+      await cleanupSession(session);
+
+      // Retorna uma resposta indicando sucesso
+      res.status(200).json({ message: 'Sessão finalizada com sucesso.' });
+  } catch (error) {
+      // Em caso de erro, retorna uma resposta com erro
+      res.status(500).json({ error: 'Erro ao finalizar sessão.' });
+  }
 });
 
 async function cleanupSession(sessionName) {
 
     if (SESSIONS.has(sessionName)) {
         const session = SESSIONS.get(sessionName);
+        await session.client.logout();
         await session.client.close();
         SESSIONS.delete(sessionName);
         console.log(`🔴 Sessão ${sessionName} encerrada.`);
