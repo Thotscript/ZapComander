@@ -153,31 +153,66 @@ app.get('/auth/statusfinder', (req, res) => {
     }
   });
 
-app.get('/auth/logout', async (req, res) => {
+
+
+
+  app.get('/auth/logout', async (req, res) => {
     const email = req.query.email;
     if (!email) {
-      return res.status(400).json({ error: 'Email é obrigatório.' });
+        return res.status(400).json({ error: 'Email é obrigatório.' });
     }
-  
+
     const sessionEntry = [...SESSIONS.entries()].find(
-      ([, sessionObj]) => sessionObj.email === email
+        ([, sessionObj]) => sessionObj.email === email
     );
     if (!sessionEntry) {
-      return res.status(404).json({ error: 'Sessão não encontrada para este email.' });
+        return res.status(404).json({ error: 'Sessão não encontrada para este email.' });
     }
-  
+
     const [sessionName, sessionClient] = sessionEntry;
-  
+
     try {
-      await sessionClient.logout(); // encerra a sessão no WhatsApp
-      await sessionClient.close();  // fecha o navegador/headless
-      SESSIONS.delete(sessionName); // remove do mapa
-      return res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
+        await logoutSession(sessionName, sessionClient);  // Usando a função de logout já com o método de limpeza
+        return res.json({ success: true, message: 'Sessão encerrada com sucesso.' });
     } catch (error) {
-      console.error(`Erro ao encerrar sessão ${sessionName}:`, error);
-      return res.status(500).json({ error: 'Erro ao encerrar a sessão.' });
+        console.error(`Erro ao encerrar sessão ${sessionName}:`, error);
+        return res.status(500).json({ error: 'Erro ao encerrar a sessão.' });
     }
-  });
+});
+
+
+
+async function logoutSession(sessionName, sessionClient) {
+    // Chamando o logout no client
+    await sessionClient.logout();  // Método de logout no cliente
+    console.log(`🔴 Sessão ${sessionName} deslogada com sucesso.`);
+    
+    // Fechando o navegador ou headless
+    await sessionClient.close();  // Fechando o navegador
+    console.log(`Sessão ${sessionName} encerrada e navegador fechado.`);
+    
+    // Remover a sessão do mapa
+    SESSIONS.delete(sessionName);
+    console.log(`Sessão ${sessionName} removida do mapa.`);
+  
+    // Remover o QR code
+    const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
+    if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
+
+    // Remover os arquivos de sessão
+    const sessionPath = path.join(TOKEN_DIR, sessionName);
+    setTimeout(() => {
+        if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            console.log(`Sessão:[${sessionName}] => Removida após logout.`);
+        }
+    }, 3000);
+}
+
+
+
+
+
 
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
@@ -758,7 +793,7 @@ const restoreSessions = async () => {
 
 
 restoreSessions().then(() => {
-    const port = process.env.PORT || 3001;
+    const port = process.env.PORT;
     server.listen(port, () => {
         console.log(`🚀 Servidor rodando na porta ${port}`);
     });
