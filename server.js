@@ -92,9 +92,9 @@ app.use(express.json());
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", "http://jrssolutions.com.br"],
-      imgSrc: ["'self'", "data:", "http://jrssolutions.com.br"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "http://jrssolutions.com.br"]
+      defaultSrc: ["'self'", "http://89.117.75.110:3000"],
+      imgSrc: ["'self'", "data:", "http://89.117.75.110:3000"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "http://89.117.75.110:3000"]
     }
   }
 }));
@@ -204,7 +204,7 @@ app.get('/auth/:sessionName', async (req, res) => {
             deviceName: 'The Broker VIP',
             catchQR: async (base64Qr) => {
                 const qrFilePath = await saveQRCode(base64Qr, sessionName);
-                const qrCodeURL = `http://jrssolutions.com.br/qrcodes/${path.basename(qrFilePath)}`;
+                const qrCodeURL = `http://89.117.75.110:3000/qrcodes/${path.basename(qrFilePath)}`;
                 if (!responseSent) {
                     responseSent = true;
                     res.json({ qrCodeFile: qrCodeURL });
@@ -215,7 +215,10 @@ app.get('/auth/:sessionName', async (req, res) => {
             updatesLog: true,
             headless: true,
             autoClose: 45000,
-            puppeteerOptions: { userDataDir: sessionPath }
+            puppeteerOptions: {
+              userDataDir: sessionPath,
+              args: ['--no-sandbox', '--disable-setuid-sandbox']
+          }
         });
 
         // Salva a sessão incluindo o e-mail

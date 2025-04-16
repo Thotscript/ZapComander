@@ -1,18 +1,1 @@
-{
-  "+5516997574898": {
-    "ignoreGroups": true,
-    "summaryzemessages": true,
-    "longmessage": true,
-    "blockedNumbers": [
-      "5511994297562@c.us"
-    ]
-  },
-  "+5511994297562": {
-    "ignoreGroups": true,
-    "summaryzemessages": true,
-    "longmessage": true,
-    "blockedNumbers": [
-      "5511994297562@c.us"
-    ]
-  }
-}
+{}
