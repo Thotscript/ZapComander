@@ -95,9 +95,9 @@ app.use(express.json());
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", "https://89.117.75.110:3000"],
-      imgSrc: ["'self'", "data:", "https://89.117.75.110:3000"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://89.117.75.110:3000"]
+      defaultSrc: ["'self'", "https://verbai.com.br:8443"],
+      imgSrc: ["'self'", "data:", "https://verbai.com.br:8443"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443"]
     }
   }
 }));
@@ -207,7 +207,7 @@ app.get('/auth/:sessionName', async (req, res) => {
             deviceName: 'The Broker VIP',
             catchQR: async (base64Qr) => {
                 const qrFilePath = await saveQRCode(base64Qr, sessionName);
-                const qrCodeURL = `http://89.117.75.110:3000/qrcodes/${path.basename(qrFilePath)}`;
+                const qrCodeURL = `https://verbai.com.br:8443/qrcodes/${path.basename(qrFilePath)}`;
                 if (!responseSent) {
                     responseSent = true;
                     res.json({ qrCodeFile: qrCodeURL });
