@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import helmet from 'helmet';
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
-import { criarOuIgnorarSessao } from './db/sessoes.js';
+import { criarOuIgnorarSessao } from './db/sessions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
