@@ -681,104 +681,117 @@ console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
 }
   
 const restoreSessions = async () => {
-    const sessions = fs.readdirSync(TOKEN_DIR);
-  
-    for (const sessionName of sessions) {
-      try {
-        const tokenData = await myTokenStore.getToken(sessionName);
-        if (!tokenData) continue;
-  
-        console.log(`🔄 Restaurando sessão: ${sessionName}`);
-  
-        const client = await wppconnect.create({
-          session: sessionName,
-          tokenStore: myTokenStore,
-          deviceName: 'The Broker VIP',
-          statusFind: (statusSession, sessionName) => {
-            if (statusSession === 'autocloseCalled') {
-              cleanupSession(sessionName);
-            }
-          },
-          debug: true,
-          updatesLog: true,
-          headless: true,
-          puppeteerOptions: {
-            userDataDir: path.join(TOKEN_DIR, sessionName),
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          },
-        });
-  
-        // Insere na Map com myNumber inicialmente null
-        SESSIONS.set(sessionName, { client, myNumber: null, email: null });
-  
-        // Carrega email salvo
-        const sessionEmails = loadAllSessionEmails();
-        const email = sessionEmails[sessionName] || null;
-        SESSIONS.get(sessionName).email = email;
-  
-        // Função auxiliar de retry para obter myNumber
-        const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
-          for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-              const myNumber = await client.getWid();
-              if (myNumber) {
-                SESSIONS.get(sessionName).myNumber = myNumber;
-                console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
-                return;
-              }
-            } catch (err) {
-              console.warn(`Tentativa ${attempt} falhou ao obter myNumber para ${sessionName}: ${err.message}`);
-            }
-            // aguarda antes da próxima tentativa
-            await new Promise((r) => setTimeout(r, delayMs));
-          }
-          console.error(`❌ Não foi possível restaurar myNumber para ${sessionName} após várias tentativas.`);
-        };
-  
-        // Inicia o retry (não bloqueia a execução)
-        fetchMyNumberWithRetry();
-  
-        // Também atualiza no onStateChange, caso a sessão se reconecte
-        client.onStateChange(async (state) => {
-          console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
-          if (state === 'CONNECTED') {
-            try {
-              const myNumber = await client.getWid();
-              SESSIONS.get(sessionName).myNumber = myNumber;
-              console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
-            } catch (err) {
-              console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
-            }
-          }
-        });
-  
-        client.onAnyMessage(async (message) => {
-          try {
+  const sessions = fs.readdirSync(TOKEN_DIR);
 
-            const filters = SESSION_FILTERS.get(sessionName) || {};
-        
-                if (filters.ignoreGroups && message.isGroupMsg) return;
-                if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
-  
-            if (message.type === 'ptt' || message.type === 'audio') {
-              console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
-              await processAudio(sessionName, message);
-            }
+  for (const sessionName of sessions) {
+    try {
+      const tokenData = await myTokenStore.getToken(sessionName);
+      if (!tokenData) continue;
 
-            if (message.type === 'chat') {
-                await processText(sessionName, message);
-              }
+      console.log(`🔄 Restaurando sessão: ${sessionName}`);
 
-          } catch (error) {
-            console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
+      const client = await wppconnect.create({
+        session: sessionName,
+        tokenStore: myTokenStore,
+        deviceName: 'The Broker VIP',
+        statusFind: (statusSession, sessionName) => {
+          if (statusSession === 'autocloseCalled') {
+            cleanupSession(sessionName);
           }
-        });
-  
-      } catch (error) {
-        console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+        },
+        debug: true,
+        updatesLog: true,
+        headless: true,
+        puppeteerOptions: {
+          userDataDir: path.join(TOKEN_DIR, sessionName),
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        },
+      });
+
+      // Insere na Map com myNumber inicialmente null
+      SESSIONS.set(sessionName, { client, myNumber: null, email: null });
+
+      // Carrega e atribui e‑mail salvo
+      const sessionEmails = loadAllSessionEmails();
+      const email = sessionEmails[sessionName] || null;
+      SESSIONS.get(sessionName).email = email;
+
+      // --- Novo: garante que o usuário existe no banco ---
+      if (email) {
+        try {
+          await criarOuIgnorarUsuario(email);
+          console.log(`✅ Usuário '${email}' garantido no banco (restauração).`);
+        } catch (dbErr) {
+          console.error(`❌ Erro ao garantir usuário (restauração):`, dbErr);
+        }
       }
+
+      // Função auxiliar de retry para obter myNumber
+      const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+          try {
+            const myNumber = await client.getWid();
+            if (myNumber) {
+              SESSIONS.get(sessionName).myNumber = myNumber;
+              console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
+              return;
+            }
+          } catch (err) {
+            console.warn(`Tentativa ${attempt} falhou ao obter myNumber para ${sessionName}: ${err.message}`);
+          }
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+        console.error(`❌ Não foi possível restaurar myNumber para ${sessionName} após várias tentativas.`);
+      };
+
+      fetchMyNumberWithRetry();
+
+      client.onStateChange(async (state) => {
+        console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
+
+        if (state === 'CONNECTED') {
+          try {
+            const myNumber = await client.getWid();
+            SESSIONS.get(sessionName).myNumber = myNumber;
+            console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
+          } catch (err) {
+            console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
+          }
+
+          // --- Novo: persiste a sessão no banco ao conectar ---
+          try {
+            await criarOuIgnorarSessao(sessionName, email);
+            console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
+          } catch (dbErr) {
+            console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
+          }
+        }
+      });
+
+      client.onAnyMessage(async (message) => {
+        try {
+          const filters = SESSION_FILTERS.get(sessionName) || {};
+          if (filters.ignoreGroups && message.isGroupMsg) return;
+          if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
+          if (message.type === 'ptt' || message.type === 'audio') {
+            console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
+            await processAudio(sessionName, message);
+          }
+
+          if (message.type === 'chat') {
+            await processText(sessionName, message);
+          }
+        } catch (error) {
+          console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
+        }
+      });
+
+    } catch (error) {
+      console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
     }
-  };
+  }
+};
   
 
 
