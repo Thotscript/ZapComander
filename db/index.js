@@ -1,7 +1,7 @@
 import mysql from 'mysql2/promise';
 
 const pool = mysql.createPool({
-    host: '127.0.0.1',       // ou o nome do container docker, ex: 'mysql'
+    host: 'mysql',       // ou o nome do container docker, ex: 'mysql'
     user: 'wpptalk',
     password: 'wpptalk1234',
     database: 'wpptalk_db',
