@@ -219,6 +219,16 @@ app.get('/auth/:sessionName', async (req, res) => {
           }
         });
 
+            // 1. Persistir o usuário (se email for fornecido)
+          if (email) {
+            try {
+              await criarOuIgnorarUsuario(email);
+              console.log(`✅ Usuario '${email}' garantido no banco.`);
+            } catch (dbErr) {
+              console.error(`❌ Erro ao garantir usuário:`, dbErr);
+            }
+          }
+
         // Salva a sessão incluindo o e-mail
         SESSIONS.set(sessionName, {
             client,
@@ -230,6 +240,15 @@ app.get('/auth/:sessionName', async (req, res) => {
             try {
                 console.log(`Estado da sessão ${sessionName}: ${state}`);
                 if (state === 'CONNECTED') {
+
+                // 3. Persistir a sessão no banco
+                 try {
+                      await criarOuIgnorarSessao(sessionName, email);
+                      console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
+                    } catch (dbErr) {
+                      console.error(`❌ Erro ao registrar sessão:`, dbErr);
+                    }
+
                     console.log(`✅ Sessão ${sessionName} autenticada.`);
                     broadcastSessionAuthenticated(sessionName);
 
@@ -239,9 +258,6 @@ app.get('/auth/:sessionName', async (req, res) => {
 
                     console.log(`Número Logado para ${sessionName}: ${myNumber}`);
                     console.log(`E-mail associado: ${session.email}`);
-
-                    await criarOuIgnorarUsuario(session.email);
-                    await criarOuIgnorarSessao(myNumber, session.email);
 
                     const sessionToken = await client.getSessionTokenBrowser();
                     await myTokenStore.setToken(sessionName, sessionToken);
