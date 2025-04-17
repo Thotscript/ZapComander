@@ -13,6 +13,8 @@ import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import helmet from 'helmet';
+import { criarOuIgnorarUsuario } from './db/usuarios.js';
+import { criarOuIgnorarSessao } from './db/sessoes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,7 +23,7 @@ const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
 };
-const FILTERS_FILE = './tokens/filters/filters.json';
+const FILTERS_FILE = '/wpptalk/tokens/filters/filters.json';  // Caminho absoluto
 const server = https.createServer(options,app);
 const wss = new WebSocket.Server({ server });
 
@@ -32,7 +34,7 @@ const PORT = process.env.PORT;
 const SESSIONS = new Map();
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR = path.join(__dirname, 'audios');
-const TOKEN_DIR = path.join(__dirname, 'tokens');
+const TOKEN_DIR = '/wpptalk/tokens';
 
 // para disparar o bot e guardar o histórico por conversa
 const TRIGGER_KEYWORDS = ["@bot"];
@@ -41,8 +43,8 @@ const ASSISTANT_MODEL = "gpt-4o-mini";
 
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
-const SESSIONS_FILE = path.join(__dirname, 'tokens', 'sessions.json');
-const SESSION_LOGS_DIR = path.join(__dirname, 'tokens', 'sessions_logs');
+const SESSIONS_FILE = '/wpptalk/tokens/sessions.json';  // Caminho absoluto
+const SESSION_LOGS_DIR = '/wpptalk/tokens/sessions_logs';  // Caminho absoluto
 
 if (!fs.existsSync(SESSION_LOGS_DIR)) {
   fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
@@ -101,6 +103,8 @@ app.use(helmet({
     }
   }
 }));
+
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -109,6 +113,7 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -141,6 +146,7 @@ app.get('/auth/statusfinder', (req, res) => {
         .status(404)
         .json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
     }
+
   
     // 4) Lê e retorna o conteúdo
     try {
@@ -233,6 +239,9 @@ app.get('/auth/:sessionName', async (req, res) => {
 
                     console.log(`Número Logado para ${sessionName}: ${myNumber}`);
                     console.log(`E-mail associado: ${session.email}`);
+
+                    await criarOuIgnorarUsuario(session.email);
+                    await criarOuIgnorarSessao(myNumber, session.email);
 
                     const sessionToken = await client.getSessionTokenBrowser();
                     await myTokenStore.setToken(sessionName, sessionToken);
@@ -332,13 +341,13 @@ app.post('/auth/filtro', (req, res) => {
   });
 
   async function loadFilters() {
-    const filtersPath = path.join(__dirname, 'tokens', 'filters', 'filters.json');
+    const filtersPath = '/wpptalk/tokens/filters/filters.json';
     const data = fs.readFileSync(filtersPath, 'utf-8'); // Lê o conteúdo do arquivo
     return JSON.parse(data); // Parseia o JSON para um objeto JavaScript
 }
 
 async function loadSessions() {
-    const sessionsPath = path.join(__dirname, 'tokens', 'sessions.json');
+    const sessionsPath = '/wpptalk/tokens/sessions_logs/sessions.json';
     const data = fs.readFileSync(sessionsPath, 'utf-8');
     return JSON.parse(data);
 }
