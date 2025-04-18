@@ -128,7 +128,7 @@ loadFiltersFromFile();
 
 app.get('/auth/preference-numbers', async (req, res) => {
   
-  const email = req.body.email || req.query.email;
+  const email = req.query.email;
 
   if (!email) {
     return res
