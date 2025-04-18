@@ -23,10 +23,7 @@ const app = express();
 
 const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
-  // use só o seu cert.pem aqui...
-  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/cert.pem'),
-  // ...e inclua explicitamente o chain.pem como CA
-  ca: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/chain.pem')
+  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/cert.pem')
 };
 
 const server = https.createServer(options, app);
@@ -128,6 +125,34 @@ function saveFiltersToFile() {
 loadFiltersFromFile();
 
 // ===== Rotas e lógica de sessão =====
+
+app.get('/auth/preference-numbers', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res
+      .status(400)
+      .json({ message: 'O envio do email é obrigatório' });
+  }
+
+  try {
+    // busca todos os registros na tabela `sessoes` cujo usuario_email = email
+    const [rows] = await db.query(
+      'SELECT numero FROM sessoes WHERE usuario_email = ?',
+      [email]
+    );
+
+    const numeros = rows.map(row => row.numero);
+
+    // monta o JSON com chave dinâmica
+    return res.json({ [email]: numeros });
+  } catch (err) {
+    console.error('Erro ao buscar preference-numbers:', err);
+    return res
+      .status(500)
+      .json({ message: 'Erro interno do servidor' });
+  }
+});
 
 app.get('/auth/statusfinder', (req, res) => {
   const email = req.body.email || req.query.email;
@@ -378,34 +403,6 @@ app.post('/auth/filtro', async (req, res) => {
     res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
   });
 
-
-  app.get('/auth/preference-numbers', async (req, res) => {
-    const { email } = req.body;
-  
-    if (!email) {
-      return res
-        .status(400)
-        .json({ message: 'O envio do email é obrigatório' });
-    }
-  
-    try {
-      // busca todos os registros na tabela `sessoes` cujo usuario_email = email
-      const [rows] = await db.query(
-        'SELECT numero FROM sessoes WHERE usuario_email = ?',
-        [email]
-      );
-
-      const numeros = rows.map(row => row.numero);
-  
-      // monta o JSON com chave dinâmica
-      return res.json({ [email]: numeros });
-    } catch (err) {
-      console.error('Erro ao buscar preference-numbers:', err);
-      return res
-        .status(500)
-        .json({ message: 'Erro interno do servidor' });
-    }
-  });
 
   //CARREGA OS FILTROS
 
