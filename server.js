@@ -289,30 +289,29 @@ app.get('/auth/:sessionName', async (req, res) => {
 });
 
 
-// 3) Função para salvar/atualizar filtros no MySQL:
-async function saveFiltersToDB(sessaoNumero, filters) {
+// 3) Função para salvar/atualizar filtros no MySQL, agora por email + sessaoNumero:
+async function saveFiltersToDB(email, sessaoNumero, filters) {
   const conn = await pool.getConnection();
   try {
-    // a) Limpa os filtros antigos desta sessão
+    // 1) Limpa todos os filtros antigos deste email+sessão
     await conn.execute(
-      'DELETE FROM filtros WHERE sessao_numero = ?',
-      [sessaoNumero]
+      'DELETE FROM filtros WHERE email = ? AND sessao_numero = ?',
+      [email, sessaoNumero]
     );
 
-    // b) Prepara as linhas para inserção
-    const rows = Object.entries(filters).map(([nome, valor]) => [
-      sessaoNumero,
-      nome,
-      // serializa valor (boolean, array, string, número…)
-      typeof valor === 'string'   ? valor
-      : typeof valor === 'boolean' ? (valor ? '1' : '0')
-      : JSON.stringify(valor)
-    ]);
+    // 2) Prepara as linhas para inserção
+    const rows = Object.entries(filters).map(([nome, valor]) => {
+      let v;
+      if (typeof valor === 'string')         v = valor;
+      else if (typeof valor === 'boolean')   v = valor ? '1' : '0';
+      else                                   v = JSON.stringify(valor);
+      return [ email, sessaoNumero, nome, v ];
+    });
 
+    // 3) Bulk-insert se tiver ao menos um filtro
     if (rows.length > 0) {
-      // c) Bulk-insert
       await conn.query(
-        'INSERT INTO filtros (sessao_numero, filtro_nome, valor) VALUES ?',
+        'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
         [rows]
       );
     }
@@ -320,6 +319,7 @@ async function saveFiltersToDB(sessaoNumero, filters) {
     conn.release();
   }
 }
+
 
 
 //ROTA FILTROS
@@ -365,7 +365,7 @@ app.post('/auth/filtro', async (req, res) => {
     saveFiltersToFile();
 
     try {
-      await saveFiltersToDB(sessionName, updatedFilters);
+      await saveFiltersToDB(email, sessionName, updatedFilters);
     } catch (err) {
       console.error('Erro ao salvar filtros no MySQL:', err);
       // você pode optar por não falhar a rota inteira, ou retornar 500:
@@ -373,6 +373,35 @@ app.post('/auth/filtro', async (req, res) => {
     }
   
     res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
+  });
+
+
+  app.get('/auth/preference-numbers', async (req, res) => {
+    const { email } = req.body;
+  
+    if (!email) {
+      return res
+        .status(400)
+        .json({ message: 'O envio do email é obrigatório' });
+    }
+  
+    try {
+      // busca todos os registros na tabela `sessoes` cujo usuario_email = email
+      const [rows] = await db.query(
+        'SELECT numero FROM sessoes WHERE usuario_email = ?',
+        [email]
+      );
+
+      const numeros = rows.map(row => row.numero);
+  
+      // monta o JSON com chave dinâmica
+      return res.json({ [email]: numeros });
+    } catch (err) {
+      console.error('Erro ao buscar preference-numbers:', err);
+      return res
+        .status(500)
+        .json({ message: 'Erro interno do servidor' });
+    }
   });
 
   //CARREGA OS FILTROS
