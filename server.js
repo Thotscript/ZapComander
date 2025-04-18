@@ -23,7 +23,10 @@ const app = express();
 
 const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
+  // use só o seu cert.pem aqui...
+  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/cert.pem'),
+  // ...e inclua explicitamente o chain.pem como CA
+  ca: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/chain.pem')
 };
 
 const server = https.createServer(options, app);
