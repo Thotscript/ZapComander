@@ -197,9 +197,18 @@ app.get('/auth/logout', async (req, res) => {
   }
 });
 
-app.get('/auth/:sessionName', async (req, res) => {
-  const { sessionName } = req.params;
-  const { email = null } = req.query;
+app.get('/auth/login', async (req, res) => {
+  
+  const {
+    sessionName = null,
+    email       = null
+  } = req.body;
+
+  if (!sessionName || !email) {
+    return res
+      .status(400)
+      .json({ message: 'sessionName e email são obrigatórios' });
+  }
 
   if (SESSIONS.has(sessionName)) {
     return res.json({ message: `Sessão ${sessionName} já autenticada.` });
