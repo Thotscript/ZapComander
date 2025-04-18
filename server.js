@@ -127,7 +127,8 @@ loadFiltersFromFile();
 // ===== Rotas e lógica de sessão =====
 
 app.get('/auth/preference-numbers', async (req, res) => {
-  const { email } = req.body;
+  
+  const email = req.body.email || req.query.email;
 
   if (!email) {
     return res
