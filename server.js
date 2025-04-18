@@ -19,39 +19,76 @@ import { criarOuIgnorarSessao } from './db/sessions.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+
 const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
 };
-const FILTERS_FILE = 'root/wpptalk/tokens/filters/filters.json';  // Caminho absoluto
-const server = https.createServer(options,app);
+
+const server = https.createServer(options, app);
 const wss = new WebSocket.Server({ server });
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: './tokens' });
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const PORT = process.env.PORT;
+
 const SESSIONS = new Map();
+
+// caminhos absolutos centralizados
+const TOKEN_DIR        = '/root/wpptalk/tokens';
+const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
+const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
+const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
+
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
-const AUDIO_DIR = path.join(__dirname, 'audios');
-const TOKEN_DIR = '/root/wpptalk/tokens';
+const AUDIO_DIR    = path.join(__dirname, 'audios');
 
 // para disparar o bot e guardar o histórico por conversa
 const TRIGGER_KEYWORDS = ["@bot"];
-const CONVERSATIONS = new Map();
-const ASSISTANT_MODEL = "gpt-4o-mini";
+const CONVERSATIONS    = new Map();
+const ASSISTANT_MODEL  = "gpt-4o-mini";
 
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
 
-const SESSIONS_FILE = '/root/wpptalk/tokens/sessions.json';  // Caminho absoluto
-const SESSION_LOGS_DIR = '/root/wpptalk/tokens/sessions_logs';  // Caminho absoluto
+// garante que os folders existam
+[ 
+  path.dirname(FILTERS_FILE),
+  path.dirname(SESSIONS_FILE),
+  SESSION_LOGS_DIR,
+  QR_CODES_DIR,
+  AUDIO_DIR,
+  TOKEN_DIR
+].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
 
-if (!fs.existsSync(SESSION_LOGS_DIR)) {
-  fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
-}
+app.use(cors());
+app.use(express.json());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'", "https://verbai.com.br:8443"],
+      imgSrc:     ["'self'", "data:", "https://verbai.com.br:8443"],
+      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443"]
+    }
+  }
+}));
 
-//SALVAR SESSAO/NUMERO NO JSON
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+app.use('/qrcodes', express.static(QR_CODES_DIR));
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ===== Funções de persistência =====
 
 export function saveSessionEmail(sessionName, email) {
   let data = {};
@@ -62,16 +99,10 @@ export function saveSessionEmail(sessionName, email) {
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
-
-//USADA PARA RESTAURAR A SESSAO, mas usa o SESSIONS.JSON
-
 export function loadAllSessionEmails() {
   if (!fs.existsSync(SESSIONS_FILE)) return {};
   return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
 }
-
-
-//CARREGAR OS FILTROS DE DENTRO DO JSON
 
 function loadFiltersFromFile() {
   if (fs.existsSync(FILTERS_FILE)) {
@@ -84,249 +115,176 @@ function loadFiltersFromFile() {
   }
 }
 
-
-
-//SALVAR O FILTRO DENTRO DO JSON 
-
 function saveFiltersToFile() {
-  const filtersObj = {};
-  for (const [sessionName, filters] of SESSION_FILTERS.entries()) {
-    filtersObj[sessionName] = filters;
-  }
+  const filtersObj = Object.fromEntries(SESSION_FILTERS);
   fs.writeFileSync(FILTERS_FILE, JSON.stringify(filtersObj, null, 2), 'utf8');
   console.log('Filtros salvos no arquivo.');
 }
 
-//CARREGA O ARQUIVO DE FILTROS ATUAL
-
 loadFiltersFromFile();
 
-
-//CRIA PASTAS
-
-[QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR].forEach((dir) => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
-
-app.use(cors());
-app.use(express.json());
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'", "https://verbai.com.br:8443"],
-      imgSrc: ["'self'", "data:", "https://verbai.com.br:8443"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443"]
-    }
-  }
-}));
-
-//AJUSTE DE HEADERS
-
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
-app.use('/qrcodes', express.static(QR_CODES_DIR));
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json()); // Certifique-se de que isso esteja no topo para parsear JSON
-
-
-
-//ROTA
+// ===== Rotas e lógica de sessão =====
 
 app.get('/auth/statusfinder', (req, res) => {
-    // Você pode receber pelo body ou pela query
-    const email = req.body.email || req.query.email;
-    if (!email) {
-      return res.status(400).json({ error: 'Email é obrigatório.' });
-    }
-  
-    // 1) Encontra a sessão ativa com esse email
-    const sessionEntry = [...SESSIONS.entries()].find(
-      ([, sessionObj]) => sessionObj.email === email
-    );
-    if (!sessionEntry) {
-      return res.status(404).json({ error: 'Sessão ativa não encontrada para este email.' });
-    }
-    const [sessionName] = sessionEntry;
-  
-    // 2) Monta o caminho do arquivo de log
-    const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
-  
-    // 3) Verifica se o arquivo existe
-    if (!fs.existsSync(logFilePath)) {
-      return res
-        .status(404)
-        .json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
-    }
+  const email = req.body.email || req.query.email;
+  if (!email) {
+    return res.status(400).json({ error: 'Email é obrigatório.' });
+  }
 
-  
-    // 4) Lê e retorna o conteúdo
-    try {
-      const raw = fs.readFileSync(logFilePath, 'utf8');
-      const logData = JSON.parse(raw);
-      return res.json({ sessionName, log: logData });
-    } catch (err) {
-      console.error(`❌ Erro ao ler log de ${sessionName}:`, err);
-      return res.status(500).json({ error: 'Falha ao ler o arquivo de log.' });
-    }
-  });
+  const sessionEntry = [...SESSIONS.entries()].find(
+    ([, sessionObj]) => sessionObj.email === email
+  );
+  if (!sessionEntry) {
+    return res.status(404).json({ error: 'Sessão ativa não encontrada para este email.' });
+  }
+  const [sessionName] = sessionEntry;
 
+  const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
+  if (!fs.existsSync(logFilePath)) {
+    return res.status(404).json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
+  }
 
-//ROTA
+  try {
+    const raw = fs.readFileSync(logFilePath, 'utf8');
+    const logData = JSON.parse(raw);
+    return res.json({ sessionName, log: logData });
+  } catch (err) {
+    console.error(`❌ Erro ao ler log de ${sessionName}:`, err);
+    return res.status(500).json({ error: 'Falha ao ler o arquivo de log.' });
+  }
+});
 
-  app.get('/auth/logout', async (req, res) => {
-    const session = req.query.sessionName;
-    if (!session) {
-        return res.status(400).json({ error: 'Session é obrigatório.' });
-    }
-  });
-
-
-
-
-//ROTA
+app.get('/auth/logout', async (req, res) => {
+  const session = req.query.sessionName;
+  if (!session) {
+    return res.status(400).json({ error: 'Session é obrigatório.' });
+  }
+  try {
+    await cleanupSession(session);
+    res.status(200).json({ message: 'Sessão finalizada com sucesso.' });
+  } catch {
+    res.status(500).json({ error: 'Erro ao finalizar sessão.' });
+  }
+});
 
 app.get('/auth/:sessionName', async (req, res) => {
-    const { sessionName } = req.params;
-    const { email = null } = req.query; // Captura o e-mail do corpo
+  const { sessionName } = req.params;
+  const { email = null } = req.query;
 
-    if (SESSIONS.has(sessionName)) {
-        return res.json({ message: `Sessão ${sessionName} já autenticada.` });
+  if (SESSIONS.has(sessionName)) {
+    return res.json({ message: `Sessão ${sessionName} já autenticada.` });
+  }
+
+  try {
+    console.log(`Criando sessão: ${sessionName}`);
+    const sessionPath = path.join(TOKEN_DIR, sessionName);
+    if (!fs.existsSync(sessionPath)) {
+      fs.mkdirSync(sessionPath, { recursive: true });
     }
 
-    try {
-        console.log(`Criando sessão: ${sessionName}`);
-        const sessionPath = path.join(TOKEN_DIR, sessionName);
-        if (!fs.existsSync(sessionPath)) {
-            fs.mkdirSync(sessionPath, { recursive: true });
+    let responseSent = false;
+    const client = await wppconnect.create({
+      session: sessionName,
+      tokenStore: myTokenStore,
+      statusFind: (statusSession) => {
+        if (statusSession === 'autocloseCalled') {
+          cleanupSession(sessionName);
         }
-
-        let responseSent = false;
-
-        const client = await wppconnect.create({
-            session: sessionName,
-            tokenStore: myTokenStore,
-            statusFind: (statusSession, sessionName) => {
-                if (statusSession === 'autocloseCalled') {
-                    cleanupSession(sessionName);
-                }
-            },
-            deviceName: 'The Broker VIP',
-            catchQR: async (base64Qr) => {
-                const qrFilePath = await saveQRCode(base64Qr, sessionName);
-                const qrCodeURL = `https://verbai.com.br:8443/qrcodes/${path.basename(qrFilePath)}`;
-                if (!responseSent) {
-                    responseSent = true;
-                    res.json({ qrCodeFile: qrCodeURL });
-                }
-                broadcastQR(sessionName);
-            },
-            debug: true,
-            updatesLog: true,
-            headless: true,
-            autoClose: 45000,
-            puppeteerOptions: {
-              userDataDir: sessionPath,
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
-          }
-        });
-
-            // 1. Persistir o usuário (se email for fornecido)
-          if (email) {
-            try {
-              await criarOuIgnorarUsuario(email);
-              console.log(`✅ Usuario '${email}' garantido no banco.`);
-            } catch (dbErr) {
-              console.error(`❌ Erro ao garantir usuário:`, dbErr);
-            }
-          }
-
-        // Salva a sessão incluindo o e-mail
-        SESSIONS.set(sessionName, {
-            client,
-            myNumber: null,
-            email: email || null
-        });
-
-        client.onStateChange(async (state) => {
-            try {
-                console.log(`Estado da sessão ${sessionName}: ${state}`);
-                if (state === 'CONNECTED') {
-
-                // 3. Persistir a sessão no banco
-                 try {
-                      await criarOuIgnorarSessao(sessionName, email);
-                      console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
-                    } catch (dbErr) {
-                      console.error(`❌ Erro ao registrar sessão:`, dbErr);
-                    }
-
-                    console.log(`✅ Sessão ${sessionName} autenticada.`);
-                    broadcastSessionAuthenticated(sessionName);
-
-                    const myNumber = await client.getWid();
-                    const session = SESSIONS.get(sessionName);
-                    session.myNumber = myNumber;
-
-                    console.log(`Número Logado para ${sessionName}: ${myNumber}`);
-                    console.log(`E-mail associado: ${session.email}`);
-
-                    const sessionToken = await client.getSessionTokenBrowser();
-                    await myTokenStore.setToken(sessionName, sessionToken);
-                    saveSessionEmail(sessionName, email);
-                    console.log('Token salvo com sucesso!');
-
-                    const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-                    if (fs.existsSync(qrFilePath)) {
-                        setTimeout(() => {
-                            fs.unlink(qrFilePath, (err) => {
-                                if (!err) {
-                                    console.log(`Sessão ${sessionName} autenticada, QR Code removido!`);
-                                }
-                            });
-                        }, 10000);
-                    }
-                }
-            } catch (error) {
-                console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
-            }
-        });
-
-        client.onAnyMessage(async (message) => {
-            try {
-                const filters = SESSION_FILTERS.get(sessionName) || {};
-        
-                if (filters.ignoreGroups && message.isGroupMsg) return;
-                if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
-        
-                if (message.type === 'ptt' || message.type === 'audio') {
-                    console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
-                    await processAudio(sessionName, message);
-                }
-
-                if (message.type === 'chat') {
-                    await processText(sessionName, message);
-                }
-        
-            } catch (error) {
-                console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
-            }
-        });
-        
-
-    } catch (err) {
-        console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
-        if (!res.headersSent) {
-            res.status(500).json({ error: 'Erro ao iniciar sessão.' });
+      },
+      deviceName: 'The Broker VIP',
+      catchQR: async (base64Qr) => {
+        const qrFilePath = await saveQRCode(base64Qr, sessionName);
+        const qrCodeURL = `https://verbai.com.br:8443/qrcodes/${path.basename(qrFilePath)}`;
+        if (!responseSent) {
+          responseSent = true;
+          res.json({ qrCodeFile: qrCodeURL });
         }
+        broadcastQR(sessionName);
+      },
+      debug: true,
+      updatesLog: true,
+      headless: true,
+      autoClose: 45000,
+      puppeteerOptions: {
+        userDataDir: sessionPath,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      }
+    });
+
+    if (email) {
+      try {
+        await criarOuIgnorarUsuario(email);
+        console.log(`✅ Usuário '${email}' garantido no banco.`);
+      } catch (dbErr) {
+        console.error(`❌ Erro ao garantir usuário:`, dbErr);
+      }
     }
+
+    SESSIONS.set(sessionName, {
+      client,
+      myNumber: null,
+      email
+    });
+
+    client.onStateChange(async (state) => {
+      try {
+        console.log(`Estado da sessão ${sessionName}: ${state}`);
+        if (state === 'CONNECTED') {
+          try {
+            await criarOuIgnorarSessao(sessionName, email);
+            console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
+          } catch (dbErr) {
+            console.error(`❌ Erro ao registrar sessão:`, dbErr);
+          }
+
+          broadcastSessionAuthenticated(sessionName);
+
+          const myNumber = await client.getWid();
+          const session = SESSIONS.get(sessionName);
+          session.myNumber = myNumber;
+
+          const sessionToken = await client.getSessionTokenBrowser();
+          await myTokenStore.setToken(sessionName, sessionToken);
+          saveSessionEmail(sessionName, email);
+          console.log('Token salvo com sucesso!');
+
+          const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
+          if (fs.existsSync(qrFilePath)) {
+            setTimeout(() => {
+              fs.unlink(qrFilePath, () => {
+                console.log(`Sessão ${sessionName} autenticada, QR Code removido!`);
+              });
+            }, 10000);
+          }
+        }
+      } catch (error) {
+        console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
+      }
+    });
+
+    client.onAnyMessage(async (message) => {
+      try {
+        const filters = SESSION_FILTERS.get(sessionName) || {};
+        if (filters.ignoreGroups && message.isGroupMsg) return;
+        if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
+        if (message.type === 'ptt' || message.type === 'audio') {
+          await processAudio(sessionName, message);
+        }
+        if (message.type === 'chat') {
+          await processText(sessionName, message);
+        }
+      } catch (error) {
+        console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
+      }
+    });
+
+  } catch (err) {
+    console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Erro ao iniciar sessão.' });
+    }
+  }
 });
 
 
