@@ -197,7 +197,7 @@ app.get('/auth/logout', async (req, res) => {
   }
 });
 
-app.get('/auth/login', async (req, res) => {
+app.post('/auth/login', async (req, res) => {
   
   const {
     sessionName = null,
