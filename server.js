@@ -138,7 +138,7 @@ app.get('/auth/preference-numbers', async (req, res) => {
 
   try {
     // busca todos os registros na tabela `sessoes` cujo usuario_email = email
-    const [rows] = await db.query(
+    const [rows] = await pool.query(
       'SELECT numero FROM sessoes WHERE usuario_email = ?',
       [email]
     );
