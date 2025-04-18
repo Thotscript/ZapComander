@@ -23,7 +23,7 @@ const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
 };
-const FILTERS_FILE = '/wpptalk/tokens/filters/filters.json';  // Caminho absoluto
+const FILTERS_FILE = 'root/wpptalk/tokens/filters/filters.json';  // Caminho absoluto
 const server = https.createServer(options,app);
 const wss = new WebSocket.Server({ server });
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: './tokens' });
@@ -34,7 +34,7 @@ const PORT = process.env.PORT;
 const SESSIONS = new Map();
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR = path.join(__dirname, 'audios');
-const TOKEN_DIR = '/wpptalk/tokens';
+const TOKEN_DIR = '/root/wpptalk/tokens';
 
 // para disparar o bot e guardar o histórico por conversa
 const TRIGGER_KEYWORDS = ["@bot"];
@@ -44,8 +44,8 @@ const ASSISTANT_MODEL = "gpt-4o-mini";
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
 
-const SESSIONS_FILE = '/wpptalk/tokens/sessions.json';  // Caminho absoluto
-const SESSION_LOGS_DIR = '/wpptalk/tokens/sessions_logs';  // Caminho absoluto
+const SESSIONS_FILE = '/root/wpptalk/tokens/sessions.json';  // Caminho absoluto
+const SESSION_LOGS_DIR = '/root/wpptalk/tokens/sessions_logs';  // Caminho absoluto
 
 if (!fs.existsSync(SESSION_LOGS_DIR)) {
   fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
