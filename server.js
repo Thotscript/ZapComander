@@ -156,7 +156,7 @@ app.get('/auth/preference-numbers', async (req, res) => {
 });
 
 app.get('/auth/statusfinder', (req, res) => {
-  const email = req.body.email || req.query.email;
+  const email = req.query.email;
   if (!email) {
     return res.status(400).json({ error: 'Email é obrigatório.' });
   }
@@ -585,10 +585,10 @@ async function saveSessionLog({ email, numero, ultimo_acesso }) {
   const conn = await pool.getConnection();
   try {
     const sql = `
-      INSERT INTO logs_sessao (email, numero, ultimo_acesso)
+      INSERT INTO logs_sessao (email, sessao_numero, ultimo_acesso)
       VALUES (?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        numero = VALUES(numero),
+        sessao_numero = VALUES(sessao_numero),
         ultimo_acesso = VALUES(ultimo_acesso)
     `;
     await conn.execute(sql, [email, numero, ultimo_acesso]);
