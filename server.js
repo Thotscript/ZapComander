@@ -13,7 +13,7 @@ import OpenAI from 'openai';
 import { fileURLToPath } from 'url';
 import ffmpeg from 'fluent-ffmpeg';
 import helmet from 'helmet';
-import { pool } from './db/index.js';
+import pool from './db/index.js';
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { criarOuIgnorarSessao } from './db/sessions.js';
 
