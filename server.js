@@ -26,7 +26,7 @@ const options = {
 const FILTERS_FILE = '/wpptalk/tokens/filters/filters.json';  // Caminho absoluto
 const server = https.createServer(options,app);
 const wss = new WebSocket.Server({ server });
-
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: './tokens' });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -43,12 +43,15 @@ const ASSISTANT_MODEL = "gpt-4o-mini";
 
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
+
 const SESSIONS_FILE = '/wpptalk/tokens/sessions.json';  // Caminho absoluto
 const SESSION_LOGS_DIR = '/wpptalk/tokens/sessions_logs';  // Caminho absoluto
 
 if (!fs.existsSync(SESSION_LOGS_DIR)) {
   fs.mkdirSync(SESSION_LOGS_DIR, { recursive: true });
 }
+
+//SALVAR SESSAO/NUMERO NO JSON
 
 export function saveSessionEmail(sessionName, email) {
   let data = {};
@@ -59,10 +62,16 @@ export function saveSessionEmail(sessionName, email) {
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+
+//USADA PARA RESTAURAR A SESSAO, mas usa o SESSIONS.JSON
+
 export function loadAllSessionEmails() {
   if (!fs.existsSync(SESSIONS_FILE)) return {};
   return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
 }
+
+
+//CARREGAR OS FILTROS DE DENTRO DO JSON
 
 function loadFiltersFromFile() {
   if (fs.existsSync(FILTERS_FILE)) {
@@ -75,6 +84,10 @@ function loadFiltersFromFile() {
   }
 }
 
+
+
+//SALVAR O FILTRO DENTRO DO JSON 
+
 function saveFiltersToFile() {
   const filtersObj = {};
   for (const [sessionName, filters] of SESSION_FILTERS.entries()) {
@@ -84,7 +97,12 @@ function saveFiltersToFile() {
   console.log('Filtros salvos no arquivo.');
 }
 
+//CARREGA O ARQUIVO DE FILTROS ATUAL
+
 loadFiltersFromFile();
+
+
+//CRIA PASTAS
 
 [QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
@@ -104,6 +122,7 @@ app.use(helmet({
   }
 }));
 
+//AJUSTE DE HEADERS
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
@@ -113,13 +132,13 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
-
-const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: './tokens' });
-
 app.use(express.json()); // Certifique-se de que isso esteja no topo para parsear JSON
+
+
+
+//ROTA
 
 app.get('/auth/statusfinder', (req, res) => {
     // Você pode receber pelo body ou pela query
@@ -160,7 +179,7 @@ app.get('/auth/statusfinder', (req, res) => {
   });
 
 
-
+//ROTA
 
   app.get('/auth/logout', async (req, res) => {
     const session = req.query.sessionName;
@@ -172,7 +191,7 @@ app.get('/auth/statusfinder', (req, res) => {
 
 
 
-
+//ROTA
 
 app.get('/auth/:sessionName', async (req, res) => {
     const { sessionName } = req.params;
@@ -292,8 +311,6 @@ app.get('/auth/:sessionName', async (req, res) => {
                     await processAudio(sessionName, message);
                 }
 
-                console.log(message.type);
-
                 if (message.type === 'chat') {
                     await processText(sessionName, message);
                 }
@@ -313,7 +330,42 @@ app.get('/auth/:sessionName', async (req, res) => {
 });
 
 
-app.post('/auth/filtro', (req, res) => {
+// 3) Função para salvar/atualizar filtros no MySQL:
+async function saveFiltersToDB(sessaoNumero, filters) {
+  const conn = await pool.getConnection();
+  try {
+    // a) Limpa os filtros antigos desta sessão
+    await conn.execute(
+      'DELETE FROM filtros WHERE sessao_numero = ?',
+      [sessaoNumero]
+    );
+
+    // b) Prepara as linhas para inserção
+    const rows = Object.entries(filters).map(([nome, valor]) => [
+      sessaoNumero,
+      nome,
+      // serializa valor (boolean, array, string, número…)
+      typeof valor === 'string'   ? valor
+      : typeof valor === 'boolean' ? (valor ? '1' : '0')
+      : JSON.stringify(valor)
+    ]);
+
+    if (rows.length > 0) {
+      // c) Bulk-insert
+      await conn.query(
+        'INSERT INTO filtros (sessao_numero, filtro_nome, valor) VALUES ?',
+        [rows]
+      );
+    }
+  } finally {
+    conn.release();
+  }
+}
+
+
+//ROTA FILTROS
+
+app.post('/auth/filtro', async (req, res) => {
     const {
       email,
       ignoreGroups,
@@ -352,15 +404,27 @@ app.post('/auth/filtro', (req, res) => {
   
     SESSION_FILTERS.set(sessionName, updatedFilters);
     saveFiltersToFile();
+
+    try {
+      await saveFiltersToDB(sessionName, updatedFilters);
+    } catch (err) {
+      console.error('Erro ao salvar filtros no MySQL:', err);
+      // você pode optar por não falhar a rota inteira, ou retornar 500:
+      return res.status(500).json({ message: 'Não foi possível salvar filtros no banco.' });
+    }
   
     res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
   });
+
+  //CARREGA OS FILTROS
 
   async function loadFilters() {
     const filtersPath = '/wpptalk/tokens/filters/filters.json';
     const data = fs.readFileSync(filtersPath, 'utf-8'); // Lê o conteúdo do arquivo
     return JSON.parse(data); // Parseia o JSON para um objeto JavaScript
 }
+
+ //CARREGA A SESSAO
 
 async function loadSessions() {
     const sessionsPath = '/wpptalk/tokens/sessions_logs/sessions.json';
@@ -404,6 +468,7 @@ app.post('/auth/blockednumbers', async (req, res) => {
 });
 
 
+//FUNCTION PARA SALVAR O QRCODE NA PASTA
 
 function saveQRCode(base64Qr, sessionName) {
     const matches = base64Qr.match(/^data:image\/png;base64,(.+)$/);
@@ -425,6 +490,7 @@ function saveQRCode(base64Qr, sessionName) {
 }
 
 
+//ROTA DE LOGOUT
 
 app.get('/auth/logout', async (req, res) => {
   const session = req.query.sessionName;
@@ -444,6 +510,9 @@ app.get('/auth/logout', async (req, res) => {
       res.status(500).json({ error: 'Erro ao finalizar sessão.' });
   }
 });
+
+
+//LIMPAR PASTAS DE SESSAO
 
 async function cleanupSession(sessionName) {
 
@@ -467,7 +536,9 @@ async function cleanupSession(sessionName) {
     }, 3000);
 }
 
-wss.on('connection', (ws) => {;
+//WEBSOCKET PARA ENVIAR O QRCODE PARA O FRONT
+
+wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
@@ -482,6 +553,8 @@ wss.on('connection', (ws) => {;
     ws.on('close', () => console.log('❌ Cliente desconectado do WebSocket'));
 });
 
+//ACESSA O QRCODE PARA ENVIAR NA SESSAO A CIMA
+
 function broadcastQR(sessionName) {
     const qrPath = `/qrcodes/qrcode_${sessionName}.png?t=${Date.now()}`;
     wss.clients.forEach((ws) => {
@@ -491,6 +564,8 @@ function broadcastQR(sessionName) {
     });
 }
 
+//VALIDA SE O USUARIO TA LOGADO PRA CONEXAO
+
 function broadcastSessionAuthenticated(sessionName) {
     wss.clients.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -498,6 +573,9 @@ function broadcastSessionAuthenticated(sessionName) {
         }
     });
 }
+
+
+//CAPTURAR A DURACAO DO AUDIO
 
 async function getAudioDuration(inputPath) {
     return new Promise((resolve, reject) => {
@@ -510,6 +588,28 @@ async function getAudioDuration(inputPath) {
         });
     });
 }
+
+
+//SALVAR LOG DE AUDIO NO MYSQL
+
+async function saveSessionLog({ email, numero, ultimo_acesso }) {
+  const conn = await pool.getConnection();
+  try {
+    const sql = `
+      INSERT INTO logs_sessao (email, numero, ultimo_acesso)
+      VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        numero = VALUES(numero),
+        ultimo_acesso = VALUES(ultimo_acesso)
+    `;
+    await conn.execute(sql, [email, numero, ultimo_acesso]);
+  } finally {
+    conn.release();
+  }
+}
+
+
+//PROCESSAR AUDIO RECEBIDO
 
 async function processAudio(sessionName, message) {
     try {
@@ -605,6 +705,14 @@ async function processAudio(sessionName, message) {
           numero: session.myNumber,
           ultimo_acesso: formattedDateTime
         };
+
+        try {
+          await saveSessionLog(logData);
+          res.json({ message: 'Log de sessão gravado.' });
+        } catch (err) {
+          console.error(err);
+          res.status(500).json({ message: 'Erro ao gravar log de sessão.' });
+        }
     
         const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
         try {
@@ -618,6 +726,8 @@ async function processAudio(sessionName, message) {
         console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     }
 }
+
+//PROCESSAR TEXTO RECEBIDO - BOT
 
 async function processText(sessionName, message) {
     try {
@@ -656,7 +766,290 @@ async function processText(sessionName, message) {
             CONVERSATIONS.set(convoKey, [
                 { 
                     role: "system", 
-                    content: `${PROMPT_PRE_QUALIFICACAO}`.trim()
+                    content: `Início e Contextualização:
+
+Apresente-se como assistente de pré-qualificação para financiamentos imobiliários e explique que a conversa reunirá as informações necessárias.
+
+Informe que, ao final, será gerada uma tabela com os dados para que o cliente possa copiá-la.
+
+Divisão das Seções e Perguntas a Serem Feitas:
+
+Direcionamento:
+1 - Não faca perguntas desnecessárias, como por exemplo o estado civil do cônjuge, se ele é cônjuge ja sabemos o estado civil
+2 - Não pergunte algo que você ja sabe, apenas peça confirmação
+3 - Faca UMA pergunta de cada vez, mesmo perguntas que estao em uma mesma seção
+4 - Seja sempre amigável
+
+Seção 1 – Informações Pessoais:
+
+Pergunte:
+
+Qual é o seu nome e sobrenome?
+
+Qual é o seu e-mail?
+
+Qual é o seu telefone?
+
+Qual é a sua data de nascimento?
+
+Qual é o seu estado civil?
+
+Qual é a sua nacionalidade (cidadania)?
+
+Você possui visto americano? (Sim/Não)
+
+Seção 2 – Informações do Cônjuge (será aplicado caso o cliente tiver estado civil = Casado):
+
+Se o cliente informar ser casado, pergunte:
+
+Qual é o nome e sobrenome do seu cônjuge?
+
+Qual é o e-mail do seu cônjuge?
+
+Qual é o telefone do seu cônjuge?
+
+Qual é o estado civil do seu cônjuge?
+
+O seu cônjuge possui visto americano? (Sim/Não)
+
+Seção 3 – Endereço Residencial:
+
+Pergunte:
+
+Qual é o seu endereço completo (rua, número, bairro e, se houver, complemento)?
+
+Em qual país você reside?
+
+Em qual estado?
+
+Qual é o CEP?
+
+Seu imóvel é próprio, alugado ou financiado?
+
+Se for financiado, pergunte: Qual o valor do financiamento?
+
+Se for alugado, pergunte: Qual o valor anual do aluguel?
+
+Qual o valor anual do seguro residencial (se aplicável)?
+
+Seção 4 – Outros Imóveis:
+
+Pergunte:
+
+Você possui outro imóvel? (Sim/Não)
+
+Se sim, pergunte:
+a. Esse outro imóvel está alugado? (Sim/Não)
+b. Esse outro imóvel está financiado? (Sim/Não)
+c. Qual é o endereço do outro imóvel?
+d. Qual é o valor do aluguel (se alugado)?
+e. Qual é o valor do financiamento (se financiado)?
+
+Seção 5 – Informações de Emprego:
+
+Pergunte:
+
+Qual é o nome do seu empregador atual?
+
+Em qual ramo de atividade a empresa atua?
+
+Qual é o tipo do seu contrato de trabalho (CLT, PJ, Autônomo, Empresário)?
+
+Seção 6 – Salário Bruto do Titular:
+
+Pergunte:
+
+Qual o valor acumulado do seu salário bruto em 2024?
+
+Qual o valor acumulado em 2023?
+
+Qual o valor acumulado em 2022?
+
+Qual é a sua profissão?
+
+Qual é o seu cargo atual?
+
+Há quantos anos você está neste emprego?
+
+Seção 7 – Bônus Anual:
+
+Pergunte:
+
+Qual o valor do seu bônus anual em 2024?
+
+Qual o valor do seu bônus em 2023?
+
+Qual o valor do seu bônus em 2022?
+
+Seção 8 – Informações da Sua Empresa (se aplicável):
+
+Pergunte:
+
+Qual é o nome da sua empresa?
+
+Qual é a área de atuação da empresa?
+
+Seção 9 – Faturamento Anual da Empresa:
+
+Pergunte:
+
+Qual o faturamento anual acumulado em 2024?
+
+Qual o faturamento acumulado em 2023?
+
+Qual o faturamento acumulado em 2022?
+
+Em que ano sua empresa foi criada?
+
+Seção 10 – Renda Anual Recebida da Empresa:
+
+Pergunte:
+
+Qual o valor da renda anual que você recebe da sua empresa em 2024?
+
+E em 2023?
+
+E em 2022?
+
+Seção 11 – Informações de Emprego do Cônjuge (se aplicável):
+
+Pergunte:
+
+Qual é o nome do empregador do seu cônjuge?
+
+Em qual ramo de atividade ele atua?
+
+Qual o tipo de contrato de trabalho do seu cônjuge (CLT, PJ, Autônomo, Empresário)?
+
+Seção 12 – Salário Bruto do Cônjuge (se aplicável):
+
+Pergunte:
+
+Qual o valor acumulado do salário bruto do seu cônjuge em 2024?
+
+Em 2023?
+
+Em 2022?
+
+Qual é a profissão do seu cônjuge?
+
+Qual é o cargo atual dele(a)?
+
+Há quantos anos ele(a) está neste emprego?
+
+Seção 13 – Investimentos:
+
+Pergunte:
+
+Qual o valor acumulado dos seus investimentos em 2024?
+
+Em 2023?
+
+Em 2022?
+
+Você possui investimentos fora do Brasil? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o tipo de investimento?
+b. Qual o valor acumulado total desses investimentos?
+c. Em qual moeda estão esses investimentos?
+
+Seção 14 – Informações Bancárias:
+
+Pergunte:
+
+Qual é o saldo total em todas as suas contas pessoais?
+
+Qual é o saldo total em todas as contas da sua empresa?
+
+Você possui conta bancária nos EUA? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o nome do seu banco principal?
+b. Qual é o banco da sua empresa?
+
+Seção 15 – Empréstimos e Financiamentos:
+
+Pergunte:
+
+Qual o valor total dos seus empréstimos e financiamentos?
+
+Qual o valor das parcelas?
+
+Quais são os empréstimos/financiamentos (por exemplo, carro, moto, maquinário, etc.)?
+
+Qual o saldo devedor atual?
+
+Caso possua mais de um, solicite que liste cada um com os mesmos detalhes.
+
+Seção 16 – Imóvel nos EUA:
+
+Pergunte:
+
+Você possui imóvel nos EUA? (Sim/Não)
+
+Se sim, pergunte:
+a. Qual o endereço do imóvel?
+b. Qual o valor da hipoteca?
+c. Qual o valor em dólar, se aplicável?
+
+Seção 17 – Dados do Imóvel a ser Financiado:
+
+Pergunte:
+
+Qual é o preço de venda do imóvel (em dólares, se for o caso)?
+
+Qual é o valor da entrada?
+
+Qual é o endereço do imóvel que deseja financiar?
+
+Qual a utilização prevista para o imóvel?
+
+Apresente as opções:
+
+Segunda casa somente para uso privado.
+
+Segunda casa para uso privado ou curtas temporadas de aluguel (renda para cobrir despesas).
+
+Propriedade de investimento destinada à locação majoritária.
+
+Confirmação dos Dados:
+
+Após cada pergunta ou seção, confirme o dado informado, por exemplo:
+"Anotado: [Campo] – [Resposta]."
+
+Permita que o cliente revise e, se necessário, corrija qualquer informação antes de prosseguir para a próxima seção.
+
+Geração do Resumo em Tabela:
+
+Ao término de todas as seções, compile todos os dados coletados em uma tabela estruturada com duas colunas:
+
+Coluna 1: Nome do Campo
+
+Coluna 2: Resposta do Cliente
+
+Exiba a tabela final na conversa, utilizando um formato simples (por exemplo, Markdown ou texto tabular), como no exemplo a seguir:
+
+less
+Copy
+| Campo                          | Resposta                      |
+|--------------------------------|-------------------------------|
+| Nome Completo                  | [Resposta do Cliente]         |
+| E-mail                         | [Resposta do Cliente]         |
+| Telefone                       | [Resposta do Cliente]         |
+| Data de Nascimento             | [Resposta do Cliente]         |
+| Estado Civil                   | [Resposta do Cliente]         |
+| Nacionalidade                  | [Resposta do Cliente]         |
+| Visto Americano                | [Resposta do Cliente]         |
+| Endereço Residencial           | [Resposta do Cliente]         |
+| ...                            | ...                           |
+Instrua o cliente a copiar a tabela e utilizar os dados conforme necessário.
+
+Finalização:
+
+Pergunte se todas as informações estão corretas e se o cliente deseja revisar ou alterar algum dado antes da finalização.
+
+Agradeça a participação e reforce que os dados foram compilados com sucesso.`.trim()
         }
     ]);
 }
@@ -679,7 +1072,10 @@ await client.sendText(message.from, reply); // Usa message.from para resposta
 console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
 }
 }
-  
+
+
+//RESTAURAR SESSOES EM CASO DE QUEDA DO SERVIDOR
+
 const restoreSessions = async () => {
   const sessions = fs.readdirSync(TOKEN_DIR);
 
@@ -794,7 +1190,7 @@ const restoreSessions = async () => {
 };
   
 
-
+//INICIA A FUNCAO DE RESTAURAR SESSOES JUNTO COM O START DO SERVIDOR
 restoreSessions().then(() => {
     const port = process.env.PORT;
     server.listen(port, () => {
