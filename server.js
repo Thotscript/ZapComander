@@ -407,7 +407,7 @@ app.post('/auth/filtro', async (req, res) => {
   saveFiltersToFile();
 
   try {
-    await saveFiltersToDB(email, selectedNumber, updatedFilters);
+    await saveFiltersToDB(email, sessionName, updatedFilters);
   } catch (err) {
     console.error('Erro ao salvar filtros no MySQL:', err);
     return res.status(500).json({ message: 'Não foi possível salvar filtros no banco.' });
