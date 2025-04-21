@@ -596,26 +596,6 @@ async function getAudioDuration(inputPath) {
     });
 }
 
-
-//SALVAR LOG DE AUDIO NO MYSQL
-
-async function saveSessionLog({ email, numero, ultimo_acesso }) {
-  const conn = await pool.getConnection();
-  try {
-    const sql = `
-      INSERT INTO logs_sessao (email, sessao_numero, ultimo_acesso)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        sessao_numero = VALUES(sessao_numero),
-        ultimo_acesso = VALUES(ultimo_acesso)
-    `;
-    await conn.execute(sql, [email, numero, ultimo_acesso]);
-  } finally {
-    conn.release();
-  }
-}
-
-
 //PROCESSAR AUDIO RECEBIDO
 
 async function processAudio(sessionName, message) {
