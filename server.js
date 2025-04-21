@@ -32,7 +32,7 @@ const prompt_qualification = fs.readFileSync('./prompts/pre-qualification.txt', 
 
 const server = https.createServer(options, app);
 const wss = new WebSocket.Server({ server });
-const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: '/root/wpptalk/tokens' });
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: '/root/wpptalk_server/tokens' });
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
