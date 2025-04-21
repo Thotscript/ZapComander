@@ -698,11 +698,11 @@ async function processAudio(sessionName, message) {
 
         try {
           await saveSessionLog(logData);
-          res.json({ message: 'Log de sessão gravado.' });
+          console.log('✅ Log de sessão salvo no banco.');
         } catch (err) {
-          console.error(err);
-          res.status(500).json({ message: 'Erro ao gravar log de sessão.' });
+          console.error('❌ Erro ao gravar log de sessão no banco:', err);
         }
+        
     
         const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
         try {
