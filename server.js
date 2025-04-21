@@ -212,6 +212,9 @@ app.post('/auth/login', async (req, res) => {
     email       = null
   } = req.body;
 
+  console.log('Body recebido no login:', req.body);
+
+
   if (!sessionName || !email) {
     return res
       .status(400)
