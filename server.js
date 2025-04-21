@@ -16,6 +16,7 @@ import helmet from 'helmet';
 import pool from './db/index.js';
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { criarOuIgnorarSessao } from './db/sessions.js';
+import { saveSessionLog } from './db/logs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -155,6 +156,7 @@ app.get('/auth/preference-numbers', async (req, res) => {
   }
 });
 
+
 app.get('/auth/statusfinder', (req, res) => {
   const email = req.query.email;
   if (!email) {
@@ -174,6 +176,7 @@ app.get('/auth/statusfinder', (req, res) => {
     return res.status(404).json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
   }
 
+
   try {
     const raw = fs.readFileSync(logFilePath, 'utf8');
     const logData = JSON.parse(raw);
@@ -183,6 +186,8 @@ app.get('/auth/statusfinder', (req, res) => {
     return res.status(500).json({ error: 'Falha ao ler o arquivo de log.' });
   }
 });
+
+
 
 app.get('/auth/logout', async (req, res) => {
   const session = req.query.sessionName;
@@ -695,12 +700,15 @@ async function processAudio(sessionName, message) {
         fs.unlinkSync(inputPath);
 
         const now = new Date();
-        const day   = now.getDate().toString().padStart(2, '0');
+        const year = now.getFullYear();
         const month = (now.getMonth() + 1).toString().padStart(2, '0');
-        const year  = now.getFullYear().toString();
-        const hours   = now.getHours().toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const hours = now.getHours().toString().padStart(2, '0');
         const minutes = now.getMinutes().toString().padStart(2, '0');
-        const formattedDateTime = `${day}/${month}/${year} - ${hours}:${minutes}`;
+        const seconds = now.getSeconds().toString().padStart(2, '0');
+
+        const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+
     
         const logData = {
           email: session.email,
