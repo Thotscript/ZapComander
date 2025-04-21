@@ -692,7 +692,7 @@ async function processAudio(sessionName, message) {
     
         const logData = {
           email: session.email,
-          numero: session.myNumber,
+          numero: sessionName,
           ultimo_acesso: formattedDateTime
         };
 
