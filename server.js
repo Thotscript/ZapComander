@@ -363,55 +363,59 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
 //ROTA FILTROS
 
 app.post('/auth/filtro', async (req, res) => {
-    const {
-      email,
-      ignoreGroups,
-      blockedNumbers,
-      summaryzemessages,
-      longmessage
-    } = req.body;
-  
-    if (!email) {
-      return res.status(400).json({ message: 'Email é obrigatório.' });
-    }
-  
-    // Buscar a sessão correspondente ao e-mail
-    const sessionEntry = [...SESSIONS.entries()].find(([_, value]) => value.email === email);
-  
-    if (!sessionEntry) {
-      return res.status(404).json({ message: 'Sessão com este e-mail não encontrada.' });
-    }
-  
-    const [sessionName] = sessionEntry;
-    const currentFilters = SESSION_FILTERS.get(sessionName) || {};
-  
-    const updatedFilters = {
-      ...currentFilters,
-      ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
-      ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
-      ...(longmessage !== undefined && { longmessage }),
-      ...(blockedNumbers !== undefined ? {
-        blockedNumbers: Array.from(new Set([
-          ...(Array.isArray(currentFilters.blockedNumbers) ? currentFilters.blockedNumbers : []),
-          ...(Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers])
-        ]))
-      } : {})
-      
-    };
-  
-    SESSION_FILTERS.set(sessionName, updatedFilters);
-    saveFiltersToFile();
+  const {
+    selectedNumber,
+    email,
+    ignoreGroups,
+    blockedNumbers,
+    summaryzemessages,
+    longmessage
+  } = req.body;
 
-    try {
-      await saveFiltersToDB(email, sessionName, updatedFilters);
-    } catch (err) {
-      console.error('Erro ao salvar filtros no MySQL:', err);
-      // você pode optar por não falhar a rota inteira, ou retornar 500:
-      return res.status(500).json({ message: 'Não foi possível salvar filtros no banco.' });
-    }
-  
-    res.json({ message: `Filtros atualizados para a sessão com user: ${email}` });
-  });
+  if (!sessionName) {
+    return res.status(400).json({ message: 'sessionName é obrigatório.' });
+  }
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email é obrigatório para salvar no banco de dados.' });
+  }
+
+  // Verificar se a sessão com o sessionName existe
+  const sessionExists = SESSIONS.has(sessionName);
+
+  if (!sessionExists) {
+    return res.status(404).json({ message: 'Sessão com este sessionName não encontrada.' });
+  }
+
+  const currentFilters = SESSION_FILTERS.get(sessionName) || {};
+
+  const updatedFilters = {
+    ...currentFilters,
+    ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
+    ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
+    ...(longmessage !== undefined && { longmessage }),
+    ...(blockedNumbers !== undefined ? {
+      blockedNumbers: Array.from(new Set([
+        ...(Array.isArray(currentFilters.blockedNumbers) ? currentFilters.blockedNumbers : []),
+        ...(Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers])
+      ]))
+    } : {})
+  };
+
+  // Atualizar os filtros da sessão
+  SESSION_FILTERS.set(sessionName, updatedFilters);
+  saveFiltersToFile();
+
+  try {
+    await saveFiltersToDB(email, selectedNumber, updatedFilters);
+  } catch (err) {
+    console.error('Erro ao salvar filtros no MySQL:', err);
+    return res.status(500).json({ message: 'Não foi possível salvar filtros no banco.' });
+  }
+
+  res.json({ message: `Filtros atualizados para a sessão ${sessionName} do usuário ${email}.` });
+});
+
 
 
   //CARREGA OS FILTROS
