@@ -364,7 +364,7 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
 
 app.post('/auth/filtro', async (req, res) => {
   const {
-    selectedNumber,
+    sessionName,
     email,
     ignoreGroups,
     blockedNumbers,
