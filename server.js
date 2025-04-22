@@ -761,12 +761,12 @@ async function processAudio(sessionName, message) {
 
         if(filtros.summarizeMessages){
           prompt_base = prompt_transcricao;
-          prompt_use = 'Mantenha a o texto original e resuma em tópicos o texto que vai ser passado e ao final sempre adicione "Transcribed by Thebroker.vip caso não tenha adicionado antes:"';
+          prompt_use = transcricao;
         }
 
         if (filtros.longmessage){
-          prompt_base = transcricao;
-          prompt_use = 'Faca correcoes gramaticais e mantenha o texto original que você vai receber e ao final sempre adicione "Transcribed by Thebroker.vip":';
+          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
+          prompt_use = transcricao;
         }
 
         // Chamada para resumir a transcrição no GPT-4o-mini
@@ -781,7 +781,7 @@ async function processAudio(sessionName, message) {
                     },
                     {
                         role: "user",
-                        content: `${prompt_use}"${transcricao}"`
+                        content: prompt_use
                     }
                 ]
             },
