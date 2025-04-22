@@ -761,12 +761,12 @@ async function processAudio(sessionName, message) {
 
         if(filtros.summarizeMessages){
           prompt_base = prompt_transcricao;
-          prompt_use = "Mantenha a o texto original e resuma em tópicos o seguinte texto:";
+          prompt_use = 'Mantenha a o texto original e resuma em tópicos o texto que vai ser passado e ao final sempre adicione "Transcribed by Thebroker.vip caso não tenha adicionado antes:"';
         }
 
         if (filtros.longmessage){
           prompt_base = transcricao;
-          prompt_use = "Faca correcoes gramaticais e mantenha o texto original:";
+          prompt_use = 'Faca correcoes gramaticais e mantenha o texto original que você vai receber e ao final sempre adicione "Transcribed by Thebroker.vip":';
         }
 
         // Chamada para resumir a transcrição no GPT-4o-mini
