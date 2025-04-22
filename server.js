@@ -757,7 +757,12 @@ async function processAudio(sessionName, message) {
         const transcricao = response.data.text;
 
         let prompt_base = transcricao;
-        let prompt_use = ""; 
+        let prompt_use = "";
+
+        if(filtros.summarizeMessages && filtros.longmessage){
+          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de audio, além de resumir o texto em tópicos. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
+          prompt_use = transcricao;
+        }
 
         if(filtros.summarizeMessages){
           prompt_base = prompt_transcricao;
@@ -765,7 +770,7 @@ async function processAudio(sessionName, message) {
         }
 
         if (filtros.longmessage){
-          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
+          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
           prompt_use = transcricao;
         }
 
