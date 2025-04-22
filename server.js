@@ -1,62 +1,92 @@
+// Carrega variáveis de ambiente do arquivo .env para process.env
 import dotenv from 'dotenv';
 dotenv.config();
+// Habilita o CORS (Cross-Origin Resource Sharing) para permitir requisições de diferentes origens
 import cors from 'cors';
+// Biblioteca para integração com o WhatsApp Web via puppeteer
 import wppconnect from '@wppconnect-team/wppconnect';
+// Framework para criação de servidores HTTP com rotas e middlewares
 import express from 'express';
+// Módulo nativo do Node.js para criar servidores HTTPS (com certificado SSL)
 import https from 'https';
+// Módulo nativo do Node.js para manipular o sistema de arquivos
 import fs from 'fs';
+// Biblioteca para criar e gerenciar conexões WebSocket (comunicação em tempo real)
 import WebSocket from 'ws';
+// Módulo nativo do Node.js para manipulação de caminhos de arquivos de forma cross-platform
 import path from 'path';
+// Cliente HTTP para fazer requisições a APIs externas
 import axios from 'axios';
+// Utilitário para construir requisições HTTP com arquivos/form-data
 import FormData from 'form-data';
+// SDK oficial da OpenAI para integração com APIs como GPT, Whisper, DALL·E etc.
 import OpenAI from 'openai';
+// Utilitários para converter a URL do módulo em caminhos de arquivos reais (necessário em ES Modules)
 import { fileURLToPath } from 'url';
+// Biblioteca para processamento de áudio e vídeo com suporte ao FFmpeg
 import ffmpeg from 'fluent-ffmpeg';
+// Middleware de segurança para proteger seu app Express com headers HTTP apropriados
 import helmet from 'helmet';
+// Conexão com o banco de dados (possivelmente um pool de conexões do PostgreSQL, MySQL, etc.)
 import pool from './db/index.js';
+// Função que insere um usuário no banco, se ainda não existir
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
+// Função que insere uma sessão no banco, se ainda não existir
 import { criarOuIgnorarSessao } from './db/sessions.js';
+// Função para salvar logs de sessões no banco de dados
 import { saveSessionLog } from './db/logs.js';
 
+
+// Converte a URL do módulo atual em um caminho de arquivo (necessário em ES Modules)
 const __filename = fileURLToPath(import.meta.url);
+// Obtém o diretório atual a partir do caminho do arquivo
 const __dirname = path.dirname(__filename);
+// Cria uma aplicação Express
 const app = express();
-
+// Define as opções de certificado SSL para HTTPS (usando certificados do Let's Encrypt)
 const options = {
-  key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
-  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
+  key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'), // Chave privada
+  cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem') // Certificado público completo
 };
-
+// Lê o conteúdo de um prompt para transcrição, armazenado em um arquivo local
 const prompt_transcricao = fs.readFileSync('./prompts/transcricao.txt', 'utf8');
+// Lê o conteúdo de um prompt para pré-qualificação, armazenado em um arquivo local
 const prompt_qualification = fs.readFileSync('./prompts/pre-qualification.txt', 'utf8');
-
+// Cria um servidor HTTPS usando as opções SSL e o app Express
 const server = https.createServer(options, app);
+// Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
 const wss = new WebSocket.Server({ server });
+// Define o local onde os tokens do WhatsApp serão armazenados (persistência de sessões)
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: '/root/wpptalk_server/tokens' });
-
+// Carrega a chave da API da OpenAI a partir das variáveis de ambiente
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// Carrega (se necessário) um prompt de pré-qualificação a partir do .env
 const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
+// Cria uma instância do cliente OpenAI usando a chave da API
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+// Lê a porta do servidor a partir das variáveis de ambiente
 const PORT = process.env.PORT;
-
+// Mapa para armazenar sessões ativas em memória (pode ser vinculado a conexões de usuários ou sessões WhatsApp)
 const SESSIONS = new Map();
+
 
 // caminhos absolutos centralizados
 const TOKEN_DIR        = '/root/wpptalk/tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
-
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR    = path.join(__dirname, 'audios');
 
+
 // para disparar o bot e guardar o histórico por conversa
-const TRIGGER_KEYWORDS = ["@bot"];
+const TRIGGER_KEYWORDS = ["@broker"];
 const CONVERSATIONS    = new Map();
 const ASSISTANT_MODEL  = "gpt-4o-mini";
 
 // Objeto para armazenar filtros em memória
 const SESSION_FILTERS = new Map();
+
 
 // garante que os folders existam
 [ 
@@ -70,6 +100,7 @@ const SESSION_FILTERS = new Map();
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+
 app.use(cors());
 app.use(express.json());
 app.use(helmet({
@@ -82,6 +113,7 @@ app.use(helmet({
   }
 }));
 
+
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -90,6 +122,7 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -104,10 +137,12 @@ export function saveSessionEmail(sessionName, email) {
   fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+
 export function loadAllSessionEmails() {
   if (!fs.existsSync(SESSIONS_FILE)) return {};
   return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
 }
+
 
 function loadFiltersFromFile() {
   if (fs.existsSync(FILTERS_FILE)) {
@@ -120,13 +155,16 @@ function loadFiltersFromFile() {
   }
 }
 
+
 function saveFiltersToFile() {
   const filtersObj = Object.fromEntries(SESSION_FILTERS);
   fs.writeFileSync(FILTERS_FILE, JSON.stringify(filtersObj, null, 2), 'utf8');
   console.log('Filtros salvos no arquivo.');
 }
 
+
 loadFiltersFromFile();
+
 
 // ===== Rotas e lógica de sessão =====
 
@@ -160,6 +198,10 @@ app.get('/auth/preference-numbers', async (req, res) => {
 });
 
 
+// -----------------------------------------------------------------------------
+
+
+
 app.get('/auth/statusfinder', (req, res) => {
   const email = req.query.email;
   if (!email) {
@@ -191,6 +233,7 @@ app.get('/auth/statusfinder', (req, res) => {
 });
 
 
+// ----------------------------------------------------------------------------------
 
 app.get('/auth/logout', async (req, res) => {
   const session = req.query.sessionName;
@@ -204,6 +247,8 @@ app.get('/auth/logout', async (req, res) => {
     res.status(500).json({ error: 'Erro ao finalizar sessão.' });
   }
 });
+
+// ------------------------------------------------------------------------------------
 
 app.post('/auth/login', async (req, res) => {
   
@@ -313,17 +358,23 @@ app.post('/auth/login', async (req, res) => {
     });
 
     client.onAnyMessage(async (message) => {
+
       try {
-        const filters = SESSION_FILTERS.get(sessionName) || {};
+
+        const filters = await loadFiltersFromDB(email, sessionName);
+        SESSION_FILTERS.set(sessionName, filters);
+
         if (filters.ignoreGroups && message.isGroupMsg) return;
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
         if (message.type === 'ptt' || message.type === 'audio') {
           await processAudio(sessionName, message);
         }
+
         if (message.type === 'chat') {
           await processText(sessionName, message);
         }
+
       } catch (error) {
         console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
       }
@@ -336,6 +387,41 @@ app.post('/auth/login', async (req, res) => {
     }
   }
 });
+
+
+
+// -------------------------------------------------------------------------------------
+
+async function loadFiltersFromDB(email, sessionName) {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      'SELECT filtro_nome, valor FROM filtros WHERE email = ? AND sessao_numero = ?',
+      [email, sessionName]
+    );
+
+    const filters = {};
+    for (const row of rows) {
+      let value = row.valor;
+
+      // Tenta interpretar o valor corretamente
+      if (value === '1' || value === '0') {
+        value = value === '1'; // booleano
+      } else {
+        try {
+          value = JSON.parse(value); // tenta converter de JSON (para arrays, objetos, etc.)
+        } catch {
+          // se não for JSON válido, mantém como string
+        }
+      }
+      filters[row.filtro_nome] = value;
+    }
+
+    return filters;
+  } finally {
+    conn.release();
+  }
+}
 
 
 // 3) Função para salvar/atualizar filtros no MySQL, agora por email + sessaoNumero:
@@ -369,7 +455,7 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
   }
 }
 
-
+// -----------------------------------------------------------------------------------------
 
 //ROTA FILTROS
 
@@ -379,7 +465,7 @@ app.post('/auth/filtro', async (req, res) => {
     email,
     ignoreGroups,
     blockedNumbers,
-    summaryzemessages,
+    summarizeMessages,
     longmessage
   } = req.body;
 
@@ -403,7 +489,7 @@ app.post('/auth/filtro', async (req, res) => {
   const updatedFilters = {
     ...currentFilters,
     ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
-    ...(summaryzemessages !== undefined && { summaryzemessages: !!summaryzemessages }),
+    ...(summarizeMessages !== undefined && { summarizeMessages: !!summarizeMessages }),
     ...(longmessage !== undefined && { longmessage }),
     ...(blockedNumbers !== undefined ? {
       blockedNumbers: Array.from(new Set([
@@ -428,6 +514,8 @@ app.post('/auth/filtro', async (req, res) => {
 });
 
 
+// -------------------------------------------------------------------------------------------------
+
 
   //CARREGA OS FILTROS
 
@@ -444,6 +532,8 @@ async function loadSessions() {
     const data = fs.readFileSync(sessionsPath, 'utf-8');
     return JSON.parse(data);
 }
+
+// ----------------------------------------------------------------------------------------------------
 
 app.post('/auth/blockednumbers', async (req, res) => {
     const { email, number } = req.body;
@@ -480,6 +570,8 @@ app.post('/auth/blockednumbers', async (req, res) => {
     }
 });
 
+// ----------------------------------------------------------------------------------------------------
+
 
 //FUNCTION PARA SALVAR O QRCODE NA PASTA
 
@@ -502,6 +594,8 @@ function saveQRCode(base64Qr, sessionName) {
     });
 }
 
+// ----------------------------------------------------------------------------------------------------
+
 
 //ROTA DE LOGOUT
 
@@ -523,6 +617,8 @@ app.get('/auth/logout', async (req, res) => {
       res.status(500).json({ error: 'Erro ao finalizar sessão.' });
   }
 });
+
+// ----------------------------------------------------------------------------------------------------
 
 
 //LIMPAR PASTAS DE SESSAO
@@ -549,6 +645,8 @@ async function cleanupSession(sessionName) {
     }, 3000);
 }
 
+// --------------------------------------------------------------------------------------------------------
+
 //WEBSOCKET PARA ENVIAR O QRCODE PARA O FRONT
 
 wss.on('connection', (ws) => {
@@ -566,6 +664,8 @@ wss.on('connection', (ws) => {
     ws.on('close', () => console.log('❌ Cliente desconectado do WebSocket'));
 });
 
+// --------------------------------------------------------------------------------------------------------
+
 //ACESSA O QRCODE PARA ENVIAR NA SESSAO A CIMA
 
 function broadcastQR(sessionName) {
@@ -576,6 +676,8 @@ function broadcastQR(sessionName) {
         }
     });
 }
+
+
 
 //VALIDA SE O USUARIO TA LOGADO PRA CONEXAO
 
@@ -604,6 +706,10 @@ async function getAudioDuration(inputPath) {
 
 //PROCESSAR AUDIO RECEBIDO
 
+
+// --------------------------------------------------------------------------------------------------------
+
+
 async function processAudio(sessionName, message) {
     try {
         if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
@@ -611,11 +717,14 @@ async function processAudio(sessionName, message) {
         const session = SESSIONS.get(sessionName);
         const client = session.client;
         const myNumber = session.myNumber;
+        const email = session.email;
 
         if (!myNumber) {
             console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
             return;
         }
+
+        const filtros = await loadFiltersFromDB(email, sessionName);
 
         const contact = await client.getContact(message.from);
         const senderName = contact.name || contact.pushname || message.from;
@@ -645,8 +754,20 @@ async function processAudio(sessionName, message) {
             }
         });
 
-        // **Definição da variável transcricao antes de usá-la**
         const transcricao = response.data.text;
+
+        let prompt_base = transcricao;
+        let prompt_use = ""; 
+
+        if(filtros.summarizeMessages){
+          prompt_base = prompt_transcricao;
+          prompt_use = "Mantenha a o texto original e resuma em tópicos o seguinte texto:";
+        }
+
+        if (filtros.longmessage){
+          prompt_base = transcricao;
+          prompt_use = "Faca correcoes gramaticais e mantenha o texto original:";
+        }
 
         // Chamada para resumir a transcrição no GPT-4o-mini
         const response_gpt = await axios.post(
@@ -656,11 +777,11 @@ async function processAudio(sessionName, message) {
                 messages: [
                     {
                         role: "system",
-                        content: prompt_transcricao
+                        content: prompt_base
                     },
                     {
                         role: "user",
-                        content: `Resuma a seguinte transcrição de áudio: "${transcricao}"`
+                        content: `${prompt_use}"${transcricao}"`
                     }
                 ]
             },
@@ -719,10 +840,14 @@ async function processAudio(sessionName, message) {
     }
 }
 
+// --------------------------------------------------------------------------------------------------------
+
 //PROCESSAR TEXTO RECEBIDO - BOT
 
-async function processText(sessionName, message) {
+async function processText(sessionName, message, email) {
+
     try {
+
         const session = SESSIONS.get(sessionName);
         if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
         
@@ -782,8 +907,14 @@ console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
 }
 }
 
+// --------------------------------------------------------------------------------------------------------
+
 
 //RESTAURAR SESSOES EM CASO DE QUEDA DO SERVIDOR
+
+
+// --------------------------------------------------------------------------------------------------------
+
 
 const restoreSessions = async () => {
   const sessions = fs.readdirSync(TOKEN_DIR);
@@ -875,7 +1006,10 @@ const restoreSessions = async () => {
 
       client.onAnyMessage(async (message) => {
         try {
-          const filters = SESSION_FILTERS.get(sessionName) || {};
+
+            const filters = await loadFiltersFromDB(email, sessionName);
+            SESSION_FILTERS.set(sessionName, filters);
+
           if (filters.ignoreGroups && message.isGroupMsg) return;
           if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
@@ -897,6 +1031,8 @@ const restoreSessions = async () => {
     }
   }
 };
+
+// --------------------------------------------------------------------------------------------------------
   
 
 //INICIA A FUNCAO DE RESTAURAR SESSOES JUNTO COM O START DO SERVIDOR
