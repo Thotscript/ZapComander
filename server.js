@@ -760,7 +760,7 @@ async function processAudio(sessionName, message) {
         let prompt_use = "";
 
         if (filtros.summarizeMessages && filtros.longmessage) {
-          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio, além de resumir o texto em tópicos. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
+          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
           prompt_use = transcricao;
         
         } else if (filtros.summarizeMessages) {
