@@ -328,8 +328,9 @@ app.post('/auth/login', async (req, res) => {
         if (state === 'CONNECTED') {
           try {
             const profile_name = await client.getHostDevice()
-            await criarOuIgnorarSessao(sessionName, email, profile_name.pushname);
+            console.log(`Profile: ${profile_name}`)
             console.log(`Número/SessionName: ${sessionName}, Email: ${email}, Profile Name: ${profile_name.pushname}`);
+            await criarOuIgnorarSessao(sessionName, email, profile_name.pushname);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
