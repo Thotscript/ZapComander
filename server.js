@@ -329,23 +329,25 @@ app.post('/auth/login', async (req, res) => {
 
           broadcastSessionAuthenticated(sessionName);
           const myNumber = await client.getWid();
-          const profile_name = await client.getProfileName();
           const session = SESSIONS.get(sessionName);
           session.myNumber = myNumber;
 
-          console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
 
-          try {
-            await criarOuIgnorarSessao(sessionName, email, profile_name);
-            console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
-          } catch (dbErr) {
-            console.error(`❌ Erro ao registrar sessão:`, dbErr);
-          }
+          console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
 
           const sessionToken = await client.getSessionTokenBrowser();
           await myTokenStore.setToken(sessionName, sessionToken);
           saveSessionEmail(sessionName, email);
           console.log('Token salvo com sucesso!');
+
+          try {
+            const profile_info = await client.getContact(myNumber);
+            const profile_name = profile_info.pushname;
+            await criarOuIgnorarSessao(sessionName, email, profile_name);
+            console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
+          } catch (dbErr) {
+            console.error(`❌ Erro ao registrar sessão:`, dbErr);
+          }
 
           const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
           if (fs.existsSync(qrFilePath)) {
