@@ -197,6 +197,53 @@ app.get('/auth/preference-numbers', async (req, res) => {
   }
 });
 
+// ------------------------------------------------------------------------------
+
+app.get('/auth/blocked-numbers', async (req, res) => {
+  const email = req.query.email;
+  const sessionName = req.query.sessionName;
+
+  if (!email || !sessao) {
+    return res
+      .status(400)
+      .json({ message: 'Os parâmetros email e sessao são obrigatórios' });
+  }
+
+  try {
+    // Busca o filtro blockedNumbers na tabela filtros
+    const [rows] = await pool.query(
+      `SELECT valor 
+         FROM filtros 
+        WHERE email = ? 
+          AND sessao_numero = ? 
+          AND filtro_nome = 'blockedNumbers'`,
+      [email, sessao]
+    );
+
+    // Se não encontrou, retorna array vazio
+    let blocked = [];
+    if (rows.length > 0) {
+      // valor está armazenado como JSON string, então fazemos parse
+      try {
+        blocked = JSON.parse(rows[0].valor);
+      } catch (e) {
+        console.warn('Não foi possível fazer parse de valor de blockedNumbers:', rows[0].valor);
+      }
+    }
+
+    // Monta a chave dinâmica: email+sessao (você pode customizar o separador)
+    const key = `${sessionName}`;
+
+    return res.json({ [key]: blocked });
+  } catch (err) {
+    console.error('Erro ao buscar blockedNumbers:', err);
+    return res
+      .status(500)
+      .json({ message: 'Erro interno do servidor' });
+  }
+});
+
+
 
 // -----------------------------------------------------------------------------
 
