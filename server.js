@@ -203,10 +203,10 @@ app.get('/auth/blocked-numbers', async (req, res) => {
   const email = req.query.email;
   const sessionName = req.query.sessionName;
 
-  if (!email || !sessao) {
+  if (!email || !sessionName) {
     return res
       .status(400)
-      .json({ message: 'Os parâmetros email e sessao são obrigatórios' });
+      .json({ message: 'Os parâmetros email e sessionName são obrigatórios' });
   }
 
   try {
@@ -217,7 +217,7 @@ app.get('/auth/blocked-numbers', async (req, res) => {
         WHERE email = ? 
           AND sessao_numero = ? 
           AND filtro_nome = 'blockedNumbers'`,
-      [email, sessao]
+      [email, sessionName]
     );
 
     // Se não encontrou, retorna array vazio
