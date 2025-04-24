@@ -329,10 +329,9 @@ app.post('/auth/login', async (req, res) => {
 
           broadcastSessionAuthenticated(sessionName);
           const myNumber = await client.getWid();
+          const profile_name = await client.getProfileName();
           const session = SESSIONS.get(sessionName);
           session.myNumber = myNumber;
-          const me = await client.getMe();
-          const profile_name = me.pushname;
 
           console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
 
