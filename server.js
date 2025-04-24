@@ -326,28 +326,22 @@ app.post('/auth/login', async (req, res) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
         if (state === 'CONNECTED') {
+
+          broadcastSessionAuthenticated(sessionName);
+          const myNumber = await client.getWid();
+          const session = SESSIONS.get(sessionName);
+          session.myNumber = myNumber;
+          const me = await client.getContact(myNumber);
+          const profile_name = me.pushname || me.name;
+
+          console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
+
           try {
-
-            const own = Object.getOwnPropertyNames(client);
-            const proto = Object.getOwnPropertyNames(Object.getPrototypeOf(client));
-            const all = Array.from(new Set([...own, ...proto]));
-            const methodsOnly = all.filter(name => typeof client[name] === 'function');
-            console.log(methodsOnly);
-
-
-            const profile_name = await client.profile.getMyProfileName();
-            console.log(`Profile: ${profile_name}`);
             await criarOuIgnorarSessao(sessionName, email, profile_name);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
           }
-
-          broadcastSessionAuthenticated(sessionName);
-
-          const myNumber = await client.getWid();
-          const session = SESSIONS.get(sessionName);
-          session.myNumber = myNumber;
 
           const sessionToken = await client.getSessionTokenBrowser();
           await myTokenStore.setToken(sessionName, sessionToken);
