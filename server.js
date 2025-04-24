@@ -71,7 +71,7 @@ const SESSIONS = new Map();
 
 
 // caminhos absolutos centralizados
-const TOKEN_DIR        = '/root/wpptalk/tokens';
+const TOKEN_DIR        = '/root/wpptalk_server/tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
@@ -523,7 +523,7 @@ app.post('/auth/filtro', async (req, res) => {
   //CARREGA OS FILTROS
 
   async function loadFilters() {
-    const filtersPath = '/wpptalk/tokens/filters/filters.json';
+    const filtersPath = '/root/wpptalk_server/tokens/filters/filters.json';
     const data = fs.readFileSync(filtersPath, 'utf-8'); // Lê o conteúdo do arquivo
     return JSON.parse(data); // Parseia o JSON para um objeto JavaScript
 }
@@ -531,7 +531,7 @@ app.post('/auth/filtro', async (req, res) => {
  //CARREGA A SESSAO
 
 async function loadSessions() {
-    const sessionsPath = '/wpptalk/tokens/sessions_logs/sessions.json';
+    const sessionsPath = '/root/wpptalk_server/tokens/sessions_logs/sessions.json';
     const data = fs.readFileSync(sessionsPath, 'utf-8');
     return JSON.parse(data);
 }
