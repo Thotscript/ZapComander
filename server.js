@@ -318,7 +318,8 @@ app.post('/auth/login', async (req, res) => {
     SESSIONS.set(sessionName, {
       client,
       myNumber: null,
-      email
+      email,
+      profile_name: null,
     });
 
     client.onStateChange(async (state) => {
@@ -326,7 +327,9 @@ app.post('/auth/login', async (req, res) => {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
         if (state === 'CONNECTED') {
           try {
-            await criarOuIgnorarSessao(sessionName, email);
+            const profile_name = await client.getProfileName();
+            await criarOuIgnorarSessao(sessionName, email, profile_name);
+            console.log(`Número/SessionName: ${sessionName}, Email: ${email}, Profile Name: ${profile_name}`);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
