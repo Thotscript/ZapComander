@@ -329,7 +329,7 @@ app.post('/auth/login', async (req, res) => {
           try {
             const profile_name = await client.getHostDevice()
             console.log(`Profile: ${profile_name}`)
-            console.log(`Número/SessionName: ${sessionName}, Email: ${email}, Profile Name: ${profile_name.pushname}`);
+            console.log('HostDevice completo:', JSON.stringify(profile_name, null, 2));
             await criarOuIgnorarSessao(sessionName, email, profile_name.pushname);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
