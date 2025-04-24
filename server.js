@@ -331,8 +331,8 @@ app.post('/auth/login', async (req, res) => {
           const myNumber = await client.getWid();
           const session = SESSIONS.get(sessionName);
           session.myNumber = myNumber;
-          const me = await client.getContact(myNumber);
-          const profile_name = me.pushname || me.name;
+          const me = await client.getMe();
+          const profile_name = me.pushname;
 
           console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
 
