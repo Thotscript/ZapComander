@@ -327,6 +327,13 @@ app.post('/auth/login', async (req, res) => {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
         if (state === 'CONNECTED') {
 
+          try {
+            await criarOuIgnorarSessao(sessionName, email);
+            console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
+          } catch (dbErr) {
+            console.error(`❌ Erro ao registrar sessão:`, dbErr);
+          }
+
           broadcastSessionAuthenticated(sessionName);
           const myNumber = await client.getWid();
           const session = SESSIONS.get(sessionName);
@@ -339,15 +346,6 @@ app.post('/auth/login', async (req, res) => {
           await myTokenStore.setToken(sessionName, sessionToken);
           saveSessionEmail(sessionName, email);
           console.log('Token salvo com sucesso!');
-
-          try {
-            const profile_info = await client.getContact(myNumber);
-            const profile_name = profile_info.pushname;
-            await criarOuIgnorarSessao(sessionName, email, profile_name);
-            console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
-          } catch (dbErr) {
-            console.error(`❌ Erro ao registrar sessão:`, dbErr);
-          }
 
           const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
           if (fs.existsSync(qrFilePath)) {
