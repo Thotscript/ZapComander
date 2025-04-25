@@ -247,7 +247,7 @@ app.get('/auth/blocked-numbers', async (req, res) => {
 
 // -----------------------------------------------------------------------------
 
-// supondo que pool seja sua conexão mysql2/promise
+
 app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
   const { email, sessionName, remove } = req.body;
 
@@ -295,6 +295,11 @@ app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
           AND filtro_nome = 'blockedNumbers'`,
       [JSON.stringify(filtered), email, sessionName]
     );
+
+     const currentFilters = SESSION_FILTERS.get(sessionName) || {};
+     currentFilters.blockedNumbers = filtered;
+     SESSION_FILTERS.set(sessionName, currentFilters);
+     saveFiltersToFile();
 
     // 4) retorna sucesso
     return res.json({ success: true, removed: remove, current: filtered });
