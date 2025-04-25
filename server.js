@@ -56,10 +56,6 @@ const prompt_qualification = fs.readFileSync('./prompts/pre-qualification.txt', 
 const server = https.createServer(options, app);
 // Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
 const wss = new WebSocket.Server({ server });
-// Define o local onde os tokens do WhatsApp serão armazenados (persistência de sessões)
-const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
-  path: TOKEN_DIR
-});
 // Carrega a chave da API da OpenAI a partir das variáveis de ambiente
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // Carrega (se necessário) um prompt de pré-qualificação a partir do .env
@@ -80,6 +76,9 @@ const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR    = path.join(__dirname, 'audios');
 
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
+  path: TOKEN_DIR
+});
 
 // para disparar o bot e guardar o histórico por conversa
 const TRIGGER_KEYWORDS = ["@broker"];
