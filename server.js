@@ -57,7 +57,9 @@ const server = https.createServer(options, app);
 // Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
 const wss = new WebSocket.Server({ server });
 // Define o local onde os tokens do WhatsApp serão armazenados (persistência de sessões)
-const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: '/root/wpptalk_server/tokens' });
+const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
+  path: TOKEN_DIR
+});
 // Carrega a chave da API da OpenAI a partir das variáveis de ambiente
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // Carrega (se necessário) um prompt de pré-qualificação a partir do .env
@@ -1044,6 +1046,17 @@ console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
 
 const restoreSessions = async () => {
   const sessions = fs.readdirSync(TOKEN_DIR);
+
+  console.log('🔄 Restaurando sessões de:', TOKEN_DIR);
+  // lista apenas diretórios (nome de sessão) e ignora filtros, logs, etc.
+  const entries = fs.readdirSync(TOKEN_DIR, { withFileTypes: true });
+  const sessionNames = entries
+    .filter(e => e.isDirectory())
+    .map(e => e.name)
+    // opcional: remova pastas conhecidas que não sejam sessões
+    .filter(name => !['filters','sessions_logs'].includes(name));
+
+  console.log('→ Pastas candidatas:', sessionNames);
 
   for (const sessionName of sessions) {
     try {
