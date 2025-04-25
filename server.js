@@ -1028,7 +1028,6 @@ const restoreSessions = async () => {
   const sessionNames = entries
     .filter(e => e.isDirectory())
     .map(e => e.name)
-    // opcional: remova pastas conhecidas que não sejam sessões
     .filter(name => !['filters','sessions_logs'].includes(name));
 
   console.log('→ Pastas candidatas:', sessionNames);
