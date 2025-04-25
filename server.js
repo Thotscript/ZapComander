@@ -225,7 +225,7 @@ app.get('/auth/statusfinder', async (req, res) => {
     const sessionName = rows[0].numero;
 
     const [logs] = await pool.query(
-      'SELECT email, numero, ultimo_acesso FROM session_logs WHERE numero = ? ORDER BY ultimo_acesso DESC LIMIT 1',
+      'SELECT email, numero, ultimo_acesso FROM logs_sessao WHERE numero = ? ORDER BY ultimo_acesso DESC LIMIT 1',
       [sessionName]
     );
     if (!logs.length) {
