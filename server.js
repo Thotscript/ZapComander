@@ -210,6 +210,7 @@ app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
   }
 });
 
+// Ajuste: retorna sessao_numero no log para compatibilidade com plugin
 app.get('/auth/statusfinder', async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).json({ error: 'Email é obrigatório.' });
@@ -225,13 +226,14 @@ app.get('/auth/statusfinder', async (req, res) => {
     const sessionName = rows[0].numero;
 
     const [logs] = await pool.query(
-      'SELECT email, sessao_numero, ultimo_acesso FROM logs_sessao WHERE sessao_numero = ? ORDER BY ultimo_acesso DESC LIMIT 1',
+      'SELECT email, numero AS sessao_numero, ultimo_acesso FROM session_logs WHERE numero = ? ORDER BY ultimo_acesso DESC LIMIT 1',
       [sessionName]
     );
     if (!logs.length) {
       return res.status(404).json({ error: 'Nenhum log encontrado.' });
     }
-    return res.json({ sessionName, log: logs[0] });
+    const log = logs[0];
+    return res.json({ sessionName, log });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: 'Erro interno do servidor' });
