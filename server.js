@@ -410,8 +410,7 @@ app.post('/auth/login', async (req, res) => {
     SESSIONS.set(sessionName, {
       client,
       myNumber: null,
-      email,
-      profile_name: null,
+      email
     });
 
     client.onStateChange(async (state) => {
@@ -430,9 +429,6 @@ app.post('/auth/login', async (req, res) => {
           const myNumber = await client.getWid();
           const session = SESSIONS.get(sessionName);
           session.myNumber = myNumber;
-
-
-          console.log(`Sessão ${sessionName} e profile_name: ${profile_name}`);
 
           const sessionToken = await client.getSessionTokenBrowser();
           await myTokenStore.setToken(sessionName, sessionToken); 
