@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "wpptalk-assist",
+  "private_key_id": "2ed1a7fa5b2a9eea8512cf95c4071e510b76b0ea",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQClAw7CEIXgXzfA\nYLIu5H4FQkSzs3aWpYEjy4HREquHgWvgJq/5+t67k1IBX6lCSnYaweAsNzxejhWv\nsIkxLZXp/YUKqDkqOw2t7ROXBz/yShAp9oVi9SXihREHzooZiJD8x7RYzY33JdOx\nQU+v+j2njvE9/EZF4hA8z1sxgdTf7Udsk7xBE1e2ROfjqL/LkMLWRL8tnVgA5sxm\nT3e7S3N8yCpJLSuJc26wC9Dq4UdqXCeMKS0brHKaaorq+4EC+2jRehzYPVD9I8La\nz11ogkI+slAlU9aWy5xSXVLss7sUZxDqYLIOo+3K1csagww/U1f5c3MgfOzeM2fa\n4XZuR4PTAgMBAAECggEABTBGl1sDicMWfWq0EWURyZRvBu30wCUhVnYwir1gRUWQ\nQNuYV4SIMBC838T2G3dY7M12nY8V9iWfQisLgN2II/PpFN4YDoLU9lazcbbmJOfu\n8krXvP1XJ600d/DfscmCQLT+oZOJ9tnHJQD7rTLVVLBoV6EfKMbSk40l01H4SMX8\nfLrspW+PtC72VY4idq9z2eRL3XmqK1GGGiOBe/F5Wogh25dg1Dj4K/PsBxWKB+++\nDQd95Jbki92Br4j0mc3q8DuPz1UlYGrBCG7t89NAKfirMUk1UyNTgqN9pS9FEVAM\nnTx/8yD9iiFkTCY4otLMLNK8Mw1KlMof1q+Ssa6GMQKBgQDS+spOTQZmRwB3xecb\n0qw1RtFH2Vy5A7jBUrHf4FDuDSStEJsnspk5fddahSuD/vsYAiuCxBE/V8oayF0e\nTDWOUWHMLA0HLhLpfcXKiO/rHAzTFGhWDjf+wawRaD/52/4vfMOnmilh9tLtd/S8\nGL10O7nYVrBbd4qEg6MiS9lKAwKBgQDIOS8pBF/lfftHczOlLoH5KVEq/BTFbs3W\nnIP8pTaxk+wEhrADITNQNiztq2TOsxuTxh51IL6jAY1Xii4Q/N6tCOsqqjvrSLQe\nbomcsLLT0bRzlQHz9CrL9H0uzJrXbuPVkf+H4AT/mAuJQ9tsZK/sKq8zf4oRj1/I\n0+yoFMed8QKBgDZr3I1wDuuI+xTqJqAlqqgfeVJoPiO3UwwDEcDm8tlE6KX/t5X4\n2s9ap5dA7KWiuxBJVwHnI2/MbGSWNHbhP5tTYL+yyTWF6/jwqXmB8ykZVjGIfRVd\nm5IKUSE4W/BOj/Wd4DY2bOBJM8VvgOCYHR6DXX/xdJJTdpaSAh2RpR4TAoGBAJ78\nQUVZkugApDG0+TJVfqEhPLFcHwYymMGr4GYRrh9NbOCfLk4d48fybLSAHvi+Ycxy\nSacJzDZVOi1jrHaSxCIz7cAgEpoeTd/IN/8yk5z8bERG8pkKrZzr0ycBEoa0J7dj\nSbtTl8R4r9hcCHTGcqadsia7RB/zb8Rg+w7wCR2RAoGABKhdHH6d41rWy9CIQKtH\nkdbbOuwrWDgWBm2jPjX1ymOiB4Uaf77GMaiUvbrf25fiQHT13g7RHtO6KwKuzEys\nVDJ830ddVrjk4UI6/Rym51ffIniQG60f+DcOEnWSe9i0mQihIZJZUeit/H/QQaOy\nLASEisw9Wqsd4SZ5G6SHIjQ=\n-----END PRIVATE KEY-----\n",
+  "client_email": "desenvolvimento@wpptalk-assist.iam.gserviceaccount.com",
+  "client_id": "100773051748283511033",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/desenvolvimento%40wpptalk-assist.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

@@ -36,6 +36,8 @@ import { criarOuIgnorarSessao } from './db/sessions.js';
 // Função para salvar logs de sessões no banco de dados
 import { saveSessionLog } from './db/logs.js';
 
+import {criarEvento} from './Google-Agenda/calendar.js'
+
 
 // Converte a URL do módulo atual em um caminho de arquivo (necessário em ES Modules)
 const __filename = fileURLToPath(import.meta.url);
@@ -960,67 +962,107 @@ async function processAudio(sessionName, message) {
 
 //PROCESSAR TEXTO RECEBIDO - BOT
 
+// Controle de sessões de criação de eventos
+const EVENT_CREATION_SESSIONS = new Map();
+
 async function processText(sessionName, message, email) {
+  try {
+    const session = SESSIONS.get(sessionName);
+    if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
-    try {
+    const { client, myNumber } = session;
+    if (!myNumber) {
+      console.log('[processText] Número da sessão não definido. Abortando.');
+      return;
+    }
 
-        const session = SESSIONS.get(sessionName);
-        if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
-        
-        const { client, myNumber } = session;
-        if (!myNumber) {
-            console.log('[processText] Número da sessão não definido. Abortando.');
-            return;
-        }
+    if (message.from === myNumber) return; // Ignora mensagens do próprio bot
 
-        // Ignora mensagens do próprio bot para evitar loop
-        if (message.from === myNumber) {
-            return;
-        }
+    const text = message.body?.trim();
+    if (!text) return;
 
-        const text = message.body?.trim();
-        if (!text) {
-            return;
-        }
+    console.log(`[processText] Mensagem recebida de ${message.from}: "${text}"`);
 
-        console.log(`[processText] Mensagem recebida de ${message.from}: "${text}"`);
+    const lowerText = text.toLowerCase();
+    const convoKey = `${sessionName}:${message.from}`;
 
-        const lowerText = text.toLowerCase();
-        const convoKey = `${sessionName}:${message.from}`; // Usa message.from como identificador do chat
-        const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
-        const hasHistory = CONVERSATIONS.has(convoKey);
+    // 📍 Verifica se já está num fluxo de criação de evento
+    if (EVENT_CREATION_SESSIONS.has(convoKey)) {
+      const eventSession = EVENT_CREATION_SESSIONS.get(convoKey);
 
-        if (!containsTrigger && !hasHistory) {
-            return;
-        }
+      // Preenche os dados passo a passo
+      if (!eventSession.dia) {
+        eventSession.dia = text;
+        await client.sendText(message.from, '🕓 Informe a hora do evento (ex: 15:30):');
+        return;
+      }
 
-        // Inicializa histórico se necessário
-        if (!CONVERSATIONS.has(convoKey)) {
-            CONVERSATIONS.set(convoKey, [
-                { 
-                    role: "system", 
-                    content: prompt_qualification
-        }
-    ]);
-}
+      if (!eventSession.hora) {
+        eventSession.hora = text;
+        await client.sendText(message.from, '📝 Informe o título do evento:');
+        return;
+      }
 
-const history = CONVERSATIONS.get(convoKey);
-history.push({ role: "user", content: text });
+      if (!eventSession.titulo) {
+        eventSession.titulo = text;
+        await client.sendText(message.from, '⏱️ Informe a duração do evento em minutos (ex: 60):');
+        return;
+      }
 
-const resp = await openai.chat.completions.create({
-    model: ASSISTANT_MODEL,
-    messages: history,
-    temperature: 0.7
-});
+      if (!eventSession.duracao) {
+        const duracaoMinutos = parseInt(text);
+        eventSession.duracao = isNaN(duracaoMinutos) ? 60 : duracaoMinutos; // padrão 60 se inválido
+      }
 
-const reply = resp.choices[0].message.content.trim();
+      // ✅ Se chegou aqui, temos todos os dados → cria o evento
+      try {
+        await criarEvento(eventSession.dia, eventSession.hora, eventSession.titulo, eventSession.duracao);
+        await client.sendText(message.from, '✅ Evento criado com sucesso na sua agenda!');
+      } catch (err) {
+        await client.sendText(message.from, '❌ Houve um erro ao criar o evento. Tente novamente mais tarde.');
+        console.error('[processText] Erro ao criar evento:', err.message);
+      }
 
-history.push({ role: "assistant", content: reply });
-await client.sendText(message.from, reply); // Usa message.from para resposta
+      EVENT_CREATION_SESSIONS.delete(convoKey); // finaliza sessão
+      return;
+    }
 
-} catch (err) {
-console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
-}
+    // 🔥 Novo fluxo: Se detectou @broker evento
+    if (lowerText.includes('@broker') && lowerText.includes('evento')) {
+      EVENT_CREATION_SESSIONS.set(convoKey, {}); // inicia uma nova "sessão de criação"
+      await client.sendText(message.from, '📅 Informe o dia do evento (formato: YYYY-MM-DD):');
+      return;
+    }
+
+    // 🔥 Se não for criação de evento, segue fluxo normal (TRIGGER + OpenAI)
+    const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
+    const hasHistory = CONVERSATIONS.has(convoKey);
+
+    if (!containsTrigger && !hasHistory) return;
+
+    if (!CONVERSATIONS.has(convoKey)) {
+      CONVERSATIONS.set(convoKey, [
+        { role: "system", content: prompt_qualification }
+      ]);
+    }
+
+    const history = CONVERSATIONS.get(convoKey);
+    history.push({ role: "user", content: text });
+
+    const resp = await openai.chat.completions.create({
+      model: ASSISTANT_MODEL,
+      messages: history,
+      temperature: 0.7
+    });
+
+    const reply = resp.choices[0].message.content.trim();
+    history.push({ role: "assistant", content: reply });
+
+    await client.sendText(message.from, reply);
+
+  } catch (err) {
+    console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
+  }
 }
 
 // --------------------------------------------------------------------------------------------------------

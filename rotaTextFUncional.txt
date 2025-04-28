@@ -1,0 +1,62 @@
+async function processText(sessionName, message, email) {
+
+    try {
+
+        const session = SESSIONS.get(sessionName);
+        if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
+        
+        const { client, myNumber } = session;
+        if (!myNumber) {
+            console.log('[processText] Número da sessão não definido. Abortando.');
+            return;
+        }
+
+        // Ignora mensagens do próprio bot para evitar loop
+        if (message.from === myNumber) {
+            return;
+        }
+
+        const text = message.body?.trim();
+        if (!text) {
+            return;
+        }
+
+        console.log(`[processText] Mensagem recebida de ${message.from}: "${text}"`);
+
+        const lowerText = text.toLowerCase();
+        const convoKey = `${sessionName}:${message.from}`; // Usa message.from como identificador do chat
+        const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
+        const hasHistory = CONVERSATIONS.has(convoKey);
+
+        if (!containsTrigger && !hasHistory) {
+            return;
+        }
+
+        // Inicializa histórico se necessário
+        if (!CONVERSATIONS.has(convoKey)) {
+            CONVERSATIONS.set(convoKey, [
+                { 
+                    role: "system", 
+                    content: prompt_qualification
+        }
+    ]);
+}
+
+const history = CONVERSATIONS.get(convoKey);
+history.push({ role: "user", content: text });
+
+const resp = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: history,
+    temperature: 0.7
+});
+
+const reply = resp.choices[0].message.content.trim();
+
+history.push({ role: "assistant", content: reply });
+await client.sendText(message.from, reply); // Usa message.from para resposta
+
+} catch (err) {
+console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
+}
+}
