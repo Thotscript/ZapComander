@@ -135,21 +135,6 @@ export function loadAllSessionEmails() {
 }
 
 
-function loadFiltersFromFile() {
-  if (fs.existsSync(FILTERS_FILE)) {
-    const raw = fs.readFileSync(FILTERS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    for (const sessionName in data) {
-      SESSION_FILTERS.set(sessionName, data[sessionName]);
-    }
-    console.log('Filtros carregados do arquivo.');
-  }
-}
-
-
-loadFiltersFromFile();
-
-
 // ===== Rotas e lógica de sessão =====
 
 app.get('/auth/preference-numbers', async (req, res) => {
@@ -464,6 +449,7 @@ app.post('/auth/login', async (req, res) => {
 
         if (message.type === 'chat') {
           await processText(sessionName, message);
+          await sendSeen(message.id);
         }
 
       } catch (error) {
@@ -515,26 +501,31 @@ async function loadFiltersFromDB(email, sessionName) {
 }
 
 
-// 3) Função para salvar/atualizar filtros no MySQL, agora por email + sessaoNumero:
 async function saveFiltersToDB(email, sessaoNumero, filters) {
+  // Não incluir blockedNumbers neste fluxo
+  const { blockedNumbers, ...otherFilters } = filters;
+  
   const conn = await pool.getConnection();
   try {
-    // 1) Limpa todos os filtros antigos deste email+sessão
+    // 1) Limpa todos os filtros antigos (exceto blockedNumbers)
     await conn.execute(
-      'DELETE FROM filtros WHERE email = ? AND sessao_numero = ?',
+      `DELETE FROM filtros 
+         WHERE email = ? 
+           AND sessao_numero = ? 
+           AND filtro_nome <> 'blockedNumbers'`,
       [email, sessaoNumero]
     );
 
-    // 2) Prepara as linhas para inserção
-    const rows = Object.entries(filters).map(([nome, valor]) => {
+    // 2) Prepara as linhas para inserção só de otherFilters
+    const rows = Object.entries(otherFilters).map(([nome, valor]) => {
       let v;
-      if (typeof valor === 'string')         v = valor;
-      else if (typeof valor === 'boolean')   v = valor ? '1' : '0';
-      else                                   v = JSON.stringify(valor);
+      if (typeof valor === 'string')       v = valor;
+      else if (typeof valor === 'boolean') v = valor ? '1' : '0';
+      else                                 v = JSON.stringify(valor);
       return [ email, sessaoNumero, nome, v ];
     });
 
-    // 3) Bulk-insert se tiver ao menos um filtro
+    // 3) Bulk-insert se tiver ao menos um filtro (exceto blockedNumbers)
     if (rows.length > 0) {
       await conn.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
@@ -545,6 +536,7 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
     conn.release();
   }
 }
+
 
 // -----------------------------------------------------------------------------------------
 
@@ -557,7 +549,7 @@ app.post('/auth/filtro', async (req, res) => {
     ignoreGroups,
     blockedNumbers,
     summarizeMessages,
-    longmessage
+    longmessage,
   } = req.body;
 
   if (!sessionName) {
@@ -568,39 +560,48 @@ app.post('/auth/filtro', async (req, res) => {
     return res.status(400).json({ message: 'Email é obrigatório para salvar no banco de dados.' });
   }
 
-  // Verificar se a sessão com o sessionName existe
-  const sessionExists = SESSIONS.has(sessionName);
+  // Se veio blockedNumbers, trate só ele:
+  if (blockedNumbers !== undefined) {
+    const novos = Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers];
+    try {
+      // remove apenas blockedNumbers no banco
+      await pool.execute(
+        'DELETE FROM filtros WHERE email = ? AND sessao_numero = ? AND filtro_nome = ?',
+        [email, sessionName, 'blockedNumbers']
+      );
+      // insere só os novos
+      const rows = novos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
+      await pool.query(
+        'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
+        [rows]
+      );
+      // atualiza memória
+      const curr = SESSION_FILTERS.get(sessionName) || {};
+      SESSION_FILTERS.set(sessionName, { ...curr, blockedNumbers: novos });
 
-  if (!sessionExists) {
-    return res.status(404).json({ message: 'Sessão com este sessionName não encontrada.' });
+      return res.json({ message: 'blockedNumbers processado isoladamente.', blockedNumbers: novos });
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({ message: 'Erro ao processar blockedNumbers.' });
+    }
   }
 
+  // Caso não tenha blockedNumbers, executa o fluxo normal de outros filtros:
   const currentFilters = SESSION_FILTERS.get(sessionName) || {};
-
   const updatedFilters = {
     ...currentFilters,
-    ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
+    ...(ignoreGroups    !== undefined && { ignoreGroups:    !!ignoreGroups }),
     ...(summarizeMessages !== undefined && { summarizeMessages: !!summarizeMessages }),
-    ...(longmessage !== undefined && { longmessage }),
-    ...(blockedNumbers !== undefined ? {
-      blockedNumbers: Array.from(new Set([
-        ...(Array.isArray(currentFilters.blockedNumbers) ? currentFilters.blockedNumbers : []),
-        ...(Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers])
-      ]))
-    } : {})
+    ...(longmessage      !== undefined && { longmessage:      !!longmessage }),
   };
-
-  // Atualizar os filtros da sessão
   SESSION_FILTERS.set(sessionName, updatedFilters);
-
   try {
     await saveFiltersToDB(email, sessionName, updatedFilters);
+    return res.json({ message: `Filtros gerais atualizados.` });
   } catch (err) {
-    console.error('Erro ao salvar filtros no MySQL:', err);
-    return res.status(500).json({ message: 'Não foi possível salvar filtros no banco.' });
+    console.error(err);
+    return res.status(500).json({ message: 'Não foi possível salvar filtros gerais.' });
   }
-
-  res.json({ message: `Filtros atualizados para a sessão ${sessionName} do usuário ${email}.` });
 });
 
 
