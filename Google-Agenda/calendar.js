@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Caminho para sua chave JSON
-const keyFile = path.join(__dirname, 'Credentials_Google','wpptalk-assist-2ed1a7fa5b2a.json'); // ajuste aqui o nome correto
+const keyFile = path.join(__dirname, 'wpptalk-assist-2ed1a7fa5b2a.json'); // ajuste aqui o nome correto
 
 // Autenticação
 const auth = new google.auth.GoogleAuth({
