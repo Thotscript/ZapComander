@@ -562,27 +562,34 @@ app.post('/auth/filtro', async (req, res) => {
 
   // Se veio blockedNumbers, trate só ele:
   if (blockedNumbers !== undefined) {
-    const novos = Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers];
+    // Normalize para array de strings, mantendo exatamente como veio
+    const novos = Array.isArray(blockedNumbers)
+      ? blockedNumbers.map(String)
+      : [ String(blockedNumbers) ];
+
     try {
-      // remove apenas blockedNumbers no banco
+      // 1) Deleta somente as linhas de blockedNumbers
       await pool.execute(
         'DELETE FROM filtros WHERE email = ? AND sessao_numero = ? AND filtro_nome = ?',
         [email, sessionName, 'blockedNumbers']
       );
-      // insere só os novos
+      // 2) Insere apenas os valores recebidos, sem alteração
       const rows = novos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
       await pool.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
         [rows]
       );
-      // atualiza memória
+      // 3) Atualiza cache em memória
       const curr = SESSION_FILTERS.get(sessionName) || {};
       SESSION_FILTERS.set(sessionName, { ...curr, blockedNumbers: novos });
 
-      return res.json({ message: 'blockedNumbers processado isoladamente.', blockedNumbers: novos });
+      return res.json({
+        message: 'blockedNumbers atualizado como strings literais.',
+        blockedNumbers: novos
+      });
     } catch (err) {
       console.error(err);
-      return res.status(500).json({ message: 'Erro ao processar blockedNumbers.' });
+      return res.status(500).json({ message: 'Erro ao atualizar blockedNumbers.' });
     }
   }
 
