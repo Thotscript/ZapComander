@@ -212,58 +212,40 @@ app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
   const { email, sessionName, remove } = req.body;
 
   if (!email || !sessionName || !remove) {
-    return res.status(400).json({ message: 'Parâmetros email, sessionName e remove são obrigatórios' });
+    return res
+      .status(400)
+      .json({ message: 'Parâmetros email, sessionName e remove são obrigatórios' });
   }
 
   try {
-    // 1) busca o filtro blockedNumbers
-    const [rows] = await pool.query(
-      `SELECT valor 
-         FROM filtros 
-        WHERE email = ? 
-          AND sessao_numero = ? 
-          AND filtro_nome = 'blockedNumbers'`,
-      [email, sessionName]
+    // Apaga diretamente a linha cujo valor casa com o número a remover
+    const [result] = await pool.execute(
+      `DELETE FROM filtros
+         WHERE email = ?
+           AND sessao_numero = ?
+           AND filtro_nome = 'blockedNumbers'
+           AND valor = ?`,
+      [email, sessionName, String(remove)]
     );
 
-    if (rows.length === 0) {
-      // não havia lista — nada a remover
-      return res.status(404).json({ message: 'Nenhum filtro blockedNumbers encontrado' });
+    if (result.affectedRows === 0) {
+      return res
+        .status(404)
+        .json({ message: 'Número não encontrado na lista de blockedNumbers' });
     }
 
-    // 2) parse e remove do array
-    let list;
-    try {
-      list = JSON.parse(rows[0].valor);
-      if (!Array.isArray(list)) throw new Error();
-    } catch {
-      return res.status(500).json({ message: 'Formato de blockedNumbers inválido no banco' });
-    }
-
-    const filtered = list.filter(num => num !== remove);
-    // se não mudou, talvez número não estava na lista
-    if (filtered.length === list.length) {
-      return res.status(404).json({ message: 'Número não encontrado na lista' });
-    }
-
-    // 3) atualiza o valor no DB
-    await pool.query(
-      `UPDATE filtros 
-          SET valor = ? 
-        WHERE email = ? 
-          AND sessao_numero = ? 
-          AND filtro_nome = 'blockedNumbers'`,
-      [JSON.stringify(filtered), email, sessionName]
-    );
-
-    // 4) retorna sucesso
-    return res.json({ success: true, removed: remove, current: filtered });
-
+    return res.json({
+      success: true,
+      message: `Número ${remove} removido com sucesso.`,
+    });
   } catch (err) {
-    console.error('Erro ao remover blockedNumbers:', err);
-    return res.status(500).json({ message: 'Erro interno do servidor' });
+    console.error('Erro ao remover blockedNumber:', err);
+    return res
+      .status(500)
+      .json({ message: 'Erro interno ao remover número bloqueado' });
   }
 });
+
 
 
 // -----------------------------------------------------------------------------
