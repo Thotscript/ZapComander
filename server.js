@@ -169,7 +169,7 @@ app.get('/auth/preference-numbers', async (req, res) => {
 // ------------------------------------------------------------------------------
 
 app.get('/auth/blocked-numbers', async (req, res) => {
-  const email = req.query.email;
+  const email       = req.query.email;
   const sessionName = req.query.sessionName;
 
   if (!email || !sessionName) {
@@ -179,7 +179,7 @@ app.get('/auth/blocked-numbers', async (req, res) => {
   }
 
   try {
-    // Busca o filtro blockedNumbers na tabela filtros
+    // 1) Busque todas as linhas blockedNumbers
     const [rows] = await pool.query(
       `SELECT valor 
          FROM filtros 
@@ -189,21 +189,11 @@ app.get('/auth/blocked-numbers', async (req, res) => {
       [email, sessionName]
     );
 
-    // Se não encontrou, retorna array vazio
-    let blocked = [];
-    if (rows.length > 0) {
-      // valor está armazenado como JSON string, então fazemos parse
-      try {
-        blocked = JSON.parse(rows[0].valor);
-      } catch (e) {
-        console.warn('Não foi possível fazer parse de valor de blockedNumbers:', rows[0].valor);
-      }
-    }
+    // 2) Extraia o campo `valor` de cada linha em um array
+    const blocked = rows.map(r => r.valor);
 
-    // Monta a chave dinâmica: email+sessao (você pode customizar o separador)
-    const key = `${sessionName}`;
-
-    return res.json({ [key]: blocked });
+    // 3) Retorne usando a chave dinâmica (ou fixe uma)
+    return res.json({ [sessionName]: blocked });
   } catch (err) {
     console.error('Erro ao buscar blockedNumbers:', err);
     return res
@@ -211,6 +201,7 @@ app.get('/auth/blocked-numbers', async (req, res) => {
       .json({ message: 'Erro interno do servidor' });
   }
 });
+
 
 
 
