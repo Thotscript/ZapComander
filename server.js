@@ -502,21 +502,21 @@ async function loadFiltersFromDB(email, sessionName) {
 
 
 async function saveFiltersToDB(email, sessaoNumero, filters) {
-  // Não incluir blockedNumbers neste fluxo
+  // Remove blockedNumbers do objeto antes de tudo
   const { blockedNumbers, ...otherFilters } = filters;
-  
+
   const conn = await pool.getConnection();
   try {
-    // 1) Limpa todos os filtros antigos (exceto blockedNumbers)
+    // Limpa apenas os filtros que NÃO são blockedNumbers
     await conn.execute(
-      `DELETE FROM filtros 
-         WHERE email = ? 
-           AND sessao_numero = ? 
-           AND filtro_nome <> 'blockedNumbers'`,
+      `DELETE FROM filtros
+        WHERE email = ?
+          AND sessao_numero = ?
+          AND filtro_nome <> 'blockedNumbers'`,
       [email, sessaoNumero]
     );
 
-    // 2) Prepara as linhas para inserção só de otherFilters
+    // Prepara as linhas só para otherFilters
     const rows = Object.entries(otherFilters).map(([nome, valor]) => {
       let v;
       if (typeof valor === 'string')       v = valor;
@@ -525,7 +525,6 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
       return [ email, sessaoNumero, nome, v ];
     });
 
-    // 3) Bulk-insert se tiver ao menos um filtro (exceto blockedNumbers)
     if (rows.length > 0) {
       await conn.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
@@ -536,6 +535,7 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
     conn.release();
   }
 }
+
 
 
 // -----------------------------------------------------------------------------------------
