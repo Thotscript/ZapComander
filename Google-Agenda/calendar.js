@@ -44,9 +44,6 @@ export async function criarEvento(dia, hora, titulo, duracaoEmMinutos = 60) {
         dateTime: endDateTime.toISOString(),
         timeZone: 'America/Sao_Paulo',
       },
-      attendees: [
-        { email: 'jurandirs169@gmail.com' },
-      ],
     };
 
     const response = await calendar.events.insert({
