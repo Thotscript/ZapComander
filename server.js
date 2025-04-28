@@ -553,6 +553,25 @@ async function saveFiltersToDB(email, sessaoNumero, filters) {
 
 //ROTA FILTROS
 
+async function loadBlockedNumbersFromDB(email, sessionName) {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.execute(
+      `SELECT valor 
+         FROM filtros 
+        WHERE email = ? 
+          AND sessao_numero = ? 
+          AND filtro_nome = 'blockedNumbers'`,
+      [email, sessionName]
+    );
+    // rows é um array de objetos { valor: '5511...' }
+    return rows.map(r => r.valor);
+  } finally {
+    conn.release();
+  }
+}
+
+
 app.post('/auth/filtro', async (req, res) => {
   const {
     sessionName,
@@ -571,36 +590,42 @@ app.post('/auth/filtro', async (req, res) => {
     return res.status(400).json({ message: 'Email é obrigatório para salvar no banco de dados.' });
   }
 
-  // Se veio blockedNumbers, trate só ele:
   if (blockedNumbers !== undefined) {
-    // Normalize para array de strings, mantendo exatamente como veio
-    const novos = Array.isArray(blockedNumbers)
-      ? blockedNumbers.map(String)
-      : [ String(blockedNumbers) ];
+    // Normalize para array de strings
+    const novos = (Array.isArray(blockedNumbers)
+      ? blockedNumbers
+      : [blockedNumbers]
+    ).map(String);
 
     try {
-      // 1) Deleta somente as linhas de blockedNumbers
-      await pool.execute(
-        'DELETE FROM filtros WHERE email = ? AND sessao_numero = ? AND filtro_nome = ?',
-        [email, sessionName, 'blockedNumbers']
-      );
-      // 2) Insere apenas os valores recebidos, sem alteração
-      const rows = novos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
+      // 1) Leia os já existentes direto do banco
+      const existentes = await loadBlockedNumbersFromDB(email, sessionName);
+
+      // 2) Filtre só os que ainda não estão no banco
+      const soNovos = novos.filter(num => !existentes.includes(num));
+      if (soNovos.length === 0) {
+        return res.json({
+          message: 'Nenhum número novo para adicionar.',
+          blockedNumbers: existentes
+        });
+      }
+
+      // 3) Insira apenas os novos
+      const rows = soNovos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
       await pool.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
         [rows]
       );
-      // 3) Atualiza cache em memória
-      const curr = SESSION_FILTERS.get(sessionName) || {};
-      SESSION_FILTERS.set(sessionName, { ...curr, blockedNumbers: novos });
 
+      // 4) Retorne a lista completa
+      const updated = existentes.concat(soNovos);
       return res.json({
-        message: 'blockedNumbers atualizado como strings literais.',
-        blockedNumbers: novos
+        message: 'Novos blockedNumbers adicionados.',
+        blockedNumbers: updated
       });
     } catch (err) {
       console.error(err);
-      return res.status(500).json({ message: 'Erro ao atualizar blockedNumbers.' });
+      return res.status(500).json({ message: 'Erro ao processar blockedNumbers.' });
     }
   }
 
