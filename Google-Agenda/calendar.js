@@ -29,7 +29,7 @@ export async function criarEvento(dia, hora, titulo, duracaoEmMinutos = 60) {
   try {
     const authClient = await auth.getClient();
 
-    const calendarId = 'jurandir@thesalesjourney.io';
+    const calendarId = 'jurandirs169@gmail.com';
 
     const startDateTime = new Date(`${dia}T${hora}:00`);
     const endDateTime = new Date(startDateTime.getTime() + duracaoEmMinutos * 60 * 1000);
@@ -45,7 +45,7 @@ export async function criarEvento(dia, hora, titulo, duracaoEmMinutos = 60) {
         timeZone: 'America/Sao_Paulo',
       },
       attendees: [
-        { email: 'jurandir@thesalesjourney.io' },
+        { email: 'jurandirs169@gmail.com' },
       ],
     };
 
