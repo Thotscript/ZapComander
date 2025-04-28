@@ -481,14 +481,24 @@ async function loadFiltersFromDB(email, sessionName) {
     for (const row of rows) {
       let value = row.valor;
 
-      // Tenta interpretar o valor corretamente
+      if (row.filtro_nome === 'blockedNumbers') {
+        // Caso especial: mantém array de strings
+        // Se quiser um array, você pode agrupar múltiplas linhas:
+        if (!filters.blockedNumbers) {
+          filters.blockedNumbers = [];
+        }
+        filters.blockedNumbers.push(value);
+        continue;
+      }
+
+      // Para os demais filtros:
       if (value === '1' || value === '0') {
-        value = value === '1'; // booleano
+        value = (value === '1');
       } else {
         try {
-          value = JSON.parse(value); // tenta converter de JSON (para arrays, objetos, etc.)
+          value = JSON.parse(value);
         } catch {
-          // se não for JSON válido, mantém como string
+          // mantém como string quando não for JSON válido
         }
       }
       filters[row.filtro_nome] = value;
@@ -499,6 +509,7 @@ async function loadFiltersFromDB(email, sessionName) {
     conn.release();
   }
 }
+
 
 
 async function saveFiltersToDB(email, sessaoNumero, filters) {
