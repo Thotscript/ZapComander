@@ -879,17 +879,21 @@ async function processAudio(sessionName, message) {
         let recipient = '';
         
         // 1. Define o idioma base se a tradução estiver ativada
+// 1. Define o idioma base se a tradução estiver ativada
         let languagePrompt = '';
         if (filtros.translation_enabled) {
           switch (filtros.language) {
-            case '1':
+            case 'pt-br':
               languagePrompt = 'traduzir qualquer mensagem para português';
               break;
-            case '2':
+            case 'en':
               languagePrompt = 'traduzir qualquer mensagem para inglês';
               break;
-            case '3':
+            case 'es':
               languagePrompt = 'traduzir qualquer mensagem para espanhol';
+              break;
+            default:
+              console.warn('Idioma não reconhecido para tradução:', filtros.language);
               break;
           }
         }
