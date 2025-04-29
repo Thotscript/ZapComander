@@ -261,28 +261,33 @@ app.get('/auth/statusfinder', async (req, res) => {
   }
 
   try {
-    // Consulta os números associados ao email na tabela `sessoes`
+    // Busca o último número e acesso baseado no último timestamp
     const [rows] = await pool.query(
-      'SELECT numero FROM sessoes WHERE usuario_email = ?',
+      `SELECT sessao_numero, ultimo_acesso
+       FROM logs_sessao
+       WHERE usuario_email = ?
+       ORDER BY ultimo_acesso DESC
+       LIMIT 1`,
       [email]
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Nenhum número encontrado para este email.' });
+      return res.status(404).json({ error: 'Nenhum registro encontrado para este email.' });
     }
 
-    const numeros = rows.map(row => row.numero);
+    const { sessao_numero, ultimo_acesso } = rows[0];
 
     return res.json({
       email,
-      numeros,
-      quantidade: numeros.length
+      ultimo_numero: sessao_numero,
+      ultimo_acesso
     });
   } catch (err) {
-    console.error(`❌ Erro ao buscar números no banco para o email ${email}:`, err);
+    console.error(`❌ Erro ao buscar sessão para o email ${email}:`, err);
     return res.status(500).json({ error: 'Erro ao acessar o banco de dados.' });
   }
 });
+
 
 
 
