@@ -254,35 +254,36 @@ app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
 
 
 
-app.get('/auth/statusfinder', (req, res) => {
+app.get('/auth/statusfinder', async (req, res) => {
   const email = req.query.email;
   if (!email) {
     return res.status(400).json({ error: 'Email é obrigatório.' });
   }
 
-  const sessionEntry = [...SESSIONS.entries()].find(
-    ([, sessionObj]) => sessionObj.email === email
-  );
-  if (!sessionEntry) {
-    return res.status(404).json({ error: 'Sessão ativa não encontrada para este email.' });
-  }
-  const [sessionName] = sessionEntry;
-
-  const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
-  if (!fs.existsSync(logFilePath)) {
-    return res.status(404).json({ error: 'Arquivo de log não encontrado. Nenhuma mensagem de áudio processada ainda.' });
-  }
-
-
   try {
-    const raw = fs.readFileSync(logFilePath, 'utf8');
-    const logData = JSON.parse(raw);
-    return res.json({ sessionName, log: logData });
+    // Consulta os números associados ao email na tabela `sessoes`
+    const [rows] = await pool.query(
+      'SELECT numero FROM sessoes WHERE usuario_email = ?',
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Nenhum número encontrado para este email.' });
+    }
+
+    const numeros = rows.map(row => row.numero);
+
+    return res.json({
+      email,
+      numeros,
+      quantidade: numeros.length
+    });
   } catch (err) {
-    console.error(`❌ Erro ao ler log de ${sessionName}:`, err);
-    return res.status(500).json({ error: 'Falha ao ler o arquivo de log.' });
+    console.error(`❌ Erro ao buscar números no banco para o email ${email}:`, err);
+    return res.status(500).json({ error: 'Erro ao acessar o banco de dados.' });
   }
 });
+
 
 
 // ----------------------------------------------------------------------------------
