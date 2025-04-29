@@ -876,27 +876,42 @@ async function processAudio(sessionName, message) {
 
         const transcricao = response.data.text;
 
-        let prompt_base = transcricao;
-        let prompt_use = "";
+        let prompt_base = '';
+        let prompt_use = transcricao;
         let recipient = '';
-
+        
+        // 1. Define o idioma base se a tradução estiver ativada
+        let languagePrompt = '';
+        if (filtros.translation_enabled) {
+          switch (filtros.language) {
+            case '1':
+              languagePrompt = 'traduzir qualquer mensagem para português';
+              break;
+            case '2':
+              languagePrompt = 'traduzir qualquer mensagem para inglês';
+              break;
+            case '3':
+              languagePrompt = 'traduzir qualquer mensagem para espanhol';
+              break;
+          }
+        }
+        
+        // 2. Monta a estrutura do prompt com base nos outros filtros
         if (filtros.summarizeMessages && filtros.longmessage) {
-          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
-          prompt_use = transcricao;
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
         
         } else if (filtros.summarizeMessages) {
-          prompt_base = prompt_transcricao;
-          prompt_use = transcricao;
+          // Usa prompt específico (caso tenha sido definido em outro lugar, ex: variável `prompt_transcricao`)
+          prompt_base = typeof prompt_transcricao !== 'undefined' ? prompt_transcricao : `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
         
         } else if (filtros.longmessage) {
-          prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
-          prompt_use = transcricao;
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
         
         } else {
-          // fallback (sem filtros)
-          prompt_base = 'Você é um assistente de IA que corrige a gramática e de textos. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
-          prompt_use = transcricao;
+          // Fallback (sem filtros extras)
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de textos. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
         }
+        
         
         if (filtros.sendForward){ 
           recipient = myNumber;
