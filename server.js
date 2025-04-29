@@ -560,6 +560,9 @@ app.post('/auth/filtro', async (req, res) => {
     blockedNumbers,
     summarizeMessages,
     longmessage,
+    sendForward,
+    language,
+    translation_enabled
   } = req.body;
 
   if (!sessionName) {
@@ -613,6 +616,9 @@ app.post('/auth/filtro', async (req, res) => {
   const currentFilters = SESSION_FILTERS.get(sessionName) || {};
   const updatedFilters = {
     ...currentFilters,
+    ...(language    !== undefined && { language:    !!language }),
+    ...(translation_enabled    !== undefined && { translation_enabled:    !!translation_enabled}),
+    ...(sendForward    !== undefined && { sendForward:    !!sendForward }),
     ...(ignoreGroups    !== undefined && { ignoreGroups:    !!ignoreGroups }),
     ...(summarizeMessages !== undefined && { summarizeMessages: !!summarizeMessages }),
     ...(longmessage      !== undefined && { longmessage:      !!longmessage }),
@@ -872,6 +878,7 @@ async function processAudio(sessionName, message) {
 
         let prompt_base = transcricao;
         let prompt_use = "";
+        let recipient = '';
 
         if (filtros.summarizeMessages && filtros.longmessage) {
           prompt_base = 'Você é um assistente de IA que deve corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.';
@@ -891,6 +898,11 @@ async function processAudio(sessionName, message) {
           prompt_use = transcricao;
         }
         
+        if (filtros.sendForward){ 
+          recipient = myNumber;
+        } else {
+          recipient = message.from;
+        }
 
         // Chamada para resumir a transcrição no GPT-4o-mini
         const response_gpt = await axios.post(
@@ -919,7 +931,7 @@ async function processAudio(sessionName, message) {
         const resumo = response_gpt.data.choices[0].message.content;
         const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n${resumo}`;
         await new Promise(resolve => setTimeout(resolve, 10));
-        await client.sendText(myNumber, resumo, {
+        await client.sendText(recipient, resumo, {
             quotedMsg:message.id
         });
 
