@@ -574,17 +574,14 @@ app.post('/auth/filtro', async (req, res) => {
   }
 
   if (blockedNumbers !== undefined) {
-    // Normalize para array de strings
+    // Fluxo especial para blockedNumbers
     const novos = (Array.isArray(blockedNumbers)
       ? blockedNumbers
       : [blockedNumbers]
     ).map(String);
 
     try {
-      // 1) Leia os já existentes direto do banco
       const existentes = await loadBlockedNumbersFromDB(email, sessionName);
-
-      // 2) Filtre só os que ainda não estão no banco
       const soNovos = novos.filter(num => !existentes.includes(num));
       if (soNovos.length === 0) {
         return res.json({
@@ -593,14 +590,12 @@ app.post('/auth/filtro', async (req, res) => {
         });
       }
 
-      // 3) Insira apenas os novos
       const rows = soNovos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
       await pool.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
         [rows]
       );
 
-      // 4) Retorne a lista completa
       const updated = existentes.concat(soNovos);
       return res.json({
         message: 'Novos blockedNumbers adicionados.',
@@ -612,26 +607,29 @@ app.post('/auth/filtro', async (req, res) => {
     }
   }
 
-  // Caso não tenha blockedNumbers, executa o fluxo normal de outros filtros:
+  // Se chegou aqui, é porque não era blockedNumbers
   const currentFilters = SESSION_FILTERS.get(sessionName) || {};
   const updatedFilters = {
     ...currentFilters,
-    ...(language    !== undefined && { language:    !!language }),
-    ...(translation_enabled    !== undefined && { translation_enabled:    !!translation_enabled}),
-    ...(sendForward    !== undefined && { sendForward:    !!sendForward }),
-    ...(ignoreGroups    !== undefined && { ignoreGroups:    !!ignoreGroups }),
+    ...(language !== undefined && { language }),
+    ...(translation_enabled !== undefined && { translation_enabled }),
+    ...(sendForward !== undefined && { sendForward: !!sendForward }),
+    ...(ignoreGroups !== undefined && { ignoreGroups: !!ignoreGroups }),
     ...(summarizeMessages !== undefined && { summarizeMessages: !!summarizeMessages }),
-    ...(longmessage      !== undefined && { longmessage:      !!longmessage }),
+    ...(longmessage !== undefined && { longmessage: !!longmessage }),
   };
+
   SESSION_FILTERS.set(sessionName, updatedFilters);
+
   try {
     await saveFiltersToDB(email, sessionName, updatedFilters);
-    return res.json({ message: `Filtros gerais atualizados.` });
+    return res.json({ message: `Filtros atualizados com sucesso.` });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ message: 'Não foi possível salvar filtros gerais.' });
+    return res.status(500).json({ message: 'Não foi possível salvar filtros.' });
   }
 });
+
 
 
 // -------------------------------------------------------------------------------------------------
