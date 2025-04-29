@@ -71,7 +71,7 @@ const SESSIONS = new Map();
 
 
 // caminhos absolutos centralizados
-const TOKEN_DIR        = '/root/wpptalk_server/tokens';
+const TOKEN_DIR        = '/root/    /tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
@@ -139,7 +139,7 @@ export function loadAllSessionEmails() {
 
 // ===== Rotas e lógica de sessão =====
 
-app.get('/auth/preference-numbers', async (req, res) => {
+app.get('/auth/preference-nudmbers', async (req, res) => {
   
   const email = req.query.email;
 
@@ -976,7 +976,7 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    if (message.from === myNumber) return; // Ignora mensagens do próprio bot
+    if (message.from === myNumber) return;
 
     const text = message.body?.trim();
     if (!text) return;
@@ -986,55 +986,35 @@ async function processText(sessionName, message, email) {
     const lowerText = text.toLowerCase();
     const convoKey = `${sessionName}:${message.from}`;
 
-    // 📍 Verifica se já está num fluxo de criação de evento
-    if (EVENT_CREATION_SESSIONS.has(convoKey)) {
-      const eventSession = EVENT_CREATION_SESSIONS.get(convoKey);
-
-      // Preenche os dados passo a passo
-      if (!eventSession.dia) {
-        eventSession.dia = text;
-        await client.sendText(message.from, '🕓 Informe a hora do evento (ex: 15:30):');
-        return;
-      }
-
-      if (!eventSession.hora) {
-        eventSession.hora = text;
-        await client.sendText(message.from, '📝 Informe o título do evento:');
-        return;
-      }
-
-      if (!eventSession.titulo) {
-        eventSession.titulo = text;
-        await client.sendText(message.from, '⏱️ Informe a duração do evento em minutos (ex: 60):');
-        return;
-      }
-
-      if (!eventSession.duracao) {
-        const duracaoMinutos = parseInt(text);
-        eventSession.duracao = isNaN(duracaoMinutos) ? 60 : duracaoMinutos; // padrão 60 se inválido
-      }
-
-      // ✅ Se chegou aqui, temos todos os dados → cria o evento
-      try {
-        await criarEvento(eventSession.dia, eventSession.hora, eventSession.titulo, eventSession.duracao);
-        await client.sendText(message.from, '✅ Evento criado com sucesso na sua agenda!');
-      } catch (err) {
-        await client.sendText(message.from, '❌ Houve um erro ao criar o evento. Tente novamente mais tarde.');
-        console.error('[processText] Erro ao criar evento:', err.message);
-      }
-
-      EVENT_CREATION_SESSIONS.delete(convoKey); // finaliza sessão
-      return;
-    }
-
-    // 🔥 Novo fluxo: Se detectou @broker evento
+    // 🔥 Trigger específico para criação de evento com GPT
     if (lowerText.includes('@broker') && lowerText.includes('evento')) {
-      EVENT_CREATION_SESSIONS.set(convoKey, {}); // inicia uma nova "sessão de criação"
-      await client.sendText(message.from, '📅 Informe o dia do evento (formato: YYYY-MM-DD):');
+      CONVERSATIONS.set(convoKey, [
+        {
+          role: "system",
+          content: `Você é um assistente que agenda eventos no Google Calendar.
+Converse com o usuário e colete as seguintes informações:
+- dia do evento (formato: YYYY-MM-DD)
+- hora do evento (formato: HH:mm)
+- título do evento
+- duração em minutos
+
+Quando tiver todas as informações, responda SOMENTE com um JSON assim:
+{
+  "dia": "2025-05-03",
+  "hora": "14:00",
+  "titulo": "Reunião com João",
+  "duracao": 90
+}
+
+Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em JSON.`
+        }
+      ]);
+
+      await client.sendText(message.from, '📅 Vamos criar seu evento! Me diga: qual o dia do evento?');
       return;
     }
 
-    // 🔥 Se não for criação de evento, segue fluxo normal (TRIGGER + OpenAI)
+    // 🔁 Conversa ativa (seja evento ou outro trigger normal)
     const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
     const hasHistory = CONVERSATIONS.has(convoKey);
 
@@ -1052,18 +1032,36 @@ async function processText(sessionName, message, email) {
     const resp = await openai.chat.completions.create({
       model: ASSISTANT_MODEL,
       messages: history,
-      temperature: 0.7
+      temperature: 0.3
     });
 
     const reply = resp.choices[0].message.content.trim();
     history.push({ role: "assistant", content: reply });
 
+    // 🎯 Verifica se o GPT respondeu com um JSON válido de evento
+    try {
+      const jsonMatch = reply.match(/\{[\s\S]*?\}/);
+      if (jsonMatch) {
+        const eventData = JSON.parse(jsonMatch[0]);
+
+        await criarEvento(eventData); // ✅ NOVA forma de chamada
+
+        await client.sendText(message.from, '✅ Evento criado com sucesso!');
+        CONVERSATIONS.delete(convoKey);
+        return;
+      }
+    } catch (err) {
+      console.warn('[processText] Resposta não era um JSON válido:', err.message);
+    }
+
+    // Continua a conversa normalmente (evento ou outro tema)
     await client.sendText(message.from, reply);
 
   } catch (err) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 // --------------------------------------------------------------------------------------------------------
 

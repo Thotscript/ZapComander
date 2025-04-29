@@ -20,19 +20,25 @@ const calendar = google.calendar({ version: 'v3', auth });
 
 /**
  * Cria um evento no Google Calendar
- * @param {string} dia - Data no formato 'YYYY-MM-DD'
- * @param {string} hora - Hora no formato 'HH:mm'
- * @param {string} titulo - Título do evento
- * @param {number} duracaoEmMinutos - Duração do evento em minutos
+ * @param {Object} evento - Objeto com os dados do evento
+ * @param {string} evento.dia - Data no formato 'YYYY-MM-DD'
+ * @param {string} evento.hora - Hora no formato 'HH:mm'
+ * @param {string} evento.titulo - Título do evento
+ * @param {number} evento.duracao - Duração do evento em minutos
  */
-export async function criarEvento(dia, hora, titulo, duracaoEmMinutos = 60) {
+export async function criarEvento(evento) {
   try {
-    const authClient = await auth.getClient();
+    const { dia, hora, titulo, duracao = 60 } = evento;
 
+    if (!dia || !hora || !titulo) {
+      throw new Error('Parâmetros inválidos: dia, hora e título são obrigatórios.');
+    }
+
+    const authClient = await auth.getClient();
     const calendarId = 'jurandirs169@gmail.com';
 
     const startDateTime = new Date(`${dia}T${hora}:00`);
-    const endDateTime = new Date(startDateTime.getTime() + duracaoEmMinutos * 60 * 1000);
+    const endDateTime = new Date(startDateTime.getTime() + duracao * 60 * 1000);
 
     const event = {
       summary: titulo,
