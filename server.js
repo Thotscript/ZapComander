@@ -139,7 +139,7 @@ export function loadAllSessionEmails() {
 
 // ===== Rotas e lógica de sessão =====
 
-app.get('/auth/preference-nudmbers', async (req, res) => {
+app.get('/auth/preference-numbers', async (req, res) => {
   
   const email = req.query.email;
 
