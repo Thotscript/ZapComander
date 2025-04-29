@@ -265,7 +265,7 @@ app.get('/auth/statusfinder', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT sessao_numero, ultimo_acesso
        FROM logs_sessao
-       WHERE usuario_email = ?
+       WHERE email = ?
        ORDER BY ultimo_acesso DESC
        LIMIT 1`,
       [email]
