@@ -573,7 +573,7 @@ app.post('/auth/filtro', async (req, res) => {
     return res.status(400).json({ message: 'Email é obrigatório para salvar no banco de dados.' });
   }
 
-  if (blockedNumbers !== undefined) {
+  if (req.body.hasOwnProperty('blockedNumbers')) {
     // Fluxo especial para blockedNumbers
     const novos = (Array.isArray(blockedNumbers)
       ? blockedNumbers
