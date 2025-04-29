@@ -261,10 +261,10 @@ app.get('/auth/statusfinder', async (req, res) => {
   }
 
   try {
-    // Busca o último número e acesso baseado no último timestamp
+    // Busca a sessão mais recente
     const [rows] = await pool.query(
-      `SELECT sessao_numero, ultimo_acesso
-       FROM logs_sessao
+      `SELECT sessao_numero AS numero, ultimo_acesso
+       FROM sessoes
        WHERE email = ?
        ORDER BY ultimo_acesso DESC
        LIMIT 1`,
@@ -275,15 +275,14 @@ app.get('/auth/statusfinder', async (req, res) => {
       return res.status(404).json({ error: 'Nenhum registro encontrado para este email.' });
     }
 
-    const { sessao_numero, ultimo_acesso } = rows[0];
-
     return res.json({
-      email,
-      ultimo_numero: sessao_numero,
-      ultimo_acesso
+      log: {
+        numero: rows[0].numero,
+        ultimo_acesso: rows[0].ultimo_acesso
+      }
     });
   } catch (err) {
-    console.error(`❌ Erro ao buscar sessão para o email ${email}:`, err);
+    console.error(`❌ Erro ao buscar status para o email ${email}:`, err);
     return res.status(500).json({ error: 'Erro ao acessar o banco de dados.' });
   }
 });
