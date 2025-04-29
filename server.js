@@ -264,7 +264,7 @@ app.get('/auth/statusfinder', async (req, res) => {
     // Busca a sessão mais recente
     const [rows] = await pool.query(
       `SELECT sessao_numero AS numero, ultimo_acesso
-       FROM sessoes
+       FROM logs_sessao
        WHERE email = ?
        ORDER BY ultimo_acesso DESC
        LIMIT 1`,
