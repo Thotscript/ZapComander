@@ -886,10 +886,10 @@ async function processAudio(sessionName, message) {
             case 'pt-br':
               languagePrompt = 'traduzir qualquer mensagem para português';
               break;
-            case 'en':
+            case 'en-us':
               languagePrompt = 'traduzir qualquer mensagem para inglês';
               break;
-            case 'es':
+            case 'es-es':
               languagePrompt = 'traduzir qualquer mensagem para espanhol';
               break;
             default:
