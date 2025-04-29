@@ -71,7 +71,7 @@ const SESSIONS = new Map();
 
 
 // caminhos absolutos centralizados
-const TOKEN_DIR        = '/root/    /tokens';
+const TOKEN_DIR        = '/root/wpptalk_server/tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
