@@ -31,6 +31,7 @@ import helmet from 'helmet';
 import pool from './db/index.js';
 // Função que insere um usuário no banco, se ainda não existir
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
+import { excluirSessaoPorEmail } from './db/sessions.js';
 // Função que insere uma sessão no banco, se ainda não existir
 import { criarOuIgnorarSessao } from './db/sessions.js';
 // Função para salvar logs de sessões no banco de dados
