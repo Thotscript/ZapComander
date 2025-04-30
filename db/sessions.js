@@ -10,21 +10,25 @@ export async function criarOuIgnorarSessao(numero, email) {
 }
 
 export async function excluirSessaoPorEmail(email, sessionName) {
-  try {
-    await db.beginTransaction();
+  const conn = await db.getConnection(); // pega conexão individual do pool
 
-    // 1. Exclui filtros associados à sessão (chave estrangeira)
-    await db.query('DELETE FROM filtros WHERE sessao_numero = ?', [sessionName]);
+  try {
+    await conn.beginTransaction();
+
+    // 1. Exclui filtros relacionados ao sessionName
+    await conn.query('DELETE FROM filtros WHERE sessao_numero = ?', [sessionName]);
 
     // 2. Exclui logs relacionados ao email
-    await db.query('DELETE FROM logs_sessao WHERE email = ?', [email]);
+    await conn.query('DELETE FROM logs_sessao WHERE email = ?', [email]);
 
-    // 3. Exclui a sessão
-    await db.query('DELETE FROM sessoes WHERE usuario_email = ?', [email]);
+    // 3. Exclui a sessão relacionada ao email
+    await conn.query('DELETE FROM sessoes WHERE usuario_email = ?', [email]);
 
-    await db.commit();
+    await conn.commit();
   } catch (err) {
-    await db.rollback();
+    await conn.rollback();
     throw err;
+  } finally {
+    conn.release(); // libera conexão de volta para o pool
   }
 }
