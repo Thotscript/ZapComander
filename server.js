@@ -326,8 +326,6 @@ app.get('/auth/statusfinder', async (req, res) => {
 });
 
 
-
-
 // ----------------------------------------------------------------------------------
 
 app.get('/auth/logout', async (req, res) => {
@@ -335,11 +333,18 @@ app.get('/auth/logout', async (req, res) => {
   if (!session) {
     return res.status(400).json({ error: 'Session é obrigatório.' });
   }
+
   try {
+    // Encerra a sessão (por exemplo, do WhatsApp)
     await cleanupSession(session);
-    res.status(200).json({ message: 'Sessão finalizada com sucesso.' });
-  } catch {
-    res.status(500).json({ error: 'Erro ao finalizar sessão.' });
+
+    // Exclui dados do banco
+    await excluirSessaoPorEmail(session); // session = email nesse caso
+
+    res.status(200).json({ message: 'Sessão finalizada e dados excluídos com sucesso.' });
+  } catch (err) {
+    console.error('Erro ao excluir sessão:', err);
+    res.status(500).json({ error: 'Erro ao finalizar sessão ou excluir dados.' });
   }
 });
 
@@ -467,7 +472,6 @@ app.post('/auth/login', async (req, res) => {
 
         if (message.type === 'chat') {
           await processText(sessionName, message);
-          await sendSeen(message.id);
         }
 
       } catch (error) {
