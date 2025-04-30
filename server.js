@@ -341,7 +341,7 @@ app.get('/auth/logout', async (req, res) => {
     await cleanupSession(sessionName);
 
     // Exclui dados relacionados ao email no banco de dados
-    await excluirSessaoPorEmail(email);
+    await excluirSessaoPorEmail(email, sessionName);
 
     res.status(200).json({ message: 'Sessão finalizada e dados excluídos com sucesso.' });
   } catch (err) {

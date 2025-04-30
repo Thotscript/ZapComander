@@ -1,4 +1,3 @@
-// db/sessions.js
 import db from './index.js';
 
 export async function criarOuIgnorarSessao(numero, email) {
@@ -10,11 +9,22 @@ export async function criarOuIgnorarSessao(numero, email) {
   await db.query(sql, [numero, email]);
 }
 
-export async function excluirSessaoPorEmail(email) {
-  // Remove da tabela sessoes e logs_sessao com base no email
-  const deleteLogs = 'DELETE FROM logs_sessao WHERE email = ?';
-  const deleteSessoes = 'DELETE FROM sessoes WHERE usuario_email = ?';
+export async function excluirSessaoPorEmail(email, sessionName) {
+  try {
+    await db.beginTransaction();
 
-  await db.query(deleteLogs, [email]);
-  await db.query(deleteSessoes, [email]);
+    // 1. Exclui filtros associados à sessão (chave estrangeira)
+    await db.query('DELETE FROM filtros WHERE sessao_numero = ?', [sessionName]);
+
+    // 2. Exclui logs relacionados ao email
+    await db.query('DELETE FROM logs_sessao WHERE email = ?', [email]);
+
+    // 3. Exclui a sessão
+    await db.query('DELETE FROM sessoes WHERE usuario_email = ?', [email]);
+
+    await db.commit();
+  } catch (err) {
+    await db.rollback();
+    throw err;
+  }
 }
