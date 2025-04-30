@@ -252,6 +252,38 @@ app.delete('/auth/blocked-numbers', express.json(), async (req, res) => {
 
 // -----------------------------------------------------------------------------
 
+app.get('/statusdevices', async (req, res) => {
+  const email = req.query.email;
+  if (!email) {
+    return res.status(400).json({ error: 'Email é obrigatório.' });
+  }
+
+  try {
+    // Busca todos os logs associados ao email
+    const [rows] = await pool.query(
+      `SELECT sessao_numero AS numero, ultimo_acesso
+       FROM logs_sessao
+       WHERE email = ?
+       ORDER BY ultimo_acesso DESC`,
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Nenhum registro encontrado para este email.' });
+    }
+
+    return res.json({
+      logs: rows.map(row => ({
+        numero: row.numero,
+        ultimo_acesso: row.ultimo_acesso
+      }))
+    });
+  } catch (err) {
+    console.error(`❌ Erro ao buscar logs para o email ${email}:`, err);
+    return res.status(500).json({ error: 'Erro ao acessar o banco de dados.' });
+  }
+});
+
 
 
 app.get('/auth/statusfinder', async (req, res) => {
