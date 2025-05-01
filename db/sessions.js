@@ -15,17 +15,20 @@ export async function excluirSessaoPorEmail(email, sessionName) {
   try {
     await conn.beginTransaction();
 
-    // 1. Exclui filtros relacionados à sessão
+    // 1. Remove filtros vinculados à sessão (via sessionName)
     await conn.query('DELETE FROM filtros WHERE sessao_numero = ?', [sessionName]);
 
-    // 2. Exclui logs relacionados à sessão (filtrando pelo número)
-    await conn.query('DELETE FROM logs_sessao WHERE email = ? AND sessao_numero = ?', [email, sessionName]);
+    // 2. Remove logs vinculados ao email (relação FK está em logs_sessao.email -> sessoes.usuario_email)
+    await conn.query('DELETE FROM logs_sessao WHERE email = ?', [email]);
 
-    // 3. Exclui a sessão específica do usuário
-    await conn.query('DELETE FROM sessoes WHERE usuario_email = ? AND numero = ?', [email, sessionName]);
+    // 3. Remove a sessão específica (email + sessionName)
+    await conn.query(
+      'DELETE FROM sessoes WHERE usuario_email = ? AND numero = ?',
+      [email, sessionName]
+    );
 
     await conn.commit();
-    console.log(`✅ Sessão ${sessionName} removida com sucesso para o usuário ${email}.`);
+    console.log(`✅ Sessão ${sessionName} e dados relacionados excluídos com sucesso.`);
   } catch (err) {
     await conn.rollback();
     console.error('❌ Erro ao excluir sessão e dados relacionados:', err);
@@ -34,3 +37,4 @@ export async function excluirSessaoPorEmail(email, sessionName) {
     conn.release();
   }
 }
+
