@@ -1152,20 +1152,30 @@ Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em J
 
 
 const restoreSessions = async () => {
-  const sessions = fs.readdirSync(TOKEN_DIR);
-
   console.log('🔄 Restaurando sessões de:', TOKEN_DIR);
-  // lista apenas diretórios (nome de sessão) e ignora filtros, logs, etc.
+
+  // Lista apenas diretórios válidos (sessões, excluindo filtros e logs)
   const entries = fs.readdirSync(TOKEN_DIR, { withFileTypes: true });
   const sessionNames = entries
     .filter(e => e.isDirectory())
     .map(e => e.name)
-    .filter(name => !['filters','sessions_logs'].includes(name));
+    .filter(name => !['filters', 'sessions_logs'].includes(name));
 
   console.log('→ Pastas candidatas:', sessionNames);
 
-  for (const sessionName of sessions) {
+  for (const sessionName of sessionNames) {
     try {
+      // 💡 Remoção preventiva de arquivo de lock (evita erro do Chromium)
+      const lockPath = path.join(TOKEN_DIR, sessionName, 'SingletonLock');
+      if (fs.existsSync(lockPath)) {
+        try {
+          fs.unlinkSync(lockPath);
+          console.log(`🔓 Removido arquivo SingletonLock de ${sessionName}`);
+        } catch (err) {
+          console.warn(`⚠️ Falha ao remover SingletonLock para ${sessionName}:`, err.message);
+        }
+      }
+
       const tokenData = await myTokenStore.getToken(sessionName);
       if (!tokenData) continue;
 
@@ -1192,12 +1202,11 @@ const restoreSessions = async () => {
       // Insere na Map com myNumber inicialmente null
       SESSIONS.set(sessionName, { client, myNumber: null, email: null });
 
-      // Carrega e atribui e‑mail salvo
+      // Carrega e-mail salvo
       const sessionEmails = loadAllSessionEmails();
       const email = sessionEmails[sessionName] || null;
       SESSIONS.get(sessionName).email = email;
 
-      // --- Novo: garante que o usuário existe no banco ---
       if (email) {
         try {
           await criarOuIgnorarUsuario(email);
@@ -1207,7 +1216,7 @@ const restoreSessions = async () => {
         }
       }
 
-      // Função auxiliar de retry para obter myNumber
+      // Tenta obter myNumber com retry
       const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
         for (let attempt = 1; attempt <= retries; attempt++) {
           try {
@@ -1239,7 +1248,6 @@ const restoreSessions = async () => {
             console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
           }
 
-          // --- Novo: persiste a sessão no banco ao conectar ---
           try {
             await criarOuIgnorarSessao(sessionName, email);
             console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
@@ -1251,9 +1259,8 @@ const restoreSessions = async () => {
 
       client.onAnyMessage(async (message) => {
         try {
-
-            const filters = await loadFiltersFromDB(email, sessionName);
-            SESSION_FILTERS.set(sessionName, filters);
+          const filters = await loadFiltersFromDB(email, sessionName);
+          SESSION_FILTERS.set(sessionName, filters);
 
           if (filters.ignoreGroups && message.isGroupMsg) return;
           if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
@@ -1276,6 +1283,7 @@ const restoreSessions = async () => {
     }
   }
 };
+
 
 // --------------------------------------------------------------------------------------------------------
   
