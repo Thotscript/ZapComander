@@ -399,6 +399,15 @@ app.post('/auth/login', async (req, res) => {
         }
         broadcastQR(sessionName);
       },
+      statusFind: (statusSession) => {
+        if (statusSession === 'qrReadSuccess') {
+          sendToSession(sessionName, {
+            type: 'qrReadSuccess',
+            session: sessionName,
+            success: true
+          });
+        }
+      },
       debug: true,
       updatesLog: true,
       headless: true,
@@ -811,21 +820,45 @@ async function cleanupSession(sessionName) {
 // --------------------------------------------------------------------------------------------------------
 
 //WEBSOCKET PARA ENVIAR O QRCODE PARA O FRONT
+const sessionClients = new Map(); // sessionName => ws
 
 wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            if (data.type === 'requestQR') {
-                broadcastQR(data.sessionName);
+
+            // Cliente informa qual sessão ele quer escutar
+            if (data.type === 'requestQR' && data.sessionName) {
+                sessionClients.set(data.sessionName, ws);
+                console.log(`🔗 Cliente associado à sessão: ${data.sessionName}`);
+                broadcastQR(data.sessionName); // opcional: envie QR logo após associação
             }
         } catch (error) {
             console.error('❌ Erro ao processar mensagem WebSocket:', error);
         }
     });
 
-    ws.on('close', () => console.log('❌ Cliente desconectado do WebSocket'));
+    ws.on('close', () => {
+        // Limpa sessões que pertenciam a este socket
+        for (const [sessionName, clientWs] of sessionClients.entries()) {
+            if (clientWs === ws) {
+                sessionClients.delete(sessionName);
+                console.log(`❌ Cliente da sessão ${sessionName} desconectado`);
+            }
+        }
+    });
 });
+
+// Função para enviar evento para uma sessão específica
+function sendToSession(sessionName, payload) {
+    const client = sessionClients.get(sessionName);
+    if (client && client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify(payload));
+        console.log(`📤 Mensagem enviada à sessão ${sessionName}`);
+    } else {
+        console.warn(`⚠️ Nenhum cliente conectado para a sessão ${sessionName}`);
+    }
+}
 
 // --------------------------------------------------------------------------------------------------------
 
