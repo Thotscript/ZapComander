@@ -58,6 +58,12 @@ const prompt_transcricao = fs.readFileSync(path.join(__dirname, 'prompts', 'tran
 const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
 // Cria um servidor HTTPS usando as opções SSL e o app Express
 const server = https.createServer(options, app);
+
+server.on('clientError', (err, socket) => {
+  console.warn('⚠️ clientError capturado:', err.message);
+  socket.destroy(); // fecha imediatamente
+});
+
 // Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
 const wss = new WebSocket.Server({ server });
 // Carrega a chave da API da OpenAI a partir das variáveis de ambiente
