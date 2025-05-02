@@ -52,10 +52,8 @@ const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'), // Chave privada
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem') // Certificado público completo
 };
-// Lê o conteúdo de um prompt para transcrição, armazenado em um arquivo local
-const prompt_transcricao = fs.readFileSync('./prompts/transcricao.txt', 'utf8');
-// Lê o conteúdo de um prompt para pré-qualificação, armazenado em um arquivo local
-const prompt_qualification = fs.readFileSync('./prompts/pre-qualification.txt', 'utf8');
+const prompt_transcricao = fs.readFileSync(path.join(__dirname, 'prompts', 'transcricao.txt'), 'utf8');
+const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
 // Cria um servidor HTTPS usando as opções SSL e o app Express
 const server = https.createServer(options, app);
 // Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
