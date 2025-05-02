@@ -436,24 +436,25 @@ app.post('/auth/login', async (req, res) => {
     client.onStateChange(async (state) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
+    
         if (state === 'CONNECTED') {
-
           try {
             await criarOuIgnorarSessao(sessionName, email);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
           }
-
+    
           broadcastSessionAuthenticated(sessionName);
+    
           const myNumber = await client.getWid();
           const session = SESSIONS.get(sessionName);
           session.myNumber = myNumber;
-
+    
           const sessionToken = await client.getSessionTokenBrowser();
           await myTokenStore.setToken(sessionName, sessionToken); 
           console.log('Token salvo com sucesso!');
-
+    
           const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
           if (fs.existsSync(qrFilePath)) {
             setTimeout(() => {
@@ -462,11 +463,17 @@ app.post('/auth/login', async (req, res) => {
               });
             }, 10000);
           }
+    
+        } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
+          console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
+          await cleanupSession(sessionName);
         }
+    
       } catch (error) {
         console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
       }
     });
+    
 
     client.onAnyMessage(async (message) => {
 
