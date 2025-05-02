@@ -41,6 +41,8 @@ import { saveSessionLog } from './db/logs.js';
 import {criarEvento} from './Google-Agenda/calendar.js'
 
 
+const processingQueues = new Map();
+
 // Converte a URL do módulo atual em um caminho de arquivo (necessário em ES Modules)
 const __filename = fileURLToPath(import.meta.url);
 // Obtém o diretório atual a partir do caminho do arquivo
@@ -352,6 +354,14 @@ app.get('/auth/logout', async (req, res) => {
 
 // ------------------------------------------------------------------------------------
 
+
+function enqueueProcessing(sessionName, fn) {
+  const queue = processingQueues.get(sessionName) || Promise.resolve();
+  const newQueue = queue.then(() => fn()).catch(console.error);
+  processingQueues.set(sessionName, newQueue);
+}
+
+
 app.post('/auth/login', async (req, res) => {
   
   const {
@@ -490,7 +500,7 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'chat') {
-          await processText(sessionName, message);
+          enqueueProcessing(sessionName, () => processAudio(sessionName, message));
         }
 
       } catch (error) {
@@ -1329,7 +1339,7 @@ const restoreSessions = async () => {
 
           if (message.type === 'ptt' || message.type === 'audio') {
             console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
-            await processAudio(sessionName, message);
+            enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
 
           if (message.type === 'chat') {
