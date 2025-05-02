@@ -796,26 +796,48 @@ app.get('/auth/logout', async (req, res) => {
 //LIMPAR PASTAS DE SESSAO
 
 async function cleanupSession(sessionName) {
+  const session = SESSIONS.get(sessionName);
 
-    if (SESSIONS.has(sessionName)) {
-        const session = SESSIONS.get(sessionName);
-        await session.client.logout();
-        await session.client.close();
-        SESSIONS.delete(sessionName);
-        console.log(`🔴 Sessão ${sessionName} encerrada.`);
-    }
+  if (session) {
+    try {
+      const client = session.client;
 
-    const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-    if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
-
-    const sessionPath = path.join(TOKEN_DIR, sessionName);
-    setTimeout(() => {
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log(`Sessão:[${sessionName}] => Removida por falha na autenticação!`);
+      // ✅ Verifica se a página ainda está viva (prevenção de detached frame)
+      if (client && client.page && !client.page.isClosed()) {
+        try {
+          await client.logout();
+        } catch (err) {
+          console.warn(`⚠️ Erro ao dar logout em ${sessionName}:`, err.message);
         }
-    }, 3000);
+
+        try {
+          await client.close();
+        } catch (err) {
+          console.warn(`⚠️ Erro ao fechar cliente ${sessionName}:`, err.message);
+        }
+      } else {
+        console.warn(`⚠️ Página já estava fechada ou inválida para sessão ${sessionName}.`);
+      }
+
+      SESSIONS.delete(sessionName);
+      console.log(`🔴 Sessão ${sessionName} encerrada.`);
+    } catch (err) {
+      console.error(`❌ Erro ao limpar sessão ${sessionName}:`, err.message);
+    }
+  }
+
+  const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
+  if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
+
+  const sessionPath = path.join(TOKEN_DIR, sessionName);
+  setTimeout(() => {
+    if (fs.existsSync(sessionPath)) {
+      fs.rmSync(sessionPath, { recursive: true, force: true });
+      console.log(`🧹 Sessão [${sessionName}] removida do sistema de arquivos.`);
+    }
+  }, 3000);
 }
+
 
 // --------------------------------------------------------------------------------------------------------
 
