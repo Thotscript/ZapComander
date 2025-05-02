@@ -440,6 +440,7 @@ app.post('/auth/login', async (req, res) => {
         if (state === 'CONNECTED') {
           try {
             await criarOuIgnorarSessao(sessionName, email);
+            await insertDefaultFilters(email, sessionName);
             console.log(`✅ Sessão '${sessionName}' registrada no banco.`);
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
