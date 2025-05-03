@@ -379,7 +379,16 @@ app.get('/auth/logout', async (req, res) => {
 
 function enqueueProcessing(sessionName, fn) {
   const queue = processingQueues.get(sessionName) || Promise.resolve();
-  const newQueue = queue.then(() => fn()).catch(console.error);
+
+  const newQueue = queue
+    .then(() => fn())
+    .catch((err) => {
+      console.error(`Erro ao processar fila da sessão ${sessionName}:`, err);
+    })
+    .finally(() => {
+      console.log(`✅ Fila de processamento concluída para a sessão: ${sessionName}`);
+    });
+
   processingQueues.set(sessionName, newQueue);
 }
 
