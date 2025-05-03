@@ -1004,10 +1004,19 @@ async function processAudio(sessionName, message) {
 
 
         const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
-        const buffer = await client.decryptFile(message);
+        let buffer = await client.decryptFile(message);
 
         
-        fs.writeFileSync(inputPath, buffer);
+        await new Promise((resolve, reject) => {
+          const stream = fs.createWriteStream(inputPath);
+          stream.write(buffer, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+          stream.end();
+        });
+        // Libera buffer da memória
+        buffer = null;
 
         const duration = await getAudioDuration(inputPath);
         const roundduration = parseFloat(duration.toFixed(2));
