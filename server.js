@@ -72,8 +72,9 @@ const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pr
 const server = https.createServer(options, app);
 
 server.on('clientError', (err, socket) => {
-  console.warn('⚠️ clientError capturado:', err.message);
-  socket.destroy(); // fecha imediatamente
+  const remoteAddress = socket.remoteAddress || 'IP desconhecido';
+  console.warn(`⚠️ clientError capturado de ${remoteAddress}:`, err.message);
+  socket.destroy();
 });
 
 // Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
