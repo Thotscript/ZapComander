@@ -392,6 +392,7 @@ app.post('/auth/login', async (req, res) => {
   } = req.body;
 
   console.log('Body recebido no login:', req.body);
+  console.log('📥 Requisição recebida do IP:', req.ip);
 
 
   if (!sessionName || !email) {
