@@ -1415,6 +1415,28 @@ const restoreSessions = async () => {
 };
 
 
+// Verificação periódica de sessões inativas ou travadas
+setInterval(async () => {
+  for (const [sessionName, sessionData] of SESSIONS.entries()) {
+    const client = sessionData.client;
+
+    try {
+      // Se a página não estiver ativa, pode ser que o navegador caiu
+      if (!client || !client.page || client.page.isClosed()) {
+        console.warn(`⚠️ Cliente da sessão ${sessionName} parece travado. Reiniciando...`);
+        await cleanupSession(sessionName);
+        // Opcional: recria automaticamente
+        if (sessionData.email) {
+          await wppconnect.create({ session: sessionName }); // ou chamar sua rota /auth/login
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Erro ao verificar sessão ${sessionName}:`, err.message);
+    }
+  }
+}, 60000); // verifica a cada 60 segundos
+
+
 // --------------------------------------------------------------------------------------------------------
   
 
