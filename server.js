@@ -71,9 +71,12 @@ const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pr
 // Cria um servidor HTTPS usando as opções SSL e o app Express
 const server = https.createServer(options, app);
 
+const logStream = fs.createWriteStream('/var/log/wpptalk-errors.log', { flags: 'a' });
+
 server.on('clientError', (err, socket) => {
-  const remoteAddress = socket.remoteAddress || 'IP desconhecido';
-  console.warn(`⚠️ clientError capturado de ${remoteAddress}:`, err.message);
+  const ip = socket.remoteAddress || 'IP desconhecido';
+  const linha = `${new Date().toISOString()} | IP: ${ip} | clientError: ${err.message}\n`;
+  logStream.write(linha);
   socket.destroy();
 });
 
