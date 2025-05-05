@@ -1383,24 +1383,33 @@ const restoreSessions = async () => {
 
         client.onStateChange(async (state) => {
           console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
-
-          if (state === 'CONNECTED') {
-            try {
-              const myNumber = await client.getWid();
-              SESSIONS.get(sessionName).myNumber = myNumber;
-              console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
-            } catch (err) {
-              console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
+        
+          try {
+            if (state === 'CONNECTED') {
+              try {
+                const myNumber = await client.getWid();
+                SESSIONS.get(sessionName).myNumber = myNumber;
+                console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
+              } catch (err) {
+                console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
+              }
+        
+              try {
+                await criarOuIgnorarSessao(sessionName, email);
+                console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
+              } catch (dbErr) {
+                console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
+              }
+        
+            } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
+              console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
+              await cleanupSession(sessionName);
             }
-
-            try {
-              await criarOuIgnorarSessao(sessionName, email);
-              console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
-            } catch (dbErr) {
-              console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
-            }
+          } catch (error) {
+            console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
           }
         });
+        
 
         client.onAnyMessage(async (message) => {
           try {
