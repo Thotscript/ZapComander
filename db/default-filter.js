@@ -4,7 +4,7 @@ export async function insertDefaultFilters(email, sessao_numero) {
     const filtrosPadrao = {
         language: 'pt-br',
         translation_enabled: 1,
-        sendForward: 1,
+        sendForward: 0,
         ignoreGroups: 1,
         summarizeMessages: 0,
         longmessage: 1
