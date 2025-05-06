@@ -1121,9 +1121,9 @@ async function processAudio(sessionName, message) {
         const resumo = response_gpt.data.choices[0].message.content;
         const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n${resumo}`;
         await new Promise(resolve => setTimeout(resolve, 10));
-        await client.sendText(recipient, resumo, {
-            quotedMsg:message.id
-        });
+        const quoted = message.mediaUrl ? { quotedMsg: message.id } : {};
+        await client.sendText(recipient, resumo, quoted);
+        
 
         fs.unlinkSync(inputPath);
 
