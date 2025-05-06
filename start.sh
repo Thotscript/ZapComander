@@ -20,7 +20,7 @@ else
 fi
 
 echo "🐳 Iniciando docker-compose em /root/wpptalk_server/mysql/..."
-cd /root/wpptalk_server/
+cd /root/wpptalk_server/mysql/
 docker-compose up -d
 
 if [ $? -ne 0 ]; then
