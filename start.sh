@@ -19,5 +19,15 @@ else
   echo "✅ Xvfb iniciado com sucesso."
 fi
 
+echo "🐳 Iniciando docker-compose em /root/wpptalk_server/..."
+cd /root/wpptalk_server/
+docker-compose up -d
+
+if [ $? -ne 0 ]; then
+  echo "❌ Erro ao iniciar docker-compose. Abortando."
+  exit 1
+fi
+echo "✅ docker-compose iniciado com sucesso."
+
 echo "🚀 Iniciando servidor Node.js..."
 node /root/wpptalk_server/Orlando_AI_Broker/server.js
