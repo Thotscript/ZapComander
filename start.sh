@@ -19,7 +19,7 @@ else
   echo "✅ Xvfb iniciado com sucesso."
 fi
 
-echo "🐳 Iniciando docker-compose em /root/wpptalk_server/..."
+echo "🐳 Iniciando docker-compose em /root/wpptalk_server/mysql/..."
 cd /root/wpptalk_server/
 docker-compose up -d
 
