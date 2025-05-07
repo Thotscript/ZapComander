@@ -543,13 +543,13 @@ app.post('/auth/login', async (req, res) => {
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          await processAudio(sessionName, message);
-        }
-
-        if (message.type === 'chat') {
           enqueueProcessing(sessionName, () => processAudio(sessionName, message));
         }
 
+        if (message.type === 'chat') {
+          await processText(sessionName, message, email);
+        }
+        
       } catch (error) {
         console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
       }
@@ -1365,7 +1365,6 @@ Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em J
 
 
 const restoreSessions = async () => {
-
   try {
     // 1. Consulta todas as sessões salvas no banco
     const [rows] = await pool.query(`
@@ -1379,18 +1378,51 @@ const restoreSessions = async () => {
     }
 
     console.log('→ Sessões encontradas:', rows.map(r => r.sessionName));
-
-    for (const { sessionName, email } of rows) {
-
-      if (SESSIONS.has(sessionName)) {
-        console.log(`⚠️ Sessão ${sessionName} já está ativa. Pulando restauração duplicada.`);
-        continue;
+    
+    // 2. Criar fila de sessões para restauração
+    const sessionQueue = rows.filter(({ sessionName }) => !SESSIONS.has(sessionName));
+    
+    if (sessionQueue.length === 0) {
+      console.log('⚠️ Todas as sessões já estão ativas. Nada para restaurar.');
+      return;
+    }
+    
+    console.log(`📋 Fila de restauração criada com ${sessionQueue.length} sessões`);
+    
+    // 3. Definir função para processar lotes da fila
+    const MAX_CONCURRENT_RESTORATIONS = 3;
+    let activeRestorations = 0;
+    let queueIndex = 0;
+    
+    const processNextBatch = async () => {
+      while (queueIndex < sessionQueue.length && activeRestorations < MAX_CONCURRENT_RESTORATIONS) {
+        const session = sessionQueue[queueIndex++];
+        activeRestorations++;
+        
+        // Iniciar restauração de forma assíncrona
+        console.log(`🔄 Iniciando restauração de ${session.sessionName} (${activeRestorations}/${MAX_CONCURRENT_RESTORATIONS} ativos)`);
+        
+        restoreSession(session)
+          .finally(() => {
+            activeRestorations--;
+            console.log(`✅ Restauração de sessão concluída. Restaurações ativas: ${activeRestorations}`);
+            
+            // Continuar processando a fila se ainda houver sessões
+            if (queueIndex < sessionQueue.length) {
+              processNextBatch();
+            } else if (activeRestorations === 0) {
+              console.log('🎉 Todas as sessões foram processadas com sucesso!');
+            }
+          });
       }
-      
+    };
+    
+    // 4. Função para restaurar uma sessão individual
+    const restoreSession = async ({ sessionName, email }) => {
       try {
+        console.log(`⏳ Restaurando sessão: ${sessionName}`);
+        
         const sessionPath = path.join(TOKEN_DIR, sessionName);
-
-        // Remove SingletonLock (previne erros do Chromium)
         const lockPath = path.join(sessionPath, 'SingletonLock');
         if (fs.existsSync(lockPath)) {
           fs.unlinkSync(lockPath);
@@ -1400,10 +1432,8 @@ const restoreSessions = async () => {
         const tokenData = await myTokenStore.getToken(sessionName);
         if (!tokenData) {
           console.warn(`⚠️ Token não encontrado para sessão ${sessionName}, pulando.`);
-          continue;
+          return;
         }
-
-        console.log(`🔄 Restaurando sessão: ${sessionName}`);
 
         const client = await wppconnect.create({
           session: sessionName,
@@ -1500,7 +1530,6 @@ const restoreSessions = async () => {
           }
         });
         
-
         client.onAnyMessage(async (message) => {
           try {
             const filters = await loadFiltersFromDB(email, sessionName);
@@ -1517,15 +1546,24 @@ const restoreSessions = async () => {
             if (message.type === 'chat') {
               await processText(sessionName, message, email);
             }
+
           } catch (error) {
             console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
           }
         });
+        
+        console.log(`✅ Sessão ${sessionName} restaurada com sucesso`);
+        return client;
 
       } catch (error) {
         console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+        throw error; // Propagando o erro para o finally do chamador
       }
-    }
+    };
+    
+    // 5. Iniciar o processamento do primeiro lote
+    await processNextBatch();
+    
   } catch (err) {
     console.error('❌ Erro ao consultar sessões no banco:', err);
   }
