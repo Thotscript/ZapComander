@@ -425,11 +425,6 @@ app.post('/auth/login', async (req, res) => {
     const client = await wppconnect.create({
       session: sessionName,
       tokenStore: myTokenStore,
-      statusFind: (statusSession) => {
-        if (statusSession === 'autocloseCalled') {
-          cleanupSession(sessionName);
-        }
-      },
       deviceName: 'The Broker VIP',
       catchQR: async (base64Qr) => {
         const qrFilePath = await saveQRCode(base64Qr, sessionName);
@@ -441,6 +436,9 @@ app.post('/auth/login', async (req, res) => {
         broadcastQR(sessionName);
       },
       statusFind: (statusSession) => {
+        if (statusSession === 'autocloseCalled') {
+          cleanupSession(sessionName);
+        }
         if (statusSession === 'qrReadSuccess') {
           sendToSession(sessionName, {
             type: 'qrReadSuccess',
@@ -458,8 +456,8 @@ app.post('/auth/login', async (req, res) => {
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',          // usa disco ao invés de RAM
-          '--disable-background-networking',  // evita conexões desnecessárias
+          '--disable-dev-shm-usage',
+          '--disable-background-networking',
           '--disable-background-timer-throttling',
           '--disable-client-side-phishing-detection',
           '--disable-default-apps',
@@ -1165,6 +1163,93 @@ async function processAudio(sessionName, message) {
     }
 }
 
+
+app.get('/api/agentes', async (req, res) => {
+  try {
+    const { ativo } = req.query;
+
+    let query = 'SELECT id, nome, trigger, modelo, ativo, criado_em, atualizado_em FROM agentes';
+    const params = [];
+
+    if (ativo !== undefined) {
+      query += ' WHERE ativo = ?';
+      params.push(ativo === 'true' ? 1 : 0);
+    }
+
+    const [rows] = await db.execute(query, params);
+
+    res.json(rows);
+  } catch (err) {
+    console.error('[API /api/agentes] Erro:', err);
+    res.status(500).json({ erro: 'Erro interno ao listar agentes' });
+  }
+});
+
+
+app.get('/api/agentes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.execute(
+      'SELECT id, nome, trigger, prompt, modelo, ativo, criado_em, atualizado_em FROM agentes WHERE id = ?',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ erro: 'Agente não encontrado' });
+    }
+
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('[API /api/agentes/:id] Erro:', err);
+    res.status(500).json({ erro: 'Erro interno ao buscar agente' });
+  }
+});
+
+
+
+app.post('/api/agentes', async (req, res) => {
+  try {
+    const { id, nome, trigger, prompt, modelo = 'gpt-4o-mini', ativo = 1 } = req.body;
+
+    if (!nome || !trigger || !prompt) {
+      return res.status(400).json({ erro: 'Campos obrigatórios: nome, trigger e prompt' });
+    }
+
+    if (id) {
+      // Atualiza agente existente
+      const [result] = await db.execute(
+        `UPDATE agentes
+         SET nome = ?, trigger = ?, prompt = ?, modelo = ?, ativo = ?, atualizado_em = NOW()
+         WHERE id = ?`,
+        [nome, trigger, prompt, modelo, ativo, id]
+      );
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ erro: 'Agente não encontrado para atualização' });
+      }
+
+      res.json({ mensagem: 'Agente atualizado com sucesso' });
+    } else {
+      // Cria novo agente
+      const [result] = await db.execute(
+        `INSERT INTO agentes (nome, trigger, prompt, modelo, ativo)
+         VALUES (?, ?, ?, ?, ?)`,
+        [nome, trigger, prompt, modelo, ativo]
+      );
+
+      res.status(201).json({ mensagem: 'Agente criado com sucesso', id: result.insertId });
+    }
+  } catch (err) {
+    console.error('[API /api/agentes] Erro:', err);
+    if (err.code === 'ER_DUP_ENTRY') {
+      res.status(400).json({ erro: 'Trigger já está em uso por outro agente' });
+    } else {
+      res.status(500).json({ erro: 'Erro interno do servidor' });
+    }
+  }
+});
+
 // --------------------------------------------------------------------------------------------------------
 
 //PROCESSAR TEXTO RECEBIDO - BOT
@@ -1280,7 +1365,6 @@ Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em J
 
 
 const restoreSessions = async () => {
-  console.log('🔄 Restaurando sessões diretamente do banco de dados...');
 
   try {
     // 1. Consulta todas as sessões salvas no banco
@@ -1440,33 +1524,6 @@ const restoreSessions = async () => {
     console.error('❌ Erro ao consultar sessões no banco:', err);
   }
 };
-
-
-
-// Verificação periódica de sessões inativas ou travadas
-setInterval(async () => {
-  for (const [sessionName, sessionData] of SESSIONS.entries()) {
-    const client = sessionData.client;
-
-    try {
-      // Se a página não estiver ativa, pode ser que o navegador caiu
-      if (!client || !client.page || client.page.isClosed()) {
-        console.warn(`⚠️ Cliente da sessão ${sessionName} parece travado. Reiniciando...`);
-        await cleanupSession(sessionName);
-        // Opcional: recria automaticamente
-        if (sessionData.email) {
-          await wppconnect.create({ session: sessionName }); // ou chamar sua rota /auth/login
-        }
-      }
-    } catch (err) {
-      console.error(`❌ Erro ao verificar sessão ${sessionName}:`, err.message);
-    }
-  }
-}, 60000); // verifica a cada 60 segundos
-
-
-// --------------------------------------------------------------------------------------------------------
-  
 
 //INICIA A FUNCAO DE RESTAURAR SESSOES JUNTO COM O START DO SERVIDOR
 restoreSessions().then(() => {
