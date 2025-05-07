@@ -1381,6 +1381,12 @@ const restoreSessions = async () => {
     console.log('→ Sessões encontradas:', rows.map(r => r.sessionName));
 
     for (const { sessionName, email } of rows) {
+
+      if (SESSIONS.has(sessionName)) {
+        console.log(`⚠️ Sessão ${sessionName} já está ativa. Pulando restauração duplicada.`);
+        continue;
+      }
+      
       try {
         const sessionPath = path.join(TOKEN_DIR, sessionName);
 
