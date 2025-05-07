@@ -1364,10 +1364,10 @@ Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em J
 // --------------------------------------------------------------------------------------------------------
 
 
-const RESTORING_SESSIONS = new Set();
-
 const restoreSessions = async () => {
+
   try {
+    // 1. Consulta todas as sessões salvas no banco
     const [rows] = await pool.query(`
       SELECT numero AS sessionName, usuario_email AS email
       FROM sessoes
@@ -1386,21 +1386,14 @@ const restoreSessions = async () => {
         console.log(`⚠️ Sessão ${sessionName} já está ativa. Pulando restauração duplicada.`);
         continue;
       }
-
-      if (RESTORING_SESSIONS.has(sessionName)) {
-        console.log(`⚠️ Sessão ${sessionName} já está sendo restaurada. Pulando.`);
-        continue;
-      }
-
-      RESTORING_SESSIONS.add(sessionName);
-
+      
       try {
         const sessionPath = path.join(TOKEN_DIR, sessionName);
 
-        // Remove SingletonLock se existir (evita erro do Chromium)
+        // Remove SingletonLock (previne erros do Chromium)
         const lockPath = path.join(sessionPath, 'SingletonLock');
         if (fs.existsSync(lockPath)) {
-          fs.rmSync(lockPath, { force: true });
+          fs.unlinkSync(lockPath);
           console.log(`🔓 Removido arquivo SingletonLock de ${sessionName}`);
         }
 
@@ -1429,8 +1422,8 @@ const restoreSessions = async () => {
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-background-networking',
+              '--disable-dev-shm-usage',          // usa disco ao invés de RAM
+              '--disable-background-networking',  // evita conexões desnecessárias
               '--disable-background-timer-throttling',
               '--disable-client-side-phishing-detection',
               '--disable-default-apps',
@@ -1458,6 +1451,7 @@ const restoreSessions = async () => {
           }
         }
 
+        // Recuperar número
         const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
           for (let attempt = 1; attempt <= retries; attempt++) {
             try {
@@ -1470,7 +1464,7 @@ const restoreSessions = async () => {
             } catch (err) {
               console.warn(`Tentativa ${attempt} falhou ao obter myNumber para ${sessionName}: ${err.message}`);
             }
-            await new Promise(r => setTimeout(r, delayMs));
+            await new Promise((r) => setTimeout(r, delayMs));
           }
           console.error(`❌ Não foi possível restaurar myNumber para ${sessionName}`);
         };
@@ -1479,6 +1473,7 @@ const restoreSessions = async () => {
 
         client.onStateChange(async (state) => {
           console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
+        
           try {
             if (state === 'CONNECTED') {
               try {
@@ -1488,14 +1483,14 @@ const restoreSessions = async () => {
               } catch (err) {
                 console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
               }
-
+        
               try {
                 await criarOuIgnorarSessao(sessionName, email);
                 console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
               } catch (dbErr) {
                 console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
               }
-
+        
             } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
               console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
               await cleanupSession(sessionName);
@@ -1504,6 +1499,7 @@ const restoreSessions = async () => {
             console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
           }
         });
+        
 
         client.onAnyMessage(async (message) => {
           try {
@@ -1528,15 +1524,12 @@ const restoreSessions = async () => {
 
       } catch (error) {
         console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
-      } finally {
-        RESTORING_SESSIONS.delete(sessionName);
       }
     }
   } catch (err) {
     console.error('❌ Erro ao consultar sessões no banco:', err);
   }
 };
-
 
 //INICIA A FUNCAO DE RESTAURAR SESSOES JUNTO COM O START DO SERVIDOR
 restoreSessions().then(() => {
