@@ -935,7 +935,6 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Função para enviar evento para uma sessão específica
 function sendToSession(sessionName, payload) {
     const client = sessionClients.get(sessionName);
     if (client && client.readyState === WebSocket.OPEN) {
@@ -948,8 +947,6 @@ function sendToSession(sessionName, payload) {
 
 // --------------------------------------------------------------------------------------------------------
 
-//ACESSA O QRCODE PARA ENVIAR NA SESSAO A CIMA
-
 function broadcastQR(sessionName) {
     const qrPath = `/qrcodes/qrcode_${sessionName}.png?t=${Date.now()}`;
     wss.clients.forEach((ws) => {
@@ -960,9 +957,6 @@ function broadcastQR(sessionName) {
 }
 
 
-
-//VALIDA SE O USUARIO TA LOGADO PRA CONEXAO
-
 function broadcastSessionAuthenticated(sessionName) {
     wss.clients.forEach((ws) => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -971,8 +965,6 @@ function broadcastSessionAuthenticated(sessionName) {
     });
 }
 
-
-//CAPTURAR A DURACAO DO AUDIO
 
 async function getAudioDuration(inputPath) {
     return new Promise((resolve, reject) => {
@@ -1006,9 +998,6 @@ async function processAudio(sessionName, message) {
           return;
       }
 
-      // Verifica se o áudio é do próprio usuário
-      const isFromSelf = message.from === myNumber;
-      
       const filtros = await loadFiltersFromDB(email, sessionName);
 
       const contact = await client.getContact(message.from);
@@ -1017,28 +1006,47 @@ async function processAudio(sessionName, message) {
       console.log(`🔊 Processando áudio de ${senderName} na sessão ${sessionName}...`);
 
       const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
+      const denoisedPath = path.join(AUDIO_DIR, `${message.id}_clean.ogg`); // Novo caminho com áudio limpo
+
       let buffer = await client.decryptFile(message);
 
       await new Promise((resolve, reject) => {
-        const stream = fs.createWriteStream(inputPath);
-        stream.write(buffer, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-        stream.end();
+          const stream = fs.createWriteStream(inputPath);
+          stream.write(buffer, (err) => {
+              if (err) reject(err);
+              else resolve();
+          });
+          stream.end();
       });
-      // Libera buffer da memória
-      buffer = null;
+      buffer = null; // Libera memória
 
-      const duration = await getAudioDuration(inputPath);
+      // 🔇 Aplicando filtro de redução de ruído com FFmpeg
+      await new Promise((resolve, reject) => {
+          const ffmpeg = spawn('ffmpeg', [
+              '-i', inputPath,
+              '-af', 'afftdn', // filtro de redução de ruído
+              '-y',
+              denoisedPath
+          ]);
+
+          ffmpeg.stderr.on('data', data => {
+              console.log(`FFmpeg: ${data}`);
+          });
+
+          ffmpeg.on('close', code => {
+              if (code === 0) resolve();
+              else reject(new Error(`FFmpeg exited with code ${code}`));
+          });
+      });
+
+      const duration = await getAudioDuration(denoisedPath);
       const roundduration = parseFloat(duration.toFixed(2));
       console.log(`Audio de ${roundduration} sec`);
 
       const formData = new FormData();
-      formData.append('file', fs.createReadStream(inputPath));
+      formData.append('file', fs.createReadStream(denoisedPath));
       formData.append('model', 'whisper-1');
 
-      // Chamada para transcrição no OpenAI Whisper
       const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
           headers: {
               ...formData.getHeaders(),
@@ -1050,56 +1058,38 @@ async function processAudio(sessionName, message) {
 
       let prompt_base = '';
       let prompt_use = transcricao;
-      
-      // Se o áudio for do próprio usuário, sempre transcreve para inglês
+
       let languagePrompt = '';
-      if (isFromSelf) {
-        languagePrompt = 'traduzir qualquer mensagem para inglês';
-      } else if (filtros.translation_enabled) {
-        switch (filtros.language) {
-          case 'pt-br':
-            languagePrompt = 'traduzir qualquer mensagem para português';
-            break;
-          case 'en-us':
-            languagePrompt = 'traduzir qualquer mensagem para inglês';
-            break;
-          case 'es-es':
-            languagePrompt = 'traduzir qualquer mensagem para espanhol';
-            break;
-          default:
-            console.warn('Idioma não reconhecido para tradução:', filtros.language);
-            break;
-        }
-      }
-      
-      // 2. Monta a estrutura do prompt com base nos outros filtros
-      if (filtros.summarizeMessages && filtros.longmessage) {
-        prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      
-      } else if (filtros.summarizeMessages) {
-        // Usa prompt específico (caso tenha sido definido em outro lugar, ex: variável `prompt_transcricao`)
-        prompt_base = typeof prompt_transcricao !== 'undefined' ? prompt_transcricao : `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      
-      } else if (filtros.longmessage) {
-        prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      
-      } else {
-        // Fallback (sem filtros extras)
-        prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de textos. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      }
-      
-      // Determina o recipient correto
-      // Se for do próprio usuário, envia para o chat onde o áudio foi enviado (message.chatId)
-      // Caso contrário, usa a lógica existente com sendForward
-      let recipient;
-      if (isFromSelf) {
-        recipient = message.chatId || message.from; // Usa o chat ID, ou em último caso o remetente
-      } else {
-        const sendToSelf = filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1;
-        recipient = sendToSelf ? myNumber : message.from;
+      if (filtros.translation_enabled) {
+          switch (filtros.language) {
+              case 'pt-br':
+                  languagePrompt = 'traduzir qualquer mensagem para português';
+                  break;
+              case 'en-us':
+                  languagePrompt = 'traduzir qualquer mensagem para inglês';
+                  break;
+              case 'es-es':
+                  languagePrompt = 'traduzir qualquer mensagem para espanhol';
+                  break;
+              default:
+                  console.warn('Idioma não reconhecido para tradução:', filtros.language);
+                  break;
+          }
       }
 
-      // Chamada para resumir a transcrição no GPT-4o-mini
+      if (filtros.summarizeMessages && filtros.longmessage) {
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      } else if (filtros.summarizeMessages) {
+          prompt_base = typeof prompt_transcricao !== 'undefined' ? prompt_transcricao : `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      } else if (filtros.longmessage) {
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      } else {
+          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de textos. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      }
+
+      const sendToSelf = filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1;
+      const recipient = sendToSelf ? myNumber : message.from;
+
       const response_gpt = await axios.post(
           'https://api.openai.com/v1/chat/completions',
           {
@@ -1130,7 +1120,9 @@ async function processAudio(sessionName, message) {
           quotedMsg: message.id
       });
 
+      // 🧹 Limpeza dos arquivos temporários
       fs.unlinkSync(inputPath);
+      fs.unlinkSync(denoisedPath);
 
       const now = new Date();
       const year = now.getFullYear();
@@ -1141,32 +1133,33 @@ async function processAudio(sessionName, message) {
       const seconds = now.getSeconds().toString().padStart(2, '0');
 
       const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-  
+
       const logData = {
-        email: session.email,
-        numero: sessionName,
-        ultimo_acesso: formattedDateTime
+          email: session.email,
+          numero: sessionName,
+          ultimo_acesso: formattedDateTime
       };
 
       try {
-        await saveSessionLog(logData);
-        console.log('✅ Log de sessão salvo no banco.');
+          await saveSessionLog(logData);
+          console.log('✅ Log de sessão salvo no banco.');
       } catch (err) {
-        console.error('❌ Erro ao gravar log de sessão no banco:', err);
+          console.error('❌ Erro ao gravar log de sessão no banco:', err);
       }
-      
+
       const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
       try {
-        fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
-        console.log(`Log atualizado para a sessão ${sessionName}`);
+          fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
+          console.log(`Log atualizado para a sessão ${sessionName}`);
       } catch (err) {
-        console.error(`Falha ao salvar log para ${sessionName}:`, err);
+          console.error(`Falha ao salvar log para ${sessionName}:`, err);
       }
 
   } catch (error) {
       console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
+
 
 
 app.get('/api/agentes', async (req, res) => {
