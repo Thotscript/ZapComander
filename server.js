@@ -154,14 +154,6 @@ app.use((req, res, next) => {
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ===== Funções de persistência =====
-
-export function loadAllSessionEmails() {
-  if (!fs.existsSync(SESSIONS_FILE)) return {};
-  return JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'));
-}
-
-
 // ===== Rotas e lógica de sessão =====
 
 app.get('/auth/preference-numbers', async (req, res) => {
@@ -983,6 +975,74 @@ async function getAudioDuration(inputPath) {
     });
 }
 
+
+// Mapeamento de triggers e suas funções
+const TRIGGERS = {
+  evento: handleTriggerEvento,
+  tarefa: handleTriggerTarefa,
+  lembrete: handleTriggerLembrete
+  // Adicione mais conforme necessário: nomeTrigger: funçãoAssociada
+};
+
+async function handleTriggerEvento(session, message, audioBuffer) {
+  const client = session.client;
+  const sender = message.from;
+
+  await client.sendText(sender, '📅 Você ativou o modo *Evento*. Deseja criar um novo evento no calendário?');
+}
+
+async function handleTriggerTarefa(session, message, audioBuffer) {
+  console.log('🎯 Trigger "tarefa" detectado!');
+  // sua lógica para a tarefa
+}
+async function handleTriggerLembrete(session, message, audioBuffer) {
+  console.log('🎯 Trigger "lembrete" detectado!');
+  // sua lógica para o lembrete
+}
+
+// Detecta trigger com base no áudio bruto
+async function checkTriggerInAudio(buffer) {
+  const formData = new FormData();
+  const tempFile = path.join(AUDIO_DIR, `temp_trigger.ogg`);
+  fs.writeFileSync(tempFile, buffer);
+  formData.append('file', fs.createReadStream(tempFile));
+  formData.append('model', 'whisper-1');
+
+  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+      headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+      }
+  });
+
+  const transcript = response.data.text;
+
+  const checkPrompt = `
+Analise a transcrição de áudio abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa" ou "lembrete", responda apenas com a palavra correspondente (sem pontuação). 
+Caso contrário, responda apenas com "nenhum".
+
+Transcrição:
+"""${transcript}"""
+`;
+
+  const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4o-mini',
+      messages: [
+          { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+          { role: 'user', content: checkPrompt }
+      ]
+  }, {
+      headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+      }
+  });
+
+  fs.unlinkSync(tempFile); // remove arquivo temporário
+
+  return result.data.choices[0].message.content.trim().toLowerCase();
+}
+
 //PROCESSAR AUDIO RECEBIDO
 
 
@@ -991,179 +1051,148 @@ async function getAudioDuration(inputPath) {
 
 async function processAudio(sessionName, message) {
   try {
-      if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+    if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
-      const session = SESSIONS.get(sessionName);
-      const client = session.client;
-      const myNumber = session.myNumber;
-      const email = session.email;
+    const session = SESSIONS.get(sessionName);
+    const client = session.client;
+    const myNumber = session.myNumber;
+    const email = session.email;
 
-      if (!myNumber) {
-          console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
-          return;
+    if (!myNumber) {
+      console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
+      return;
+    }
+
+    // 🔓 Descriptografa o áudio uma única vez
+    let buffer = await client.decryptFile(message);
+
+    // 🧠 Verifica se há trigger no áudio
+    const trigger = await checkTriggerInAudio(buffer);
+    if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
+      await TRIGGERS[trigger](session, message, buffer);
+      return;
+    }
+
+    // 🗃️ Continua com o fluxo normal
+    const filtros = await loadFiltersFromDB(email, sessionName);
+
+    const contact = await client.getContact(message.from);
+    const senderName = contact.name || contact.pushname || message.from;
+
+    console.log(`🔊 Processando áudio de ${senderName} na sessão ${sessionName}...`);
+
+    const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
+    const denoisedPath = path.join(AUDIO_DIR, `${message.id}_clean.ogg`);
+
+    // 💾 Salva o áudio original
+    await new Promise((resolve, reject) => {
+      const stream = fs.createWriteStream(inputPath);
+      stream.write(buffer, (err) => err ? reject(err) : resolve());
+      stream.end();
+    });
+    buffer = null;
+
+    // 🔇 Redução de ruído com FFmpeg
+    await new Promise((resolve, reject) => {
+      const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
+      ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`));
+      ffmpeg.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${code}`)));
+    });
+
+    const duration = await getAudioDuration(denoisedPath);
+    console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
+
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(denoisedPath));
+    formData.append('model', 'whisper-1');
+
+    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+      headers: {
+        ...formData.getHeaders(),
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
       }
+    });
 
-      const filtros = await loadFiltersFromDB(email, sessionName);
+    const transcricao = response.data.text;
 
-      const contact = await client.getContact(message.from);
-      const senderName = contact.name || contact.pushname || message.from;
-
-      console.log(`🔊 Processando áudio de ${senderName} na sessão ${sessionName}...`);
-
-      const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
-      const denoisedPath = path.join(AUDIO_DIR, `${message.id}_clean.ogg`); // Novo caminho com áudio limpo
-
-      let buffer = await client.decryptFile(message);
-
-      await new Promise((resolve, reject) => {
-          const stream = fs.createWriteStream(inputPath);
-          stream.write(buffer, (err) => {
-              if (err) reject(err);
-              else resolve();
-          });
-          stream.end();
-      });
-      buffer = null; // Libera memória
-
-      // 🔇 Aplicando filtro de redução de ruído com FFmpeg
-      await new Promise((resolve, reject) => {
-          const ffmpeg = spawn('ffmpeg', [
-              '-i', inputPath,
-              '-af', 'afftdn', // filtro de redução de ruído
-              '-y',
-              denoisedPath
-          ]);
-
-          ffmpeg.stderr.on('data', data => {
-              console.log(`FFmpeg: ${data}`);
-          });
-
-          ffmpeg.on('close', code => {
-              if (code === 0) resolve();
-              else reject(new Error(`FFmpeg exited with code ${code}`));
-          });
-      });
-
-      const duration = await getAudioDuration(denoisedPath);
-      const roundduration = parseFloat(duration.toFixed(2));
-      console.log(`Audio de ${roundduration} sec`);
-
-      const formData = new FormData();
-      formData.append('file', fs.createReadStream(denoisedPath));
-      formData.append('model', 'whisper-1');
-
-      const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-          headers: {
-              ...formData.getHeaders(),
-              'Authorization': `Bearer ${OPENAI_API_KEY}`
-          }
-      });
-
-      const transcricao = response.data.text;
-
-      let prompt_base = '';
-      let prompt_use = transcricao;
-
-      let languagePrompt = '';
-      if (filtros.translation_enabled) {
-          switch (filtros.language) {
-              case 'pt-br':
-                  languagePrompt = 'traduzir qualquer mensagem para português';
-                  break;
-              case 'en-us':
-                  languagePrompt = 'traduzir qualquer mensagem para inglês';
-                  break;
-              case 'es-es':
-                  languagePrompt = 'traduzir qualquer mensagem para espanhol';
-                  break;
-              default:
-                  console.warn('Idioma não reconhecido para tradução:', filtros.language);
-                  break;
-          }
+    // 📋 Prompt GPT com base nos filtros
+    let languagePrompt = '';
+    if (filtros.translation_enabled) {
+      switch (filtros.language) {
+        case 'pt-br': languagePrompt = 'traduzir qualquer mensagem para português'; break;
+        case 'en-us': languagePrompt = 'traduzir qualquer mensagem para inglês'; break;
+        case 'es-es': languagePrompt = 'traduzir qualquer mensagem para espanhol'; break;
+        default: console.warn('Idioma não reconhecido para tradução:', filtros.language);
       }
+    }
 
-      if (filtros.summarizeMessages && filtros.longmessage) {
-          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, você deve devolver o texto original corrigido e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final do texto: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      } else if (filtros.summarizeMessages) {
-          prompt_base = typeof prompt_transcricao !== 'undefined' ? prompt_transcricao : `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e então falar os tópicos do texto. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      } else if (filtros.longmessage) {
-          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio. Mantenha o texto original o máximo possível, apenas fazendo correções gramaticais e de pontuação. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
-      } else {
-          prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de textos. Sempre pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+    let prompt_base = '';
+    if (filtros.summarizeMessages && filtros.longmessage) {
+      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, devolver o texto corrigido e então listar os tópicos do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+    } else if (filtros.summarizeMessages) {
+      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e listar os tópicos. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+    } else if (filtros.longmessage) {
+      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática mantendo o texto original o máximo possível. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+    } else {
+      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+    }
+
+    const recipient = (filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1)
+      ? myNumber
+      : message.from;
+
+    const response_gpt = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: prompt_base },
+          { role: "user", content: transcricao }
+        ]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       }
+    );
 
-      const sendToSelf = filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1;
-      const recipient = sendToSelf ? myNumber : message.from;
+    const resumo = response_gpt.data.choices[0].message.content;
 
-      const response_gpt = await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          {
-              model: "gpt-4o-mini",
-              messages: [
-                  {
-                      role: "system",
-                      content: prompt_base
-                  },
-                  {
-                      role: "user",
-                      content: prompt_use
-                  }
-              ]
-          },
-          {
-              headers: {
-                  'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                  'Content-Type': 'application/json'
-              }
-          }
-      );
+    await new Promise(resolve => setTimeout(resolve, 10));
+    await client.sendText(recipient, resumo, { quotedMsg: message.id });
 
-      const resumo = response_gpt.data.choices[0].message.content;
-      const legenda = `*Transcrição do áudio de ${senderName}:* \n\n${transcricao}\n${resumo}`;
-      await new Promise(resolve => setTimeout(resolve, 10));
-      await client.sendText(recipient, resumo, {
-          quotedMsg: message.id
-      });
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(denoisedPath);
 
-      // 🧹 Limpeza dos arquivos temporários
-      fs.unlinkSync(inputPath);
-      fs.unlinkSync(denoisedPath);
+    const now = new Date();
+    const logData = {
+      email: session.email,
+      numero: sessionName,
+      ultimo_acesso: now.toISOString().replace('T', ' ').substring(0, 19)
+    };
 
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = (now.getMonth() + 1).toString().padStart(2, '0');
-      const day = now.getDate().toString().padStart(2, '0');
-      const hours = now.getHours().toString().padStart(2, '0');
-      const minutes = now.getMinutes().toString().padStart(2, '0');
-      const seconds = now.getSeconds().toString().padStart(2, '0');
+    try {
+      await saveSessionLog(logData);
+      console.log('✅ Log de sessão salvo no banco.');
+    } catch (err) {
+      console.error('❌ Erro ao gravar log de sessão no banco:', err);
+    }
 
-      const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-
-      const logData = {
-          email: session.email,
-          numero: sessionName,
-          ultimo_acesso: formattedDateTime
-      };
-
-      try {
-          await saveSessionLog(logData);
-          console.log('✅ Log de sessão salvo no banco.');
-      } catch (err) {
-          console.error('❌ Erro ao gravar log de sessão no banco:', err);
-      }
-
+    try {
       const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
-      try {
-          fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
-          console.log(`Log atualizado para a sessão ${sessionName}`);
-      } catch (err) {
-          console.error(`Falha ao salvar log para ${sessionName}:`, err);
-      }
+      fs.writeFileSync(logFilePath, JSON.stringify(logData, null, 2), 'utf8');
+      console.log(`Log atualizado para a sessão ${sessionName}`);
+    } catch (err) {
+      console.error(`Falha ao salvar log para ${sessionName}:`, err);
+    }
 
   } catch (error) {
-      console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
+    console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
+
 
 
 
@@ -1275,8 +1304,6 @@ async function processText(sessionName, message, email) {
 
     const text = message.body?.trim();
     if (!text) return;
-
-    console.log(`[processText] Mensagem recebida de ${message.from}: "${text}"`);
 
     const lowerText = text.toLowerCase();
     const convoKey = `${sessionName}:${message.from}`;
