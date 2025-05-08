@@ -39,6 +39,7 @@ import { criarOuIgnorarSessao } from './db/sessions.js';
 import { saveSessionLog } from './db/logs.js';
 import { constants } from 'crypto';
 import {criarEvento} from './Google-Agenda/calendar.js'
+import { spawn } from 'child_process';
 
 
 const processingQueues = new Map();
