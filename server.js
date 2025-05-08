@@ -1365,6 +1365,28 @@ Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em J
 
 
 // --------------------------------------------------------------------------------------------------------
+const RESTARTING_SESSIONS = new Set();
+
+function restartSessionIfOffline(sessionName, email) {
+  if (RESTARTING_SESSIONS.has(sessionName)) return;
+  RESTARTING_SESSIONS.add(sessionName);
+
+  enqueueProcessing(sessionName, async () => {
+    try {
+      const current = SESSIONS.get(sessionName);
+      if (!current) return;
+
+      console.log(`🔁 Reiniciando sessão ${sessionName} após estado OFFLINE...`);
+      await cleanupSession(sessionName);
+      await new Promise(r => setTimeout(r, 2000));
+      await restoreSession({ sessionName, email });
+    } catch (err) {
+      console.error(`❌ Falha ao restaurar sessão ${sessionName}:`, err);
+    } finally {
+      RESTARTING_SESSIONS.delete(sessionName);
+    }
+  });
+}
 
 
 const restoreSessions = async () => {
@@ -1419,31 +1441,6 @@ const restoreSessions = async () => {
           });
       }
     };
-
-
-    const RESTARTING_SESSIONS = new Set();
-
-    function restartSessionIfOffline(sessionName, email) {
-      if (RESTARTING_SESSIONS.has(sessionName)) return;
-      RESTARTING_SESSIONS.add(sessionName);
-    
-      enqueueProcessing(sessionName, async () => {
-        try {
-          const current = SESSIONS.get(sessionName);
-          if (!current) return;
-    
-          console.log(`🔁 Reiniciando sessão ${sessionName} após estado OFFLINE...`);
-          await cleanupSession(sessionName);
-          await new Promise(r => setTimeout(r, 2000));
-          await restoreSession({ sessionName, email });
-        } catch (err) {
-          console.error(`❌ Falha ao restaurar sessão ${sessionName}:`, err);
-        } finally {
-          RESTARTING_SESSIONS.delete(sessionName);
-        }
-      });
-    }
-    
     
     const restoreSession = async ({ sessionName, email }) => {
       try {
