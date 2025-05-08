@@ -525,7 +525,11 @@ app.post('/auth/login', async (req, res) => {
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
           await cleanupSession(sessionName);
+        } else if (state === 'OFFLINE') {
+          console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+          restartSessionIfOffline(sessionName, email);
         }
+
     
       } catch (error) {
         console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
@@ -1415,8 +1419,32 @@ const restoreSessions = async () => {
           });
       }
     };
+
+
+    const RESTARTING_SESSIONS = new Set();
+
+    function restartSessionIfOffline(sessionName, email) {
+      if (RESTARTING_SESSIONS.has(sessionName)) return;
+      RESTARTING_SESSIONS.add(sessionName);
     
-    // 4. Função para restaurar uma sessão individual
+      enqueueProcessing(sessionName, async () => {
+        try {
+          const current = SESSIONS.get(sessionName);
+          if (!current) return;
+    
+          console.log(`🔁 Reiniciando sessão ${sessionName} após estado OFFLINE...`);
+          await cleanupSession(sessionName);
+          await new Promise(r => setTimeout(r, 2000));
+          await restoreSession({ sessionName, email });
+        } catch (err) {
+          console.error(`❌ Falha ao restaurar sessão ${sessionName}:`, err);
+        } finally {
+          RESTARTING_SESSIONS.delete(sessionName);
+        }
+      });
+    }
+    
+    
     const restoreSession = async ({ sessionName, email }) => {
       try {
         console.log(`⏳ Restaurando sessão: ${sessionName}`);
@@ -1502,7 +1530,7 @@ const restoreSessions = async () => {
 
         client.onStateChange(async (state) => {
           console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
-        
+          
           try {
             if (state === 'CONNECTED') {
               try {
@@ -1523,11 +1551,17 @@ const restoreSessions = async () => {
             } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
               console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
               await cleanupSession(sessionName);
+        
+            } else if (state === 'OFFLINE') {
+              console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+              restartSessionIfOffline(sessionName, email);
             }
+        
           } catch (error) {
             console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
           }
         });
+        
         
         client.onAnyMessage(async (message) => {
           try {
