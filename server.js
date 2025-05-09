@@ -1400,8 +1400,22 @@ async function processText(sessionName, message, email) {
     const text = message.body?.trim();
     if (!text) return;
 
+    const lowerText = text.toLowerCase();
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored = CONVERSATIONS.get(convoKey);
+
+    // 🛑 Comando para encerrar o bot ativo
+    if (lowerText === 'tbvoff') {
+      if (stored?.activeTrigger) {
+        stored.activeTrigger = null;
+        stored.history.push({ role: 'user', content: text });
+        stored.history.push({ role: 'assistant', content: '🔕 Bot desativado. Você voltou ao fluxo normal.' });
+        await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+      } else {
+        await client.sendText(message.from, 'ℹ️ Nenhum bot ativo para desativar.');
+      }
+      return;
+    }
 
     // 🧠 Se já existe trigger ativo, continue com o histórico
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
@@ -1421,7 +1435,7 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🔍 Detectar trigger apenas se ainda não estiver em conversa ativa
+    // 🔍 Detectar trigger (mesmo sem @broker)
     const trigger = await checkTriggerInText(text);
     console.log(`[processText] Trigger identificado: ${trigger}`);
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
@@ -1429,8 +1443,8 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 💬 Conversa padrão (sem trigger)
-    const containsTrigger = TRIGGER_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+    // 💬 Conversa padrão (fluxo com prompt_qualification)
+    const containsTrigger = lowerText.includes('@broker');
     const hasHistory = stored?.history?.length > 0;
 
     if (!containsTrigger && !hasHistory) return;
@@ -1460,6 +1474,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
