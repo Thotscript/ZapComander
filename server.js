@@ -987,7 +987,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   // Primeiro tenta buscar no banco
   try {
     const [rows] = await pool.query(
-      'SELECT prompt FROM agentes WHERE trigger = ? AND ativo = 1 LIMIT 1',
+      'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
       [triggerName]
     );
 
@@ -1376,8 +1376,15 @@ Texto:
     }
   });
 
-  return result.data.choices[0].message.content.trim().toLowerCase();
+  const resposta = result.data.choices[0].message.content.trim().toLowerCase();
+  console.log(`[checkTriggerInText] Resposta do GPT: ${resposta}`);
+  return resposta;
 }
+
+
+const trigger = await checkTriggerInText(text);
+console.log(`[processText] Trigger identificado: ${trigger}`);
+
 
 const EVENT_CREATION_SESSIONS = new Map();
 
