@@ -975,6 +975,93 @@ async function getAudioDuration(inputPath) {
     });
 }
 
+// ===================================================================================================== GESTAO DE PROMPTS E GPTS
+
+
+async function handleTriggerWithConversation(triggerName, session, message, input) {
+  const client = session.client;
+  const sender = message.from;
+
+  let prompt;
+
+  // Primeiro tenta buscar no banco
+  try {
+    const [rows] = await pool.query(
+      'SELECT prompt FROM agentes WHERE trigger = ? AND ativo = 1 LIMIT 1',
+      [triggerName]
+    );
+
+    if (rows.length > 0) {
+      prompt = rows[0].prompt;
+    } else {
+      // Se não achou no banco, tenta carregar do arquivo
+      prompt = loadPrompt(triggerName);
+      console.warn(`⚠️ Prompt do trigger "${triggerName}" não encontrado no banco. Usando arquivo local.`);
+    }
+  } catch (err) {
+    console.error('❌ Erro ao consultar prompt do banco:', err.message);
+    prompt = loadPrompt(triggerName); // fallback garantido
+  }
+
+  const userText = typeof input === 'string'
+    ? input
+    : '[Atenção: input de áudio já deveria estar transcrito antes de ser passado aqui]';
+
+  const gptResponse = await sendPromptToGPT(prompt, userText);
+
+  await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
+
+  const convoKey = `${session.myNumber}:${sender}`;
+  CONVERSATIONS.set(convoKey, {
+    history: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: userText },
+      { role: 'assistant', content: gptResponse }
+    ],
+    activeTrigger: triggerName
+  });
+}
+
+
+function loadPrompt(promptName) {
+  const promptPath = path.join(__dirname, 'prompts', `${promptName}.txt`);
+  return fs.readFileSync(promptPath, 'utf8');
+}
+
+async function sendPromptToGPT(promptSystemInstructions, userText) {
+  const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: promptSystemInstructions },
+      { role: 'user', content: userText }
+    ]
+  }, {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  return response.data.choices[0].message.content.trim();
+}
+
+// Função utilitária para capitalizar texto
+function capitalize(str) {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Handlers simplificados usando a função genérica
+async function handleTriggerEvento(session, message, input) {
+  return handleTriggerWithConversation('evento', session, message, input);
+}
+
+async function handleTriggerTarefa(session, message, input) {
+  return handleTriggerWithConversation('tarefa', session, message, input);
+}
+
+async function handleTriggerLembrete(session, message, input) {
+  return handleTriggerWithConversation('lembrete', session, message, input);
+}
 
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
@@ -983,22 +1070,6 @@ const TRIGGERS = {
   lembrete: handleTriggerLembrete
   // Adicione mais conforme necessário: nomeTrigger: funçãoAssociada
 };
-
-async function handleTriggerEvento(session, message, audioBuffer) {
-  const client = session.client;
-  const sender = message.from;
-
-  await client.sendText(sender, '📅 Você ativou o modo *Evento*. Deseja criar um novo evento no calendário?');
-}
-
-async function handleTriggerTarefa(session, message, audioBuffer) {
-  console.log('🎯 Trigger "tarefa" detectado!');
-  // sua lógica para a tarefa
-}
-async function handleTriggerLembrete(session, message, audioBuffer) {
-  console.log('🎯 Trigger "lembrete" detectado!');
-  // sua lógica para o lembrete
-}
 
 // Detecta trigger com base no áudio bruto
 async function checkTriggerInAudio(buffer) {
@@ -1043,6 +1114,8 @@ Transcrição:
   return result.data.choices[0].message.content.trim().toLowerCase();
 }
 
+// =======================================================================================================================================================
+
 //PROCESSAR AUDIO RECEBIDO
 
 
@@ -1063,17 +1136,15 @@ async function processAudio(sessionName, message) {
       return;
     }
 
-    // 🔓 Descriptografa o áudio uma única vez
     let buffer = await client.decryptFile(message);
 
-    // 🧠 Verifica se há trigger no áudio
+
     const trigger = await checkTriggerInAudio(buffer);
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
       await TRIGGERS[trigger](session, message, buffer);
       return;
     }
 
-    // 🗃️ Continua com o fluxo normal
     const filtros = await loadFiltersFromDB(email, sessionName);
 
     const contact = await client.getContact(message.from);
@@ -1084,15 +1155,14 @@ async function processAudio(sessionName, message) {
     const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
     const denoisedPath = path.join(AUDIO_DIR, `${message.id}_clean.ogg`);
 
-    // 💾 Salva o áudio original
     await new Promise((resolve, reject) => {
       const stream = fs.createWriteStream(inputPath);
       stream.write(buffer, (err) => err ? reject(err) : resolve());
       stream.end();
     });
+
     buffer = null;
 
-    // 🔇 Redução de ruído com FFmpeg
     await new Promise((resolve, reject) => {
       const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
       ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`));
@@ -1115,7 +1185,6 @@ async function processAudio(sessionName, message) {
 
     const transcricao = response.data.text;
 
-    // 📋 Prompt GPT com base nos filtros
     let languagePrompt = '';
     if (filtros.translation_enabled) {
       switch (filtros.language) {
@@ -1284,9 +1353,32 @@ app.post('/api/agentes', async (req, res) => {
 
 // --------------------------------------------------------------------------------------------------------
 
-//PROCESSAR TEXTO RECEBIDO - BOT
 
-// Controle de sessões de criação de eventos
+async function checkTriggerInText(text) {
+  const checkPrompt = `
+Analise o texto abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa" ou "lembrete", responda apenas com a palavra correspondente (sem pontuação). 
+Caso contrário, responda apenas com "nenhum".
+
+Texto:
+"""${text}"""
+`;
+
+  const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+      { role: 'user', content: checkPrompt }
+    ]
+  }, {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  return result.data.choices[0].message.content.trim().toLowerCase();
+}
+
 const EVENT_CREATION_SESSIONS = new Map();
 
 async function processText(sessionName, message, email) {
@@ -1305,84 +1397,67 @@ async function processText(sessionName, message, email) {
     const text = message.body?.trim();
     if (!text) return;
 
-    const lowerText = text.toLowerCase();
-    const convoKey = `${sessionName}:${message.from}`;
+    const convoKey = `${session.myNumber}:${message.from}`;
+    const stored = CONVERSATIONS.get(convoKey);
 
-    // 🔥 Trigger específico para criação de evento com GPT
-    if (lowerText.includes('@broker') && lowerText.includes('evento')) {
-      CONVERSATIONS.set(convoKey, [
-        {
-          role: "system",
-          content: `Você é um assistente que agenda eventos no Google Calendar.
-Converse com o usuário e colete as seguintes informações:
-- dia do evento (formato: YYYY-MM-DD)
-- hora do evento (formato: HH:mm)
-- título do evento
-- duração em minutos
+    // 🧠 Se já existe trigger ativo, continue com o histórico
+    if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+      const gptHistory = stored.history;
+      gptHistory.push({ role: 'user', content: text });
 
-Quando tiver todas as informações, responda SOMENTE com um JSON assim:
-{
-  "dia": "2025-05-03",
-  "hora": "14:00",
-  "titulo": "Reunião com João",
-  "duracao": 90
-}
+      const resp = await openai.chat.completions.create({
+        model: ASSISTANT_MODEL,
+        messages: gptHistory,
+        temperature: 0.3
+      });
 
-Se ainda estiver coletando dados, apenas pergunte o que falta sem responder em JSON.`
-        }
-      ]);
+      const reply = resp.choices[0].message.content.trim();
+      gptHistory.push({ role: 'assistant', content: reply });
 
-      await client.sendText(message.from, '📅 Vamos criar seu evento! Me diga: qual o dia do evento?');
+      await client.sendText(message.from, reply);
       return;
     }
 
-    // 🔁 Conversa ativa (seja evento ou outro trigger normal)
-    const containsTrigger = TRIGGER_KEYWORDS.some(kw => lowerText.includes(kw));
-    const hasHistory = CONVERSATIONS.has(convoKey);
+    // 🔍 Detectar trigger apenas se ainda não estiver em conversa ativa
+    const trigger = await checkTriggerInText(text);
+    if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
+      await TRIGGERS[trigger](session, message, text);
+      return;
+    }
+
+    // 💬 Conversa padrão (sem trigger)
+    const containsTrigger = TRIGGER_KEYWORDS.some(kw => text.toLowerCase().includes(kw));
+    const hasHistory = stored?.history?.length > 0;
 
     if (!containsTrigger && !hasHistory) return;
 
-    if (!CONVERSATIONS.has(convoKey)) {
-      CONVERSATIONS.set(convoKey, [
-        { role: "system", content: prompt_qualification }
-      ]);
+    if (!hasHistory) {
+      CONVERSATIONS.set(convoKey, {
+        history: [{ role: "system", content: prompt_qualification }],
+        activeTrigger: null
+      });
     }
 
-    const history = CONVERSATIONS.get(convoKey);
-    history.push({ role: "user", content: text });
+    const updated = CONVERSATIONS.get(convoKey);
+    updated.history.push({ role: "user", content: text });
 
     const resp = await openai.chat.completions.create({
       model: ASSISTANT_MODEL,
-      messages: history,
+      messages: updated.history,
       temperature: 0.3
     });
 
     const reply = resp.choices[0].message.content.trim();
-    history.push({ role: "assistant", content: reply });
+    updated.history.push({ role: "assistant", content: reply });
 
-    // 🎯 Verifica se o GPT respondeu com um JSON válido de evento
-    try {
-      const jsonMatch = reply.match(/\{[\s\S]*?\}/);
-      if (jsonMatch) {
-        const eventData = JSON.parse(jsonMatch[0]);
-
-        await criarEvento(eventData); // ✅ NOVA forma de chamada
-
-        await client.sendText(message.from, '✅ Evento criado com sucesso!');
-        CONVERSATIONS.delete(convoKey);
-        return;
-      }
-    } catch (err) {
-      console.warn('[processText] Resposta não era um JSON válido:', err.message);
-    }
-
-    // Continua a conversa normalmente (evento ou outro tema)
     await client.sendText(message.from, reply);
 
   } catch (err) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
+
 
 
 // --------------------------------------------------------------------------------------------------------
