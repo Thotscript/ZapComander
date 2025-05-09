@@ -1435,13 +1435,13 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🔍 Detectar trigger (mesmo sem @broker)
-    const trigger = await checkTriggerInText(text);
-    console.log(`[processText] Trigger identificado: ${trigger}`);
-    if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
+    const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
+    console.log(`[processText] Trigger identificado: '${trigger}'`);
+    if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text);
       return;
     }
+
 
     // 💬 Conversa padrão (fluxo com prompt_qualification)
     const containsTrigger = lowerText.includes('@broker');
