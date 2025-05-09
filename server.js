@@ -1382,10 +1382,6 @@ Texto:
 }
 
 
-const trigger = await checkTriggerInText(text);
-console.log(`[processText] Trigger identificado: ${trigger}`);
-
-
 const EVENT_CREATION_SESSIONS = new Map();
 
 async function processText(sessionName, message, email) {
@@ -1427,6 +1423,7 @@ async function processText(sessionName, message, email) {
 
     // 🔍 Detectar trigger apenas se ainda não estiver em conversa ativa
     const trigger = await checkTriggerInText(text);
+    console.log(`[processText] Trigger identificado: ${trigger}`);
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
       await TRIGGERS[trigger](session, message, text);
       return;
