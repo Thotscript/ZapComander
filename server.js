@@ -1413,18 +1413,19 @@ async function processText(sessionName, message, email) {
     // 🛑 Comando para encerrar o bot ativo
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
-        stored.activeTrigger = null;
-        stored.history.push({ role: 'user', content: text });
-        stored.history.push({ role: 'assistant', content: '🔕 Bot desativado. Você voltou ao fluxo normal.' });
-
-        CONVERSATIONS.set(convoKey, stored); // ✅ Atualiza o Map
-
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+
+        // 🔁 Substitui o estado inteiro da conversa para evitar continuidade
+        CONVERSATIONS.set(convoKey, {
+          history: [],
+          activeTrigger: null
+        });
       } else {
         await client.sendText(message.from, 'ℹ️ Nenhum bot ativo para desativar.');
       }
       return;
-}
+    }
+
 
 
     // 🧠 Se já existe trigger ativo, continue com o histórico
