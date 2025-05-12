@@ -1063,12 +1063,17 @@ async function handleTriggerLembrete(session, message, input) {
   return handleTriggerWithConversation('lembrete', session, message, input);
 }
 
+async function handleTriggerFinanciamento(session, message, input) {
+  return handleTriggerWithConversation('financiamento', session, message, input);
+}
+
+
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
   evento: handleTriggerEvento,
   tarefa: handleTriggerTarefa,
-  lembrete: handleTriggerLembrete
-  // Adicione mais conforme necessário: nomeTrigger: funçãoAssociada
+  lembrete: handleTriggerLembrete,
+  financiamento: handleTriggerFinanciamento
 };
 
 // Detecta trigger com base no áudio bruto
@@ -1089,7 +1094,7 @@ async function checkTriggerInAudio(buffer) {
   const transcript = response.data.text;
 
   const checkPrompt = `
-Analise a transcrição de áudio abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa" ou "lembrete", responda apenas com a palavra correspondente (sem pontuação). 
+Analise a transcrição de áudio abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa", "lembrete" ou "financiamento", responda apenas com a palavra correspondente (sem pontuação).
 Caso contrário, responda apenas com "nenhum".
 
 Transcrição:
@@ -1356,7 +1361,7 @@ app.post('/api/agentes', async (req, res) => {
 
 async function checkTriggerInText(text) {
   const checkPrompt = `
-Analise o texto abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa" ou "lembrete", responda apenas com a palavra correspondente (sem pontuação). 
+Analise o texto abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa", "lembrete" ou "financiamento", responda apenas com a palavra correspondente (sem pontuação).
 Caso contrário, responda apenas com "nenhum".
 
 Texto:
@@ -1380,6 +1385,7 @@ Texto:
   console.log(`[checkTriggerInText] Resposta do GPT: ${resposta}`);
   return resposta;
 }
+
 
 
 const EVENT_CREATION_SESSIONS = new Map();
