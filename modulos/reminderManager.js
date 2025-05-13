@@ -8,7 +8,6 @@ function scheduleReminder(sessionName, phoneNumber, message, delayMs, sendTextFn
 
     const timeoutId = setTimeout(() => {
         sendTextFn(sessionName, phoneNumber, message);
-        // Remover lembrete depois do envio
         reminders[sessionName] = reminders[sessionName].filter(r => r.timeoutId !== timeoutId);
     }, delayMs);
 
@@ -30,4 +29,5 @@ function clearReminders(sessionName) {
     }
 }
 
-module.exports = { scheduleReminder, getReminders, clearReminders };
+// ✅ Exportação correta para ESModules
+export { scheduleReminder, getReminders, clearReminders };
