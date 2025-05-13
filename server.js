@@ -38,7 +38,7 @@ import { criarOuIgnorarSessao } from './db/sessions.js';
 // Função para salvar logs de sessões no banco de dados
 import { saveSessionLog } from './db/logs.js';
 import { constants } from 'crypto';
-import {criarEvento} from './Google-Agenda/calendar.js'
+const { scheduleReminder } = require('./modulos/reminderManager.js');
 import { spawn } from 'child_process';
 
 
@@ -981,26 +981,25 @@ async function getAudioDuration(inputPath) {
 async function handleTriggerWithConversation(triggerName, session, message, input) {
   const client = session.client;
   const sender = message.from;
-
   let prompt;
 
-  // Primeiro tenta buscar no banco
+  // Buscar prompt no banco ou arquivo
   try {
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
       [triggerName]
     );
 
-    if (rows.length > 0) {
-      prompt = rows[0].prompt;
-    } else {
-      // Se não achou no banco, tenta carregar do arquivo
-      prompt = loadPrompt(triggerName);
+    prompt = rows.length > 0
+      ? rows[0].prompt
+      : loadPrompt(triggerName);
+
+    if (rows.length === 0) {
       console.warn(`⚠️ Prompt do trigger "${triggerName}" não encontrado no banco. Usando arquivo local.`);
     }
   } catch (err) {
     console.error('❌ Erro ao consultar prompt do banco:', err.message);
-    prompt = loadPrompt(triggerName); // fallback garantido
+    prompt = loadPrompt(triggerName); // fallback
   }
 
   const userText = typeof input === 'string'
@@ -1009,9 +1008,28 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
   const gptResponse = await sendPromptToGPT(prompt, userText);
 
-  await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
+  // ✅ Se for trigger "lembrete", tenta agendar a ação
+  if (triggerName === 'lembrete') {
+    try {
+      const json = JSON.parse(gptResponse);
 
-  const convoKey = `${session.myNumber}:${sender}`;
+      if (json.tipo === 'lembrete' && json.delayMinutos && json.conteudo) {
+        const delayMs = json.delayMinutos * 60 * 1000;
+        const mensagem = `🔔 Lembrete: ${json.conteudo}`;
+        scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
+        await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
+      } else {
+        await client.sendText(sender, `⚠️ O formato do lembrete não foi reconhecido corretamente.`);
+      }
+    } catch (e) {
+      console.error('❌ Erro ao interpretar JSON do GPT para lembrete:', e.message);
+      await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
+    }
+  } else {
+    await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
+  }
+
+  const convoKey = `${session.myNumbe }:${sender}`;
   CONVERSATIONS.set(convoKey, {
     history: [
       { role: 'system', content: prompt },
@@ -1094,12 +1112,18 @@ async function checkTriggerInAudio(buffer) {
   const transcript = response.data.text;
 
   const checkPrompt = `
-Analise a transcrição de áudio abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa", "lembrete" ou "financiamento", responda apenas com a palavra correspondente (sem pontuação).
-Caso contrário, responda apenas com "nenhum".
+  Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
 
-Transcrição:
-"""${transcript}"""
-`;
+  Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
+
+  Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
+
+  Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
+
+  Transcrição:
+  """${transcript}"""
+  `;
+
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: 'gpt-4o-mini',
@@ -1360,13 +1384,19 @@ app.post('/api/agentes', async (req, res) => {
 
 
 async function checkTriggerInText(text) {
-  const checkPrompt = `
-Analise o texto abaixo. Se identificar que o usuário quer ativar uma função especial como "evento", "tarefa", "lembrete" ou "financiamento", responda apenas com a palavra correspondente (sem pontuação).
-Caso contrário, responda apenas com "nenhum".
+ const checkPrompt = `
+Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
 
-Texto:
-"""${text}"""
+Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
+
+Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
+
+Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
+
+Transcrição:
+"""${transcript}"""
 `;
+
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
