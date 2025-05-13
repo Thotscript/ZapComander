@@ -41,6 +41,9 @@ import { constants } from 'crypto';
 import { scheduleReminder, getReminders, clearReminders } from './modulos/reminderManager.js';
 import { spawn } from 'child_process';
 
+import { parse, differenceInMinutes } from 'date-fns';
+import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
+
 const MAIN_BOT_NUMBER = '5511994297562@c.us'; // substitua pelo seu número real com @c.us
 
 
@@ -155,6 +158,80 @@ app.use((req, res, next) => {
 
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
+
+
+const DDI_TO_TIMEZONE = {
+  '1': 'America/New_York',
+  '44': 'Europe/London',
+  '33': 'Europe/Paris',
+  '49': 'Europe/Berlin',
+  '34': 'Europe/Madrid',
+  '39': 'Europe/Rome',
+  '55': 'America/Sao_Paulo',
+  '351': 'Europe/Lisbon',
+  '54': 'America/Argentina/Buenos_Aires',
+  '81': 'Asia/Tokyo',
+  '91': 'Asia/Kolkata',
+  '61': 'Australia/Sydney',
+  '86': 'Asia/Shanghai'
+};
+
+function getTimezoneFromNumber(number) {
+  const clean = number.replace(/\D/g, '');
+  const ddi = clean.startsWith('55') ? '55' : clean.slice(0, 3); // tentativa com 3
+  return DDI_TO_TIMEZONE[ddi] || DDI_TO_TIMEZONE[ddi.slice(0, 2)] || 'UTC';
+}
+
+
+function extractDelayMinutes(text, senderNumber = '') {
+  const matchMin = text.match(/em (\d+)\s*(minutos|min|m)\b/i);
+  const matchHoras = text.match(/em (\d+)\s*(horas|h)\b/i);
+  const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
+
+  // Define fuso com base no DDI
+  const ddd = senderNumber.replace(/\D/g, '').slice(0, 2);
+  const timezones = {
+    '55': 'America/Sao_Paulo',
+    '1': 'America/New_York',
+    '44': 'Europe/London',
+    '34': 'Europe/Madrid',
+    '33': 'Europe/Paris',
+    // adicione mais conforme necessário
+  };
+  const timezone = timezones[ddd] || 'UTC';
+  const now = utcToZonedTime(new Date(), timezone);
+
+  if (matchMin) {
+    const delay = parseInt(matchMin[1]);
+    return { delayMinutos: delay, descricaoOriginal: `${delay} minutos` };
+  }
+
+  if (matchHoras) {
+    const delay = parseInt(matchHoras[1]) * 60;
+    return { delayMinutos: delay, descricaoOriginal: `${matchHoras[1]} hora(s)` };
+  }
+
+  if (matchHoraRelogio) {
+    const hour = parseInt(matchHoraRelogio[1]);
+    const minutes = parseInt(matchHoraRelogio[2] || '0');
+    const targetTime = new Date(now);
+    targetTime.setHours(hour, minutes, 0, 0);
+
+    // Se for hora passada, considera o dia seguinte
+    if (targetTime < now) {
+      targetTime.setDate(targetTime.getDate() + 1);
+    }
+
+    const delay = Math.round(differenceInMinutes(targetTime, now));
+    return {
+      delayMinutos: delay,
+      descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+    };
+  }
+
+  return { delayMinutos: null, descricaoOriginal: '' };
+}
+
 
 // ===== Rotas e lógica de sessão =====
 
@@ -1019,40 +1096,65 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
   // ✅ Trata lembrete e encerra o trigger
   if (triggerName === 'lembrete') {
+  if (message.to !== MAIN_BOT_NUMBER) return;
 
-        if (message.to !== MAIN_BOT_NUMBER) {
-          console.log(`[processText] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
-          return;
-        }
+  try {
+    const json = JSON.parse(gptResponse);
+    
+    const convoKey = `${session.myNumber}:${sender}`;
 
-    try {
-      const json = JSON.parse(gptResponse);
-
-      if (json.tipo === 'lembrete' && json.delayMinutos && json.conteudo) {
-        const delayMs = json.delayMinutos * 60 * 1000;
-        const mensagem = `🔔 Lembrete: ${json.conteudo}`;
-        scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
-
-        // Encerra totalmente a conversa (limpa histórico e trigger)
-        CONVERSATIONS.set(convoKey, {
-          history: [],
-          activeTrigger: null
-        });
-
-
-        await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
-
-        return;
-      } else {
-        await client.sendText(sender, `⚠️ O formato do lembrete não foi reconhecido corretamente.`);
-        return;
-      }
-    } catch (e) {
-      console.error('❌ Erro ao interpretar JSON do GPT para lembrete:', e.message);
-      await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
+    if (!json.delayMinutos) {
+      CONVERSATIONS.set(convoKey, {
+        history,
+        activeTrigger: 'lembrete',
+        lembreteDraft: json // armazena parcial
+      });
+      await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${json.conteudo}"?`);
       return;
     }
+
+    if (!json.detalhes) {
+      CONVERSATIONS.set(convoKey, {
+        history,
+        activeTrigger: 'lembrete',
+        lembreteDraft: json
+      });
+      await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${json.conteudo}"?`);
+      return;
+    }
+
+    // Finaliza lembrete
+    const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
+    const { delayMinutos, descricaoOriginal } = extractDelayMinutes(userText, sender);
+
+
+    const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
+
+    scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
+
+    if (json.delayMinutos > 10) {
+      const avisoAntecipado = delayMs - 5 * 60 * 1000;
+      if (avisoAntecipado > 0) {
+        scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${json.conteudo}`, avisoAntecipado, client.sendText.bind(client));
+      }
+    }
+
+    CONVERSATIONS.set(convoKey, {
+      history: [],
+      activeTrigger: null
+    });
+
+    await client.sendText(sender, `✅ Lembrete agendado para daqui a *${descricaoOriginal}*. Deseja adicionar mais detalhes?`);
+
+    return;
+
+  } catch (e) {
+    console.error('Erro ao interpretar lembrete:', e.message);
+    await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
+    return;
   }
+}
+
 
   // Para outros triggers (evento, tarefa, etc.)
   await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
@@ -1484,22 +1586,30 @@ async function processText(sessionName, message, email) {
 
 
     // 🧠 Se já existe trigger ativo, continue com o histórico
-    if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      const gptHistory = stored.history;
-      gptHistory.push({ role: 'user', content: text });
+    if (stored?.activeTrigger === 'lembrete' && stored.lembreteDraft) {
+      const draft = stored.lembreteDraft;
+      const prompt = loadPrompt('lembrete'); // usa mesmo prompt
 
-      const resp = await openai.chat.completions.create({
-        model: ASSISTANT_MODEL,
-        messages: gptHistory,
-        temperature: 0.3
-      });
+      const jsonCompleto = await sendPromptToGPT(prompt, message.body);
 
-      const reply = resp.choices[0].message.content.trim();
-      gptHistory.push({ role: 'assistant', content: reply });
+      try {
+        const novoJson = JSON.parse(jsonCompleto);
+        const combinado = {
+          tipo: 'lembrete',
+          delayMinutos: draft.delayMinutos ?? novoJson.delayMinutos,
+          conteudo: draft.conteudo ?? novoJson.conteudo,
+          detalhes: draft.detalhes ?? novoJson.detalhes
+        };
 
-      await client.sendText(message.from, reply);
+        // Chama o handler novamente com JSON combinado como input
+        return await handleTriggerWithConversation('lembrete', session, message, JSON.stringify(combinado));
+      } catch (e) {
+        await client.sendText(message.from, `⚠️ Tente responder de outra forma.`);
+      }
+
       return;
     }
+
 
     const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
     console.log(`[processText] Trigger identificado: '${trigger}'`);
