@@ -1033,10 +1033,12 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         const mensagem = `🔔 Lembrete: ${json.conteudo}`;
         scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
 
+        // Encerra totalmente a conversa (limpa histórico e trigger)
         CONVERSATIONS.set(convoKey, {
-          history,
+          history: [],
           activeTrigger: null
         });
+
 
         await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
 
