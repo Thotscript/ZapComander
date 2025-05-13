@@ -1394,7 +1394,7 @@ Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquece
 Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
 
 Transcrição:
-"""${transcript}"""
+"""${text}"""
 `;
 
 
