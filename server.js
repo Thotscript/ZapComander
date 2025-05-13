@@ -1026,14 +1026,13 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         const delayMs = json.delayMinutos * 60 * 1000;
         const mensagem = `🔔 Lembrete: ${json.conteudo}`;
         scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
-
-        await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
-
-        // 🛑 NÃO continua o GPT após lembrete
+        
         CONVERSATIONS.set(convoKey, {
           history,
           activeTrigger: null
         });
+
+        await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
 
         return;
       } else {
