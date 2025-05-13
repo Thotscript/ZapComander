@@ -1019,6 +1019,12 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
   // ✅ Trata lembrete e encerra o trigger
   if (triggerName === 'lembrete') {
+
+        if (message.to !== MAIN_BOT_NUMBER) {
+          console.log(`[processText] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
+          return;
+        }
+
     try {
       const json = JSON.parse(gptResponse);
 
@@ -1026,7 +1032,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         const delayMs = json.delayMinutos * 60 * 1000;
         const mensagem = `🔔 Lembrete: ${json.conteudo}`;
         scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
-        
+
         CONVERSATIONS.set(convoKey, {
           history,
           activeTrigger: null
@@ -1181,13 +1187,6 @@ async function processAudio(sessionName, message) {
       console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
       return;
     }
-
-    if (message.to !== MAIN_BOT_NUMBER) {
-    console.log(`[processAudio] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
-    return;
-  }
-
-
 
     let buffer = await client.decryptFile(message);
 
@@ -1456,12 +1455,6 @@ async function processText(sessionName, message, email) {
     }
 
     if (message.from === myNumber) return;
-
-    if (message.to !== MAIN_BOT_NUMBER) {
-    console.log(`[processText] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
-    return;
-  }
-
 
     const text = message.body?.trim();
     if (!text) return;
