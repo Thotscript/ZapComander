@@ -42,11 +42,7 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
-import * as dateFnsTz from 'date-fns-tz';
-
-const { utcToZonedTime, zonedTimeToUtc } = dateFnsTz;
-const zoned = utcToZonedTime(new Date(), 'America/Sao_Paulo');
-
+import * as tz from 'date-fns-tz';
 
 const MAIN_BOT_NUMBER = '5511994297562@c.us'; // substitua pelo seu número real com @c.us
 
