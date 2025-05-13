@@ -42,7 +42,11 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
-import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
+import * as dateFnsTz from 'date-fns-tz';
+
+const { utcToZonedTime, zonedTimeToUtc } = dateFnsTz;
+const zoned = utcToZonedTime(new Date(), 'America/Sao_Paulo');
+
 
 const MAIN_BOT_NUMBER = '5511994297562@c.us'; // substitua pelo seu número real com @c.us
 
@@ -183,23 +187,13 @@ function getTimezoneFromNumber(number) {
 }
 
 
-function extractDelayMinutes(text, senderNumber = '') {
+function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   const matchMin = text.match(/em (\d+)\s*(minutos|min|m)\b/i);
   const matchHoras = text.match(/em (\d+)\s*(horas|h)\b/i);
   const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
 
-  // Define fuso com base no DDI
-  const ddd = senderNumber.replace(/\D/g, '').slice(0, 2);
-  const timezones = {
-    '55': 'America/Sao_Paulo',
-    '1': 'America/New_York',
-    '44': 'Europe/London',
-    '34': 'Europe/Madrid',
-    '33': 'Europe/Paris',
-    // adicione mais conforme necessário
-  };
-  const timezone = timezones[ddd] || 'UTC';
-  const now = utcToZonedTime(new Date(), timezone);
+  const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
+  const now = dateFnsTz.utcToZonedTime(new Date(), timezone);
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
@@ -217,10 +211,7 @@ function extractDelayMinutes(text, senderNumber = '') {
     const targetTime = new Date(now);
     targetTime.setHours(hour, minutes, 0, 0);
 
-    // Se for hora passada, considera o dia seguinte
-    if (targetTime < now) {
-      targetTime.setDate(targetTime.getDate() + 1);
-    }
+    if (targetTime < now) targetTime.setDate(targetTime.getDate() + 1);
 
     const delay = Math.round(differenceInMinutes(targetTime, now));
     return {
@@ -231,6 +222,7 @@ function extractDelayMinutes(text, senderNumber = '') {
 
   return { delayMinutos: null, descricaoOriginal: '' };
 }
+
 
 
 // ===== Rotas e lógica de sessão =====
@@ -1125,7 +1117,8 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
     // Finaliza lembrete
     const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
-    const { delayMinutos, descricaoOriginal } = extractDelayMinutes(userText, sender);
+    const { delayMinutos, descricaoOriginal } = extractDelayMinutes(userText, sender, userTimeZone);
+
 
 
     const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
