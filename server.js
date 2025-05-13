@@ -41,6 +41,8 @@ import { constants } from 'crypto';
 import { scheduleReminder, getReminders, clearReminders } from './modulos/reminderManager.js';
 import { spawn } from 'child_process';
 
+const MAIN_BOT_NUMBER = '5511994297562@c.us'; // substitua pelo seu número real com @c.us
+
 
 const processingQueues = new Map();
 
@@ -1181,6 +1183,13 @@ async function processAudio(sessionName, message) {
       return;
     }
 
+    if (message.to !== MAIN_BOT_NUMBER) {
+    console.log(`[processAudio] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
+    return;
+  }
+
+
+
     let buffer = await client.decryptFile(message);
 
 
@@ -1448,6 +1457,12 @@ async function processText(sessionName, message, email) {
     }
 
     if (message.from === myNumber) return;
+
+    if (message.to !== MAIN_BOT_NUMBER) {
+    console.log(`[processText] Ignorado: mensagem não é para o bot principal (${MAIN_BOT_NUMBER})`);
+    return;
+  }
+
 
     const text = message.body?.trim();
     if (!text) return;
