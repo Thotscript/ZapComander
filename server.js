@@ -1008,6 +1008,16 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
   const gptResponse = await sendPromptToGPT(prompt, userText);
 
+  const convoKey = `${session.myNumber}:${sender}`;
+  CONVERSATIONS.set(convoKey, {
+    history: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: userText },
+      { role: 'assistant', content: gptResponse }
+    ],
+    activeTrigger: triggerName
+  });
+
   // ✅ Se for trigger "lembrete", tenta agendar a ação
   if (triggerName === 'lembrete') {
     try {
@@ -1028,17 +1038,8 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   } else {
     await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
   }
-
-  const convoKey = `${session.myNumbe }:${sender}`;
-  CONVERSATIONS.set(convoKey, {
-    history: [
-      { role: 'system', content: prompt },
-      { role: 'user', content: userText },
-      { role: 'assistant', content: gptResponse }
-    ],
-    activeTrigger: triggerName
-  });
 }
+
 
 
 function loadPrompt(promptName) {

@@ -7,7 +7,7 @@ function scheduleReminder(sessionName, phoneNumber, message, delayMs, sendTextFn
     }
 
     const timeoutId = setTimeout(() => {
-        sendTextFn(sessionName, phoneNumber, message);
+        sendTextFn(phoneNumber, message);
         reminders[sessionName] = reminders[sessionName].filter(r => r.timeoutId !== timeoutId);
     }, delayMs);
 
