@@ -189,7 +189,7 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
 
   const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
-  const now = dateFnsTz.utcToZonedTime(new Date(), timezone);
+  const now = tz.utcToZonedTime(new Date(), timezone);
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
@@ -477,10 +477,6 @@ app.post('/auth/login', async (req, res) => {
     sessionName = null,
     email       = null
   } = req.body;
-
-  console.log('Body recebido no login:', req.body);
-  console.log('📥 Requisição recebida do IP:', req.ip);
-
 
   if (!sessionName || !email) {
     return res
@@ -1225,18 +1221,18 @@ const TRIGGERS = {
 };
 
 // Detecta trigger com base no áudio bruto
-async function checkTriggerInAudio(buffer) {
+async function checkTriggerInAudio(buffer, sessionName, messageId) {
   const formData = new FormData();
-  const tempFile = path.join(AUDIO_DIR, `temp_trigger.ogg`);
+  const tempFile = path.join(AUDIO_DIR, `temp_trigger_${sessionName}_${messageId}.ogg`);
   fs.writeFileSync(tempFile, buffer);
   formData.append('file', fs.createReadStream(tempFile));
   formData.append('model', 'whisper-1');
 
   const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-      headers: {
-          ...formData.getHeaders(),
-          'Authorization': `Bearer ${OPENAI_API_KEY}`
-      }
+    headers: {
+      ...formData.getHeaders(),
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    }
   });
 
   const transcript = response.data.text;
@@ -1254,32 +1250,29 @@ async function checkTriggerInAudio(buffer) {
   """${transcript}"""
   `;
 
-
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: 'gpt-4o-mini',
-      messages: [
-          { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
-          { role: 'user', content: checkPrompt }
-      ]
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+      { role: 'user', content: checkPrompt }
+    ]
   }, {
-      headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-      }
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
   });
 
-  fs.unlinkSync(tempFile); // remove arquivo temporário
+  try {
+    fs.unlinkSync(tempFile);
+  } catch (err) {
+    console.warn(`⚠️ Arquivo já deletado ou inexistente: ${tempFile}`);
+  }
 
   return result.data.choices[0].message.content.trim().toLowerCase();
 }
 
 // =======================================================================================================================================================
-
-//PROCESSAR AUDIO RECEBIDO
-
-
-// --------------------------------------------------------------------------------------------------------
-
 
 async function processAudio(sessionName, message) {
   try {
@@ -1297,8 +1290,7 @@ async function processAudio(sessionName, message) {
 
     let buffer = await client.decryptFile(message);
 
-
-    const trigger = await checkTriggerInAudio(buffer);
+    const trigger = await checkTriggerInAudio(buffer, sessionName.replace(/\W/g, ''), message.id);
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
       await TRIGGERS[trigger](session, message, buffer);
       return;
@@ -1324,7 +1316,7 @@ async function processAudio(sessionName, message) {
 
     await new Promise((resolve, reject) => {
       const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
-      ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`));
+      // ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`)); // Comentado para não logar
       ffmpeg.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${code}`)));
     });
 
@@ -1391,8 +1383,18 @@ async function processAudio(sessionName, message) {
     await new Promise(resolve => setTimeout(resolve, 10));
     await client.sendText(recipient, resumo, { quotedMsg: message.id });
 
-    fs.unlinkSync(inputPath);
-    fs.unlinkSync(denoisedPath);
+    try {
+      await fsPromises.unlink(inputPath);
+    } catch (err) {
+      console.warn(`⚠️ Não foi possível deletar ${inputPath}: ${err.message}`);
+    }
+
+    try {
+      await fsPromises.unlink(denoisedPath);
+    } catch (err) {
+      console.warn(`⚠️ Não foi possível deletar ${denoisedPath}: ${err.message}`);
+    }
+
 
     const now = new Date();
     const logData = {
@@ -1420,7 +1422,6 @@ async function processAudio(sessionName, message) {
     console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
-
 
 
 
