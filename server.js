@@ -193,12 +193,20 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
-    return { delayMinutos: delay, descricaoOriginal: `${delay} minutos` };
+    return {
+      delayMinutos: delay,
+      descricaoOriginal: `${delay} minutos`,
+      jaPassou: false
+    };
   }
 
   if (matchHoras) {
     const delay = parseInt(matchHoras[1]) * 60;
-    return { delayMinutos: delay, descricaoOriginal: `${matchHoras[1]} hora(s)` };
+    return {
+      delayMinutos: delay,
+      descricaoOriginal: `${matchHoras[1]} hora(s)`,
+      jaPassou: false
+    };
   }
 
   if (matchHoraRelogio) {
@@ -207,17 +215,27 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
     const targetTime = new Date(now);
     targetTime.setHours(hour, minutes, 0, 0);
 
-    if (targetTime < now) targetTime.setDate(targetTime.getDate() + 1);
+    const passou = targetTime < now;
+
+    if (passou) {
+      return {
+        delayMinutos: null,
+        descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+        jaPassou: true
+      };
+    }
 
     const delay = Math.round(differenceInMinutes(targetTime, now));
     return {
       delayMinutos: delay,
-      descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+      descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
+      jaPassou: false
     };
   }
 
-  return { delayMinutos: null, descricaoOriginal: '' };
+  return { delayMinutos: null, descricaoOriginal: '', jaPassou: false };
 }
+
 
 
 
@@ -1041,23 +1059,20 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   const sender = message.from;
   let prompt;
 
-  // Buscar prompt do banco ou do arquivo local
   try {
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
       [triggerName]
     );
 
-    prompt = rows.length > 0
-      ? rows[0].prompt
-      : loadPrompt(triggerName);
+    prompt = rows.length > 0 ? rows[0].prompt : loadPrompt(triggerName);
 
     if (rows.length === 0) {
       console.warn(`⚠️ Prompt do trigger "${triggerName}" não encontrado no banco. Usando arquivo local.`);
     }
   } catch (err) {
     console.error('❌ Erro ao consultar prompt do banco:', err.message);
-    prompt = loadPrompt(triggerName); // fallback
+    prompt = loadPrompt(triggerName);
   }
 
   const userText = typeof input === 'string'
@@ -1073,77 +1088,85 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     { role: 'assistant', content: gptResponse }
   ];
 
-  // ✅ Trata lembrete e encerra o trigger
+  // ✅ Trata lembrete
   if (triggerName === 'lembrete') {
-  if (message.to !== MAIN_BOT_NUMBER) return;
+    if (message.to !== MAIN_BOT_NUMBER) return;
 
-  try {
-    const json = JSON.parse(gptResponse);
-    
-    const convoKey = `${session.myNumber}:${sender}`;
+    try {
+      const json = JSON.parse(gptResponse);
 
-    if (!json.delayMinutos) {
-      CONVERSATIONS.set(convoKey, {
-        history,
-        activeTrigger: 'lembrete',
-        lembreteDraft: json // armazena parcial
-      });
-      await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${json.conteudo}"?`);
-      return;
-    }
+      // ⚠️ Verifica se o horário já passou
+      const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
+      const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
 
-    if (!json.detalhes) {
-      CONVERSATIONS.set(convoKey, {
-        history,
-        activeTrigger: 'lembrete',
-        lembreteDraft: json
-      });
-      await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${json.conteudo}"?`);
-      return;
-    }
-
-    // Finaliza lembrete
-    const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
-    const { delayMinutos, descricaoOriginal } = extractDelayMinutes(userText, sender, userTimeZone);
-
-
-
-    const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
-
-    scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
-
-    if (json.delayMinutos > 10) {
-      const avisoAntecipado = delayMs - 5 * 60 * 1000;
-      if (avisoAntecipado > 0) {
-        scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${json.conteudo}`, avisoAntecipado, client.sendText.bind(client));
+      // Se horário passou, perguntar novamente
+      if (jaPassou) {
+        CONVERSATIONS.set(convoKey, {
+          history,
+          activeTrigger: 'lembrete',
+          lembreteDraft: json
+        });
+        await client.sendText(sender, `⚠️ O horário "${descricaoOriginal}" já passou. Em quantos minutos você deseja o lembrete?`);
+        return;
       }
+
+      // Verifica se faltam campos
+      if (!json.delayMinutos) {
+        CONVERSATIONS.set(convoKey, {
+          history,
+          activeTrigger: 'lembrete',
+          lembreteDraft: json
+        });
+        await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${json.conteudo}"?`);
+        return;
+      }
+
+      if (!json.detalhes) {
+        CONVERSATIONS.set(convoKey, {
+          history,
+          activeTrigger: 'lembrete',
+          lembreteDraft: json
+        });
+        await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${json.conteudo}"?`);
+        return;
+      }
+
+      // Se chegou aqui, agendar lembrete
+      const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
+      const delayMs = delayMinutos * 60 * 1000;
+
+      scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
+
+      if (delayMinutos > 10) {
+        const avisoAntecipado = delayMs - 5 * 60 * 1000;
+        if (avisoAntecipado > 0) {
+          scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${json.conteudo}`, avisoAntecipado, client.sendText.bind(client));
+        }
+      }
+
+      CONVERSATIONS.set(convoKey, {
+        history: [],
+        activeTrigger: null
+      });
+
+      await client.sendText(sender, `✅ Lembrete agendado para daqui a *${descricaoOriginal}*.`);
+      return;
+
+    } catch (e) {
+      console.error('Erro ao interpretar lembrete:', e.message);
+      await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
+      return;
     }
-
-    CONVERSATIONS.set(convoKey, {
-      history: [],
-      activeTrigger: null
-    });
-
-    await client.sendText(sender, `✅ Lembrete agendado para daqui a *${descricaoOriginal}*. Deseja adicionar mais detalhes?`);
-
-    return;
-
-  } catch (e) {
-    console.error('Erro ao interpretar lembrete:', e.message);
-    await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
-    return;
   }
-}
 
-
-  // Para outros triggers (evento, tarefa, etc.)
+  // Outros triggers
   await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
-
   CONVERSATIONS.set(convoKey, {
     history,
     activeTrigger: triggerName
   });
 }
+
 
 
 
@@ -1533,7 +1556,6 @@ async function processText(sessionName, message, email) {
     if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
     const { client, myNumber } = session;
-
     if (!myNumber) {
       console.log('[processText] Número da sessão não definido. Abortando.');
       return;
@@ -1548,59 +1570,33 @@ async function processText(sessionName, message, email) {
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored = CONVERSATIONS.get(convoKey);
 
-    // 🛑 Comando para encerrar o bot ativo
+    // 🛑 Comando para desligar o bot ativo
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
-
-        // 🔁 Substitui o estado inteiro da conversa para evitar continuidade
-        CONVERSATIONS.set(convoKey, {
-          history: [],
-          activeTrigger: null
-        });
+        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
       } else {
         await client.sendText(message.from, 'ℹ️ Nenhum bot ativo para desativar.');
       }
       return;
     }
 
-
-
-    // 🧠 Se já existe trigger ativo, continue com o histórico
-    if (stored?.activeTrigger === 'lembrete' && stored.lembreteDraft) {
-      const draft = stored.lembreteDraft;
-      const prompt = loadPrompt('lembrete'); // usa mesmo prompt
-
-      const jsonCompleto = await sendPromptToGPT(prompt, message.body);
-
-      try {
-        const novoJson = JSON.parse(jsonCompleto);
-        const combinado = {
-          tipo: 'lembrete',
-          delayMinutos: draft.delayMinutos ?? novoJson.delayMinutos,
-          conteudo: draft.conteudo ?? novoJson.conteudo,
-          detalhes: draft.detalhes ?? novoJson.detalhes
-        };
-
-        // Chama o handler novamente com JSON combinado como input
-        return await handleTriggerWithConversation('lembrete', session, message, JSON.stringify(combinado));
-      } catch (e) {
-        await client.sendText(message.from, `⚠️ Tente responder de outra forma.`);
-      }
-
+    // ✅ Continuação de trigger ativa (como lembrete em andamento)
+    if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
+      await TRIGGERS[stored.activeTrigger](session, message, text);
       return;
     }
 
-
+    // 🔍 Detectar trigger automaticamente
     const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
     console.log(`[processText] Trigger identificado: '${trigger}'`);
+
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text);
       return;
     }
 
-
-    // 💬 Conversa padrão (fluxo com prompt_qualification)
+    // 💬 Fallback: Conversa padrão com @broker
     const containsTrigger = lowerText.includes('@broker');
     const hasHistory = stored?.history?.length > 0;
 
@@ -1631,6 +1627,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
