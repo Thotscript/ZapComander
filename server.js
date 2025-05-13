@@ -561,26 +561,17 @@ app.post('/auth/login', async (req, res) => {
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão:`, dbErr);
           }
-    
+
           broadcastSessionAuthenticated(sessionName);
-    
-          const myNumber = await client.getWid();
-          const session = SESSIONS.get(sessionName);
-          session.myNumber = myNumber;
-    
-          const sessionToken = await client.getSessionTokenBrowser();
-          await myTokenStore.setToken(sessionName, sessionToken); 
-          console.log('Token salvo com sucesso!');
-    
-          const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-          if (fs.existsSync(qrFilePath)) {
-            setTimeout(() => {
-              fs.unlink(qrFilePath, () => {
-                console.log(`Sessão ${sessionName} autenticada, QR Code removido!`);
-              });
-            }, 10000);
+
+          try {
+            const myNumber = await client.getWid();
+            const session = SESSIONS.get(sessionName);
+            session.myNumber = myNumber;
+            console.log(`📱 Número recuperado para sessão ${sessionName}: ${myNumber}`);
+          } catch (err) {
+            console.error(`❌ Erro ao obter myNumber para sessão ${sessionName}:`, err.message);
           }
-    
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
           await cleanupSession(sessionName);
@@ -1542,6 +1533,7 @@ async function processText(sessionName, message, email) {
     if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
     const { client, myNumber } = session;
+
     if (!myNumber) {
       console.log('[processText] Número da sessão não definido. Abortando.');
       return;
@@ -1809,7 +1801,7 @@ const restoreSessions = async () => {
           console.error(`❌ Não foi possível restaurar myNumber para ${sessionName}`);
         };
 
-        fetchMyNumberWithRetry();
+        await fetchMyNumberWithRetry();
 
         client.onStateChange(async (state) => {
           console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
