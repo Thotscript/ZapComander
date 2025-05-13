@@ -983,7 +983,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   const sender = message.from;
   let prompt;
 
-  // Buscar prompt no banco ou arquivo
+  // Buscar prompt do banco ou do arquivo local
   try {
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
@@ -1009,16 +1009,13 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   const gptResponse = await sendPromptToGPT(prompt, userText);
 
   const convoKey = `${session.myNumber}:${sender}`;
-  CONVERSATIONS.set(convoKey, {
-    history: [
-      { role: 'system', content: prompt },
-      { role: 'user', content: userText },
-      { role: 'assistant', content: gptResponse }
-    ],
-    activeTrigger: triggerName
-  });
+  const history = [
+    { role: 'system', content: prompt },
+    { role: 'user', content: userText },
+    { role: 'assistant', content: gptResponse }
+  ];
 
-  // ✅ Se for trigger "lembrete", tenta agendar a ação
+  // ✅ Trata lembrete e encerra o trigger
   if (triggerName === 'lembrete') {
     try {
       const json = JSON.parse(gptResponse);
@@ -1027,18 +1024,36 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         const delayMs = json.delayMinutos * 60 * 1000;
         const mensagem = `🔔 Lembrete: ${json.conteudo}`;
         scheduleReminder(session.sessionName, sender, mensagem, delayMs, client.sendText.bind(client));
+
         await client.sendText(sender, `✅ Lembrete agendado para daqui a ${json.delayMinutos} minutos.`);
+
+        // 🛑 NÃO continua o GPT após lembrete
+        CONVERSATIONS.set(convoKey, {
+          history,
+          activeTrigger: null
+        });
+
+        return;
       } else {
         await client.sendText(sender, `⚠️ O formato do lembrete não foi reconhecido corretamente.`);
+        return;
       }
     } catch (e) {
       console.error('❌ Erro ao interpretar JSON do GPT para lembrete:', e.message);
       await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
+      return;
     }
-  } else {
-    await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
   }
+
+  // Para outros triggers (evento, tarefa, etc.)
+  await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
+
+  CONVERSATIONS.set(convoKey, {
+    history,
+    activeTrigger: triggerName
+  });
 }
+
 
 
 
