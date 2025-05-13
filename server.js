@@ -38,7 +38,7 @@ import { criarOuIgnorarSessao } from './db/sessions.js';
 // Função para salvar logs de sessões no banco de dados
 import { saveSessionLog } from './db/logs.js';
 import { constants } from 'crypto';
-const { scheduleReminder } = require('./modulos/reminderManager.js');
+import { scheduleReminder } from './modulos/reminderManager.js';
 import { spawn } from 'child_process';
 
 
