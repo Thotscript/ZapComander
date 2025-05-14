@@ -1303,8 +1303,10 @@ async function processAudio(sessionName, message) {
 
     console.log(`🔊 Processando áudio de ${senderName} na sessão ${sessionName}...`);
 
-    const inputPath = path.join(AUDIO_DIR, `${message.id}.ogg`);
-    const denoisedPath = path.join(AUDIO_DIR, `${message.id}_clean.ogg`);
+    const sessionSafe = sessionName.replace(/\W/g, '');
+    const inputPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
+    const denoisedPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
+
 
     await new Promise((resolve, reject) => {
       const stream = fs.createWriteStream(inputPath);
@@ -1383,16 +1385,16 @@ async function processAudio(sessionName, message) {
     await new Promise(resolve => setTimeout(resolve, 10));
     await client.sendText(recipient, resumo, { quotedMsg: message.id });
 
-    try {
-      await fsPromises.unlink(inputPath);
-    } catch (err) {
-      console.warn(`⚠️ Não foi possível deletar ${inputPath}: ${err.message}`);
-    }
+    const safeSession = sessionName.replace(/\W/g, '');
+    const inputPathFinal = path.join(AUDIO_DIR, `${safeSession}_${message.id}.ogg`);
+    const denoisedPathFinal = path.join(AUDIO_DIR, `${safeSession}_${message.id}_clean.ogg`);
 
-    try {
-      await fsPromises.unlink(denoisedPath);
-    } catch (err) {
-      console.warn(`⚠️ Não foi possível deletar ${denoisedPath}: ${err.message}`);
+    for (const filePath of [inputPathFinal, denoisedPathFinal]) {
+      try {
+        await fs.promises.unlink(filePath);
+      } catch (err) {
+        console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
+      }
     }
 
 
