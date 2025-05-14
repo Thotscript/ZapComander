@@ -959,9 +959,11 @@ async function cleanupSession(sessionName) {
     }
   }
 
+  // Remover QR Code
   const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
   if (fs.existsSync(qrFilePath)) fs.unlinkSync(qrFilePath);
 
+  // Remover diretório da sessão
   const sessionPath = path.join(TOKEN_DIR, sessionName);
   setTimeout(() => {
     if (fs.existsSync(sessionPath)) {
@@ -969,7 +971,20 @@ async function cleanupSession(sessionName) {
       console.log(`🧹 Sessão [${sessionName}] removida do sistema de arquivos.`);
     }
   }, 3000);
+
+  // ❗️Nova parte: remover do banco de dados
+  try {
+    const [result] = await pool.query('DELETE FROM sessoes WHERE numero = ?', [sessionName]);
+    if (result.affectedRows > 0) {
+      console.log(`🗑️ Sessão [${sessionName}] removida do banco de dados.`);
+    } else {
+      console.warn(`⚠️ Sessão [${sessionName}] não estava no banco ou já havia sido removida.`);
+    }
+  } catch (err) {
+    console.error(`❌ Erro ao remover sessão ${sessionName} do banco:`, err.message);
+  }
 }
+
 
 
 // --------------------------------------------------------------------------------------------------------
