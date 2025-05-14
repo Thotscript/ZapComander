@@ -472,7 +472,6 @@ function enqueueProcessing(sessionName, fn) {
 
 
 app.post('/auth/login', async (req, res) => {
-  
   const {
     sessionName = null,
     email       = null
@@ -496,6 +495,7 @@ app.post('/auth/login', async (req, res) => {
     }
 
     let responseSent = false;
+
     const client = await wppconnect.create({
       session: sessionName,
       tokenStore: myTokenStore,
@@ -557,17 +557,36 @@ app.post('/auth/login', async (req, res) => {
       }
     }
 
-    SESSIONS.set(sessionName, {
-      client,
-      myNumber: null,
-      email
-    });
+    let myNumber = null;
+
+    try {
+      await client.isConnected(); // força status válido
+      myNumber = await client.getWid();
+      console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+    } catch (err) {
+      console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
+    }
+
+    if (!SESSIONS.has(sessionName)) {
+      SESSIONS.set(sessionName, { client, myNumber, email });
+    }
 
     client.onStateChange(async (state) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
-    
+
         if (state === 'CONNECTED') {
+          try {
+            const myNumber = await client.getWid();
+            const session = SESSIONS.get(sessionName);
+            if (session) {
+              session.myNumber = myNumber;
+              console.log(`📱 Número atualizado via onStateChange para sessão ${sessionName}: ${myNumber}`);
+            }
+          } catch (err) {
+            console.error(`❌ Erro ao obter myNumber no onStateChange para sessão ${sessionName}:`, err.message);
+          }
+
           try {
             await criarOuIgnorarSessao(sessionName, email);
             await insertDefaultFilters(email, sessionName);
@@ -577,15 +596,6 @@ app.post('/auth/login', async (req, res) => {
           }
 
           broadcastSessionAuthenticated(sessionName);
-
-          try {
-            const myNumber = await client.getWid();
-            const session = SESSIONS.get(sessionName);
-            session.myNumber = myNumber;
-            console.log(`📱 Número recuperado para sessão ${sessionName}: ${myNumber}`);
-          } catch (err) {
-            console.error(`❌ Erro ao obter myNumber para sessão ${sessionName}:`, err.message);
-          }
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
           await cleanupSession(sessionName);
@@ -594,12 +604,10 @@ app.post('/auth/login', async (req, res) => {
           restartSessionIfOffline(sessionName, email);
         }
 
-    
       } catch (error) {
         console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
       }
     });
-    
 
     client.onAnyMessage(async (message) => {
       try {
@@ -609,15 +617,21 @@ app.post('/auth/login', async (req, res) => {
         if (filters.ignoreGroups && message.isGroupMsg) return;
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
-        // Espera até que o myNumber esteja definido (máximo 5 segundos)
-        let attempts = 0;
-        while (!SESSIONS.get(sessionName)?.myNumber && attempts < 10) {
-          await new Promise(r => setTimeout(r, 500));
-          attempts++;
+        const session = SESSIONS.get(sessionName);
+        if (!session.myNumber) {
+          try {
+            const wid = await client.getWid();
+            if (wid) {
+              session.myNumber = wid;
+              console.log(`🔁 Número definido dinamicamente via onAnyMessage para ${sessionName}: ${wid}`);
+            }
+          } catch (e) {
+            console.warn(`[onAnyMessage] Falha ao obter myNumber dinâmico para ${sessionName}:`, e.message);
+          }
         }
 
         if (!SESSIONS.get(sessionName)?.myNumber) {
-          console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após espera.`);
+          console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após tentativa dinâmica.`);
           return;
         }
 
@@ -628,11 +642,11 @@ app.post('/auth/login', async (req, res) => {
         if (message.type === 'chat') {
           await processText(sessionName, message, email);
         }
+
       } catch (error) {
         console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
       }
     });
-
 
   } catch (err) {
     console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
@@ -641,6 +655,7 @@ app.post('/auth/login', async (req, res) => {
     }
   }
 });
+
 
 
 
@@ -1746,164 +1761,168 @@ const restoreSessions = async () => {
     };
     
     const restoreSession = async ({ sessionName, email }) => {
+  try {
+    console.log(`⏳ Restaurando sessão: ${sessionName}`);
+    
+    const sessionPath = path.join(TOKEN_DIR, sessionName);
+    const lockPath = path.join(sessionPath, 'SingletonLock');
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+      console.log(`🔓 Removido arquivo SingletonLock de ${sessionName}`);
+    }
+
+    const tokenData = await myTokenStore.getToken(sessionName);
+    if (!tokenData) {
+      console.warn(`⚠️ Token não encontrado para sessão ${sessionName}, pulando.`);
+      return;
+    }
+
+    const client = await wppconnect.create({
+      session: sessionName,
+      tokenStore: myTokenStore,
+      deviceName: 'The Broker VIP',
+      statusFind: (statusSession) => {
+        if (statusSession === 'autocloseCalled') {
+          cleanupSession(sessionName);
+        }
+      },
+      debug: true,
+      updatesLog: true,
+      headless: true,
+      puppeteerOptions: {
+        userDataDir: sessionPath,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-background-networking',
+          '--disable-background-timer-throttling',
+          '--disable-client-side-phishing-detection',
+          '--disable-default-apps',
+          '--disable-extensions',
+          '--disable-hang-monitor',
+          '--disable-popup-blocking',
+          '--disable-sync',
+          '--disable-translate',
+          '--metrics-recording-only',
+          '--no-first-run',
+          '--safebrowsing-disable-auto-update',
+          '--mute-audio'
+        ]
+      }
+    });
+
+    let myNumber = null;
+
+    try {
+      await client.isConnected();
+      myNumber = await client.getWid();
+      console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+    } catch (err) {
+      console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
+    }
+
+    if (!SESSIONS.has(sessionName)) {
+      SESSIONS.set(sessionName, { client, myNumber, email });
+    } else {
+      console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
+    }
+
+    if (email) {
       try {
-        console.log(`⏳ Restaurando sessão: ${sessionName}`);
-        
-        const sessionPath = path.join(TOKEN_DIR, sessionName);
-        const lockPath = path.join(sessionPath, 'SingletonLock');
-        if (fs.existsSync(lockPath)) {
-          fs.unlinkSync(lockPath);
-          console.log(`🔓 Removido arquivo SingletonLock de ${sessionName}`);
+        await criarOuIgnorarUsuario(email);
+        console.log(`✅ Usuário '${email}' garantido no banco (restauração).`);
+      } catch (dbErr) {
+        console.error(`❌ Erro ao garantir usuário (restauração):`, dbErr);
+      }
+    }
+
+    client.onStateChange(async (state) => {
+      console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
+      
+      try {
+        if (state === 'CONNECTED') {
+          try {
+            const myNumber = await client.getWid();
+            const session = SESSIONS.get(sessionName);
+            if (session) {
+              session.myNumber = myNumber;
+              console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
+            }
+          } catch (err) {
+            console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
+          }
+
+          try {
+            await criarOuIgnorarSessao(sessionName, email);
+            console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
+          } catch (dbErr) {
+            console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
+          }
+
+        } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
+          console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
+          await cleanupSession(sessionName);
+
+        } else if (state === 'OFFLINE') {
+          console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+          restartSessionIfOffline(sessionName, email);
         }
 
-        const tokenData = await myTokenStore.getToken(sessionName);
-        if (!tokenData) {
-          console.warn(`⚠️ Token não encontrado para sessão ${sessionName}, pulando.`);
+      } catch (error) {
+        console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
+      }
+    });
+
+    client.onAnyMessage(async (message) => {
+      try {
+        const filters = await loadFiltersFromDB(email, sessionName);
+        SESSION_FILTERS.set(sessionName, filters);
+
+        if (filters.ignoreGroups && message.isGroupMsg) return;
+        if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
+        // Backup: tenta recuperar myNumber dinamicamente
+        const session = SESSIONS.get(sessionName);
+        if (!session.myNumber) {
+          try {
+            const wid = await client.getWid();
+            if (wid) {
+              session.myNumber = wid;
+              console.log(`🔁 Número definido dinamicamente via onAnyMessage para ${sessionName}: ${wid}`);
+            }
+          } catch (e) {
+            console.warn(`[onAnyMessage] Falha ao obter myNumber dinâmico para ${sessionName}:`, e.message);
+          }
+        }
+
+        if (!SESSIONS.get(sessionName)?.myNumber) {
+          console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após tentativa dinâmica.`);
           return;
         }
 
-        const client = await wppconnect.create({
-          session: sessionName,
-          tokenStore: myTokenStore,
-          deviceName: 'The Broker VIP',
-          statusFind: (statusSession) => {
-            if (statusSession === 'autocloseCalled') {
-              cleanupSession(sessionName);
-            }
-          },
-          debug: true,
-          updatesLog: true,
-          headless: true,
-          puppeteerOptions: {
-            userDataDir: sessionPath,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',          // usa disco ao invés de RAM
-              '--disable-background-networking',  // evita conexões desnecessárias
-              '--disable-background-timer-throttling',
-              '--disable-client-side-phishing-detection',
-              '--disable-default-apps',
-              '--disable-extensions',
-              '--disable-hang-monitor',
-              '--disable-popup-blocking',
-              '--disable-sync',
-              '--disable-translate',
-              '--metrics-recording-only',
-              '--no-first-run',
-              '--safebrowsing-disable-auto-update',
-              '--mute-audio'
-            ]
-          }
-        });
-
-        SESSIONS.set(sessionName, { client, myNumber: null, email });
-
-        if (email) {
-          try {
-            await criarOuIgnorarUsuario(email);
-            console.log(`✅ Usuário '${email}' garantido no banco (restauração).`);
-          } catch (dbErr) {
-            console.error(`❌ Erro ao garantir usuário (restauração):`, dbErr);
-          }
+        if (message.type === 'ptt' || message.type === 'audio') {
+          enqueueProcessing(sessionName, () => processAudio(sessionName, message));
         }
 
-        // Recuperar número
-        const fetchMyNumberWithRetry = async (retries = 10, delayMs = 2000) => {
-          for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-              const myNumber = await client.getWid();
-              if (myNumber) {
-                SESSIONS.get(sessionName).myNumber = myNumber;
-                console.log(`Número restaurado para ${sessionName}: ${myNumber}`);
-                return;
-              }
-            } catch (err) {
-              console.warn(`Tentativa ${attempt} falhou ao obter myNumber para ${sessionName}: ${err.message}`);
-            }
-            await new Promise((r) => setTimeout(r, delayMs));
-          }
-          console.error(`❌ Não foi possível restaurar myNumber para ${sessionName}`);
-        };
-
-        await fetchMyNumberWithRetry();
-
-        client.onStateChange(async (state) => {
-          console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
-          
-          try {
-            if (state === 'CONNECTED') {
-              try {
-                const myNumber = await client.getWid();
-                SESSIONS.get(sessionName).myNumber = myNumber;
-                console.log(`Número restaurado (via onStateChange) para ${sessionName}: ${myNumber}`);
-              } catch (err) {
-                console.error(`Erro ao obter myNumber no onStateChange para ${sessionName}:`, err);
-              }
-        
-              try {
-                await criarOuIgnorarSessao(sessionName, email);
-                console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
-              } catch (dbErr) {
-                console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
-              }
-        
-            } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
-              console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
-              await cleanupSession(sessionName);
-        
-            } else if (state === 'OFFLINE') {
-              console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
-              restartSessionIfOffline(sessionName, email);
-            }
-        
-          } catch (error) {
-            console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
-          }
-        });
-        
-        
-        client.onAnyMessage(async (message) => {
-            try {
-              const filters = await loadFiltersFromDB(email, sessionName);
-              SESSION_FILTERS.set(sessionName, filters);
-
-              if (filters.ignoreGroups && message.isGroupMsg) return;
-              if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
-
-              // Espera até que o myNumber esteja definido (máximo 5 segundos)
-              let attempts = 0;
-              while (!SESSIONS.get(sessionName)?.myNumber && attempts < 10) {
-                await new Promise(r => setTimeout(r, 500));
-                attempts++;
-              }
-
-              if (!SESSIONS.get(sessionName)?.myNumber) {
-                console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após espera.`);
-                return;
-              }
-
-              if (message.type === 'ptt' || message.type === 'audio') {
-                enqueueProcessing(sessionName, () => processAudio(sessionName, message));
-              }
-
-              if (message.type === 'chat') {
-                await processText(sessionName, message, email);
-              }
-            } catch (error) {
-              console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
-            }
-          });
-
-        
-        console.log(`✅ Sessão ${sessionName} restaurada com sucesso`);
-        return client;
+        if (message.type === 'chat') {
+          await processText(sessionName, message, email);
+        }
 
       } catch (error) {
-        console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
-        throw error; // Propagando o erro para o finally do chamador
+        console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
       }
-    };
+    });
+
+    console.log(`✅ Sessão ${sessionName} restaurada com sucesso`);
+    return client;
+
+  } catch (error) {
+    console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+    throw error;
+  }
+};
+
     
     // 5. Iniciar o processamento do primeiro lote
     await processNextBatch();
