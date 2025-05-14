@@ -15,19 +15,19 @@ export async function excluirSessaoPorEmail(email, sessionName) {
   try {
     await conn.beginTransaction();
 
-    // 1. Remove filtros diretamente (opcional se você já tem ON DELETE CASCADE em filtros.sessao_numero)
+    // 1. Remove filtros diretamente (opcional se ON DELETE CASCADE estiver configurado)
     await conn.query('DELETE FROM filtros WHERE sessao_numero = ?', [sessionName]);
 
-    // 2. Não é mais necessário deletar logs_sessao manualmente
-
-    // 3. Remove a sessão específica (isso apagará logs_sessao via ON DELETE CASCADE)
+    // 2. Remove a sessão específica (isso apagará logs_sessao via ON DELETE CASCADE)
     const [result] = await conn.query(
       'DELETE FROM sessoes WHERE usuario_email = ? AND numero = ?',
       [email, sessionName]
     );
 
     if (result.affectedRows === 0) {
-      throw new Error(`Nenhuma sessão encontrada para exclusão: ${sessionName}`);
+      console.warn(`⚠️ Nenhuma sessão encontrada para exclusão: ${sessionName}`);
+      await conn.commit(); // Ainda finaliza a transação para evitar bloqueios
+      return;
     }
 
     await conn.commit();
@@ -40,3 +40,4 @@ export async function excluirSessaoPorEmail(email, sessionName) {
     conn.release();
   }
 }
+

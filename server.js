@@ -602,14 +602,24 @@ app.post('/auth/login', async (req, res) => {
     
 
     client.onAnyMessage(async (message) => {
-
       try {
-
         const filters = await loadFiltersFromDB(email, sessionName);
         SESSION_FILTERS.set(sessionName, filters);
 
         if (filters.ignoreGroups && message.isGroupMsg) return;
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+
+        // Espera até que o myNumber esteja definido (máximo 5 segundos)
+        let attempts = 0;
+        while (!SESSIONS.get(sessionName)?.myNumber && attempts < 10) {
+          await new Promise(r => setTimeout(r, 500));
+          attempts++;
+        }
+
+        if (!SESSIONS.get(sessionName)?.myNumber) {
+          console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após espera.`);
+          return;
+        }
 
         if (message.type === 'ptt' || message.type === 'audio') {
           enqueueProcessing(sessionName, () => processAudio(sessionName, message));
@@ -618,11 +628,11 @@ app.post('/auth/login', async (req, res) => {
         if (message.type === 'chat') {
           await processText(sessionName, message, email);
         }
-        
       } catch (error) {
         console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
       }
     });
+
 
   } catch (err) {
     console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
@@ -1854,26 +1864,37 @@ const restoreSessions = async () => {
         
         
         client.onAnyMessage(async (message) => {
-          try {
-            const filters = await loadFiltersFromDB(email, sessionName);
-            SESSION_FILTERS.set(sessionName, filters);
+            try {
+              const filters = await loadFiltersFromDB(email, sessionName);
+              SESSION_FILTERS.set(sessionName, filters);
 
-            if (filters.ignoreGroups && message.isGroupMsg) return;
-            if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+              if (filters.ignoreGroups && message.isGroupMsg) return;
+              if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
-            if (message.type === 'ptt' || message.type === 'audio') {
-              console.log(`Mensagem de áudio recebida na sessão ${sessionName}. Processando...`);
-              enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+              // Espera até que o myNumber esteja definido (máximo 5 segundos)
+              let attempts = 0;
+              while (!SESSIONS.get(sessionName)?.myNumber && attempts < 10) {
+                await new Promise(r => setTimeout(r, 500));
+                attempts++;
+              }
+
+              if (!SESSIONS.get(sessionName)?.myNumber) {
+                console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após espera.`);
+                return;
+              }
+
+              if (message.type === 'ptt' || message.type === 'audio') {
+                enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+              }
+
+              if (message.type === 'chat') {
+                await processText(sessionName, message, email);
+              }
+            } catch (error) {
+              console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
             }
+          });
 
-            if (message.type === 'chat') {
-              await processText(sessionName, message, email);
-            }
-
-          } catch (error) {
-            console.error(`Erro ao processar mensagem restaurada da sessão ${sessionName}:`, error);
-          }
-        });
         
         console.log(`✅ Sessão ${sessionName} restaurada com sucesso`);
         return client;
