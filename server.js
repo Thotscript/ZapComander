@@ -44,7 +44,7 @@ import { spawn } from 'child_process';
 import { parse, differenceInMinutes } from 'date-fns';
 import * as tz from 'date-fns-tz';
 
-const MAIN_BOT_NUMBER = '5511994297562@c.us'; // substitua pelo seu número real com @c.us
+const MAIN_BOT_NUMBER = '14073015137@c.us'; // substitua pelo seu número real com @c.us
 
 
 const processingQueues = new Map();
