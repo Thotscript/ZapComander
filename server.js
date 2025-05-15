@@ -42,7 +42,11 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
-import utcToZonedTime from 'date-fns-tz/utcToZonedTime/index.js';
+
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { utcToZonedTime } = require('date-fns-tz');
+
 
 
 
