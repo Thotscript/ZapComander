@@ -567,6 +567,18 @@ app.post('/auth/login', async (req, res) => {
 
     try {
       await client.isConnected(); // força status válido
+
+      // ✅ Gera e salva o token manualmente
+      try {
+        const tokenData = await client.getToken();
+        if (tokenData) {
+          await myTokenStore.saveToken(sessionName, tokenData);
+          console.log(`🔐 Token salvo com sucesso para sessão ${sessionName}`);
+        }
+      } catch (tokenErr) {
+        console.warn(`⚠️ Erro ao gerar/salvar token para sessão ${sessionName}:`, tokenErr.message);
+      }
+
       myNumber = await client.getWid();
       console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
       await criarOuIgnorarSessao(sessionName, email);
@@ -574,6 +586,7 @@ app.post('/auth/login', async (req, res) => {
     } catch (err) {
       console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
     }
+
 
     if (!SESSIONS.has(sessionName)) {
       SESSIONS.set(sessionName, { client, myNumber, email });
