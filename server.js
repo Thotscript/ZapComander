@@ -42,6 +42,7 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
+import { DateTime } from 'luxon';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
@@ -196,7 +197,7 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
 
   const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
-  const now = utcToZonedTime(new Date(), timezone);
+  const now = DateTime.now().setZone(timezone);
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
