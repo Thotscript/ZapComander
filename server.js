@@ -186,7 +186,9 @@ const DDI_TO_TIMEZONE = {
 
 function getTimezoneFromNumber(number) {
   const clean = number.replace(/\D/g, '');
-  const ddi = clean.startsWith('55') ? '55' : clean.slice(0, 3); // tentativa com 3
+  const possibleDDIs = [clean.slice(0, 3), clean.slice(0, 2)];
+  const ddi = possibleDDIs.find(ddi => DDI_TO_TIMEZONE[ddi]) || '55';
+
   return DDI_TO_TIMEZONE[ddi] || DDI_TO_TIMEZONE[ddi.slice(0, 2)] || 'UTC';
 }
 
@@ -220,20 +222,16 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   if (matchHoraRelogio) {
     const hour = parseInt(matchHoraRelogio[1]);
     const minutes = parseInt(matchHoraRelogio[2] || '0');
-    const targetTime = new Date(now);
-    targetTime.setHours(hour, minutes, 0, 0);
 
-    const passou = targetTime < now;
+    let targetTime = now.set({ hour, minute: minutes, second: 0, millisecond: 0 });
 
-    if (passou) {
-      return {
-        delayMinutos: null,
-        descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
-        jaPassou: true
-      };
+    // se passou, considera como no dia seguinte
+    if (targetTime < now) {
+      targetTime = targetTime.plus({ days: 1 });
     }
 
-    const delay = Math.round(differenceInMinutes(targetTime, now));
+    const delay = Math.round(targetTime.diff(now, 'minutes').minutes);
+
     return {
       delayMinutos: delay,
       descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
@@ -1203,9 +1201,8 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     if (message.to !== MAIN_BOT_NUMBER) return;
 
     try {
-      console.log(`[Lembrete] Resposta crua do GPT:\n${gptResponse}`);
-      const json = JSON.parse(gptResponse);
 
+      const json = JSON.parse(gptResponse);
       const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
       const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
 
