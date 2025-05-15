@@ -42,7 +42,8 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
-import tz from 'date-fns-tz';
+import utcToZonedTime from 'date-fns-tz/utcToZonedTime/index.js';
+
 
 
 
@@ -191,7 +192,7 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
 
   const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
-  const now = tz.utcToZonedTime(new Date(), timezone);
+  const now = utcToZonedTime(new Date(), timezone);
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
