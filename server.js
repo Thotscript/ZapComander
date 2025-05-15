@@ -1131,6 +1131,8 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     if (message.to !== MAIN_BOT_NUMBER) return;
 
     try {
+      
+      console.log(`[Lembrete] Resposta crua do GPT:\n${gptResponse}`);
       const json = JSON.parse(gptResponse);
 
       // ⚠️ Verifica se o horário já passou
