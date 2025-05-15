@@ -1103,8 +1103,77 @@ async function getAudioDuration(inputPath) {
 async function handleTriggerWithConversation(triggerName, session, message, input) {
   const client = session.client;
   const sender = message.from;
-  let prompt;
+  const convoKey = `${session.myNumber}:${sender}`;
 
+  const userText = typeof input === 'string'
+    ? input.trim()
+    : '[Atenção: input de áudio já deveria estar transcrito antes de ser passado aqui]';
+
+  // ✅ Trata lembrete com estado anterior
+  if (triggerName === 'lembrete' && CONVERSATIONS.has(convoKey)) {
+    const convo = CONVERSATIONS.get(convoKey);
+    const draft = convo?.lembreteDraft;
+
+    if (draft) {
+      const lower = userText.toLowerCase();
+
+      // Se esperando detalhes e usuário diz "não"
+      if (draft.detalhes === undefined && ['nao', 'não', 'n'].includes(lower)) {
+        draft.detalhes = '';
+      }
+
+      // Se esperando delayMinutos
+      if (!draft.delayMinutos) {
+        const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
+        const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
+
+        if (jaPassou) {
+          await client.sendText(sender, `⚠️ O horário "${descricaoOriginal}" já passou. Envie um novo tempo.`);
+          return;
+        }
+
+        if (delayMinutos) {
+          draft.delayMinutos = delayMinutos;
+          draft._descricaoOriginal = descricaoOriginal;
+        } else {
+          await client.sendText(sender, `⏰ Não entendi o tempo. Envie algo como "20 minutos" ou "às 14:30".`);
+          return;
+        }
+      }
+
+      // Verifica novamente se ainda falta algo
+      if (!draft.delayMinutos) {
+        await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${draft.conteudo}"?`);
+        return;
+      }
+
+      if (draft.detalhes === undefined) {
+        await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${draft.conteudo}"?`);
+        return;
+      }
+
+      // ✅ Agendamento final
+      const mensagemFinal = `🔔 Lembrete: ${draft.conteudo}\n${draft.detalhes ? '📝 Detalhes: ' + draft.detalhes : ''}`;
+      const delayMs = draft.delayMinutos * 60 * 1000;
+
+      scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
+
+      if (draft.delayMinutos > 10) {
+        const avisoAntecipado = delayMs - 5 * 60 * 1000;
+        if (avisoAntecipado > 0) {
+          scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${draft.conteudo}`, avisoAntecipado, client.sendText.bind(client));
+        }
+      }
+
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+
+      await client.sendText(sender, `✅ Lembrete agendado para daqui a *${draft._descricaoOriginal || draft.delayMinutos + ' minutos'}*.`);
+      return;
+    }
+  }
+
+  // 🔁 Lógica padrão: primeira entrada do usuário
+  let prompt;
   try {
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
@@ -1121,33 +1190,25 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     prompt = loadPrompt(triggerName);
   }
 
-  const userText = typeof input === 'string'
-    ? input
-    : '[Atenção: input de áudio já deveria estar transcrito antes de ser passado aqui]';
-
   const gptResponse = await sendPromptToGPT(prompt, userText);
 
-  const convoKey = `${session.myNumber}:${sender}`;
   const history = [
     { role: 'system', content: prompt },
     { role: 'user', content: userText },
     { role: 'assistant', content: gptResponse }
   ];
 
-  // ✅ Trata lembrete
+  // ✅ Primeira entrada de lembrete
   if (triggerName === 'lembrete') {
     if (message.to !== MAIN_BOT_NUMBER) return;
 
     try {
-
       console.log(`[Lembrete] Resposta crua do GPT:\n${gptResponse}`);
       const json = JSON.parse(gptResponse);
 
-      // ⚠️ Verifica se o horário já passou
       const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
       const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
 
-      // Se horário passou, perguntar novamente
       if (jaPassou) {
         CONVERSATIONS.set(convoKey, {
           history,
@@ -1158,7 +1219,6 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         return;
       }
 
-      // Verifica se faltam campos
       if (!json.delayMinutos) {
         CONVERSATIONS.set(convoKey, {
           history,
@@ -1179,7 +1239,6 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
         return;
       }
 
-      // Se chegou aqui, agendar lembrete
       const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
       const delayMs = delayMinutos * 60 * 1000;
 
@@ -1207,7 +1266,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     }
   }
 
-  // Outros triggers
+  // Outros gatilhos
   await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
   CONVERSATIONS.set(convoKey, {
     history,
