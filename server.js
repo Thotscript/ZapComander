@@ -563,6 +563,8 @@ app.post('/auth/login', async (req, res) => {
       await client.isConnected(); // força status válido
       myNumber = await client.getWid();
       console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+      await criarOuIgnorarSessao(sessionName, email);
+      console.log(`✅ Sessão ${sessionName} garantida no banco.`);
     } catch (err) {
       console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
     }
@@ -1818,6 +1820,8 @@ const restoreSessions = async () => {
       await client.isConnected();
       myNumber = await client.getWid();
       console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+      await criarOuIgnorarSessao(sessionName, email);
+      console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
     } catch (err) {
       console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
     }
