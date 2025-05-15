@@ -42,8 +42,8 @@ import { scheduleReminder, getReminders, clearReminders } from './modulos/remind
 import { spawn } from 'child_process';
 
 import { parse, differenceInMinutes } from 'date-fns';
-import * as tz from 'date-fns-tz';
-import { utcToZonedTime } from 'date-fns-tz';
+import tz from 'date-fns-tz';
+
 
 
 const MAIN_BOT_NUMBER = '14073015137@c.us'; // substitua pelo seu número real com @c.us
@@ -191,7 +191,7 @@ function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
   const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
 
   const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
-  const now = utcToZonedTime(new Date(), timezone);
+  const now = tz.utcToZonedTime(new Date(), timezone);
 
   if (matchMin) {
     const delay = parseInt(matchMin[1]);
