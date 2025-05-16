@@ -1202,7 +1202,7 @@ async function handleTriggerFinanciamento(session, message, input) {
 
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
-  'TBVEvents': handleTBVEventosConversation,
+  tbvevents: handleTBVEventosConversation,
   tarefa: handleTriggerTarefa,
   lembrete: handleTriggerLembrete,
   financiamento: handleTriggerFinanciamento
