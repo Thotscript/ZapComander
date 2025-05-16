@@ -1057,7 +1057,7 @@ async function getAudioDuration(inputPath) {
     });
 }
 
-// ===================================================================================================== GESTAO DE PROMPTS E GPTS
+// ===================================================================================================== GESTAO DE PROMPTS E GPT
 
 
 async function handleTriggerWithConversation(triggerName, session, message, input) {
@@ -1069,73 +1069,8 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     ? input.trim()
     : '[Atenção: input de áudio já deveria estar transcrito antes de ser passado aqui]';
 
-  // ✅ Trata lembrete com estado anterior
-  if (triggerName === 'lembrete' && CONVERSATIONS.has(convoKey)) {
-    const convo = CONVERSATIONS.get(convoKey);
-    const draft = convo?.lembreteDraft;
-
-    if (draft) {
-      const lower = userText.toLowerCase();
-
-      // Se esperando detalhes e usuário diz "não"
-      if (draft.detalhes === undefined && ['nao', 'não', 'n'].includes(lower)) {
-        draft.detalhes = '';
-      }
-
-      // Se esperando delayMinutos
-      if (!draft.delayMinutos) {
-        const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
-        const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
-
-        if (jaPassou) {
-          await client.sendText(sender, `⚠️ O horário "${descricaoOriginal}" já passou. Envie um novo tempo.`);
-          return;
-        }
-
-        if (delayMinutos) {
-          draft.delayMinutos = delayMinutos;
-          draft._descricaoOriginal = descricaoOriginal;
-        } else {
-          await client.sendText(sender, `⏰ Não entendi o tempo. Envie algo como "20 minutos" ou "às 14:30".`);
-          return;
-        }
-      }
-
-      // Verifica novamente se ainda falta algo
-      if (!draft.delayMinutos) {
-        await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${draft.conteudo}"?`);
-        return;
-      }
-
-      if (draft.detalhes === undefined) {
-        await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${draft.conteudo}"?`);
-        return;
-      }
-
-      // ✅ Agendamento final
-      const mensagemFinal = `🔔 Lembrete: ${draft.conteudo}\n${draft.detalhes ? '📝 Detalhes: ' + draft.detalhes : ''}`;
-      const delayMs = draft.delayMinutos * 60 * 1000;
-
-      scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
-
-      if (draft.delayMinutos > 10) {
-        const avisoAntecipado = delayMs - 5 * 60 * 1000;
-        if (avisoAntecipado > 0) {
-          scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${draft.conteudo}`, avisoAntecipado, client.sendText.bind(client));
-        }
-      }
-
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-
-      await client.sendText(sender, `✅ Lembrete agendado para daqui a *${draft._descricaoOriginal || draft.delayMinutos + ' minutos'}*.`);
-      return;
-    }
-  }
-
-  // 🔁 Lógica padrão: primeira entrada do usuário
   let prompt;
   try {
-    
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
       [triggerName]
@@ -1159,74 +1094,6 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
     { role: 'assistant', content: gptResponse }
   ];
 
-  // ✅ Primeira entrada de lembrete
-  if (triggerName === 'lembrete') {
-    if (message.to !== MAIN_BOT_NUMBER) return;
-
-    try {
-
-      const json = JSON.parse(gptResponse);
-      const userTimeZone = getTimezoneFromNumber(sender.replace('@c.us', ''));
-      const { delayMinutos, descricaoOriginal, jaPassou } = extractDelayMinutes(userText, sender, userTimeZone);
-
-      if (jaPassou) {
-        CONVERSATIONS.set(convoKey, {
-          history,
-          activeTrigger: 'lembrete',
-          lembreteDraft: json
-        });
-        await client.sendText(sender, `⚠️ O horário "${descricaoOriginal}" já passou. Em quantos minutos você deseja o lembrete?`);
-        return;
-      }
-
-      if (!json.delayMinutos) {
-        CONVERSATIONS.set(convoKey, {
-          history,
-          activeTrigger: 'lembrete',
-          lembreteDraft: json
-        });
-        await client.sendText(sender, `⏰ Quantos minutos até o lembrete para: "${json.conteudo}"?`);
-        return;
-      }
-
-      if (!json.detalhes) {
-        CONVERSATIONS.set(convoKey, {
-          history,
-          activeTrigger: 'lembrete',
-          lembreteDraft: json
-        });
-        await client.sendText(sender, `📝 Deseja adicionar mais detalhes ao lembrete: "${json.conteudo}"?`);
-        return;
-      }
-
-      const mensagemFinal = `🔔 Lembrete: ${json.conteudo}\n${json.detalhes ? '📝 Detalhes: ' + json.detalhes : ''}`;
-      const delayMs = delayMinutos * 60 * 1000;
-
-      scheduleReminder(session.sessionName, sender, mensagemFinal, delayMs, client.sendText.bind(client));
-
-      if (delayMinutos > 10) {
-        const avisoAntecipado = delayMs - 5 * 60 * 1000;
-        if (avisoAntecipado > 0) {
-          scheduleReminder(session.sessionName, sender, `⏳ Faltam 5 minutos para: ${json.conteudo}`, avisoAntecipado, client.sendText.bind(client));
-        }
-      }
-
-      CONVERSATIONS.set(convoKey, {
-        history: [],
-        activeTrigger: null
-      });
-
-      await client.sendText(sender, `✅ Lembrete agendado para daqui a *${descricaoOriginal}*.`);
-      return;
-
-    } catch (e) {
-      console.error('Erro ao interpretar lembrete:', e.message);
-      await client.sendText(sender, `⚠️ Não consegui entender o lembrete. Tente reformular.`);
-      return;
-    }
-  }
-
-  // Outros gatilhos
   await client.sendText(sender, `💬 *${capitalize(triggerName)} detectado:*\n${gptResponse}`);
   CONVERSATIONS.set(convoKey, {
     history,
@@ -1239,7 +1106,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 
 
 function loadPrompt(promptName) {
-  const promptPath = path.join(__dirname, 'prompts', `${promptName}.txt`);
+  const promptPath = path.join(__dirname, 'prompts', `${promptName}.md`);
   return fs.readFileSync(promptPath, 'utf8');
 }
 
@@ -1265,9 +1132,59 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-// Handlers simplificados usando a função genérica
-async function handleTriggerEvento(session, message, input) {
-  return handleTriggerWithConversation('evento', session, message, input);
+async function handleTBVEventosConversation(session, message, userInput) {
+  const client = session.client;
+  const sender = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
+
+  // Recupera ou inicia histórico
+  let convo = CONVERSATIONS.get(convoKey);
+  if (!convo) {
+    convo = {
+      history: [],
+      activeTrigger: 'TBVEvents'
+    };
+  }
+
+  const prompt = loadPrompt('TBVEvents');
+
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+  }
+
+  convo.history.push({ role: 'user', content: userInput });
+
+  const gptResponse = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.3
+  });
+
+  const reply = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: reply });
+
+  // Tenta extrair JSON do final da resposta
+  const jsonMatch = reply.match(/```json([\s\S]+?)```/);
+  let eventoInfo = null;
+
+  if (jsonMatch) {
+    try {
+      eventoInfo = JSON.parse(jsonMatch[1]);
+      // 🔄 Aqui você agenda no banco
+      await saveEventoToDB(sender, eventoInfo); 
+    } catch (err) {
+      console.warn('⚠️ JSON inválido retornado pelo GPT.');
+    }
+  }
+
+  // Salva ou finaliza conversa
+  if (eventoInfo) {
+    CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+  } else {
+    CONVERSATIONS.set(convoKey, convo);
+  }
+
+  await client.sendText(sender, reply);
 }
 
 async function handleTriggerTarefa(session, message, input) {
@@ -1285,7 +1202,7 @@ async function handleTriggerFinanciamento(session, message, input) {
 
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
-  evento: handleTriggerEvento,
+  'TBVEvents': handleTBVEventosConversation,
   tarefa: handleTriggerTarefa,
   lembrete: handleTriggerLembrete,
   financiamento: handleTriggerFinanciamento
@@ -1314,18 +1231,9 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
     return { trigger: 'nenhum', transcript };
   }
 
-  const checkPrompt = `
-Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
+  const rawPrompt = loadPrompt('TBV-Router');
+  const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
 
-Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
-
-Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
-
-Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
-
-Transcrição:
-"""${transcript}"""
-`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
@@ -1586,26 +1494,14 @@ app.post('/api/agentes', async (req, res) => {
 
 
 async function checkTriggerInText(text) {
-
- const checkPrompt = `
-Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
-
-Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
-
-Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
-
-Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
-
-Transcrição:
-"""${text}"""
-`;
-
+  const rawPrompt = loadPrompt('bot-classifier'); // sem extensão .md
+  const finalPrompt = `${rawPrompt}\n\nMensagem:\n"""${text}"""`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
-      { role: 'user', content: checkPrompt }
+      { role: 'user', content: finalPrompt }
     ]
   }, {
     headers: {
@@ -1614,7 +1510,7 @@ Transcrição:
     }
   });
 
-  const resposta = result.data.choices[0].message.content.trim().toLowerCase();
+  const resposta = result.data.choices[0].message.content.trim();
   console.log(`[checkTriggerInText] Resposta do GPT: ${resposta}`);
   return resposta;
 }
@@ -1651,7 +1547,7 @@ async function processText(sessionName, message, email) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
       } else {
-        await client.sendText(message.from, 'ℹ️ Nenhum bot ativo para desativar.');
+        await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
       }
       return;
     }
@@ -1664,7 +1560,6 @@ async function processText(sessionName, message, email) {
 
     // 🔍 Detectar trigger automaticamente
     const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
-    console.log(`[processText] Trigger identificado: '${trigger}'`);
 
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text);
