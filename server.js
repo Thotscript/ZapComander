@@ -1137,14 +1137,10 @@ async function handleTBVEventosConversation(session, message, userInput) {
   const sender = message.from;
   const convoKey = `${session.myNumber}:${sender}`;
 
-  // Recupera ou inicia histórico
-  let convo = CONVERSATIONS.get(convoKey);
-  if (!convo) {
-    convo = {
-      history: [],
-      activeTrigger: 'TBVEvents'
-    };
-  }
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvevents'
+  };
 
   const prompt = loadPrompt('TBVEvents');
 
@@ -1163,53 +1159,49 @@ async function handleTBVEventosConversation(session, message, userInput) {
   const reply = gptResponse.choices[0].message.content.trim();
   convo.history.push({ role: 'assistant', content: reply });
 
-  // Tenta extrair JSON do final da resposta
-  // Tenta capturar bloco ```json``` ou JSON puro
-  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
-
-  if (!jsonMatch) {
-    const looseJson = reply.match(/\{[\s\S]*\}/); // JSON visível no meio da resposta
-    if (looseJson) {
-      jsonMatch = [null, looseJson[0]];
-    }
-  }
-
+  // 🧠 Extração do JSON
   let eventoInfo = null;
 
+  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
+  if (!jsonMatch) {
+    const fallbackMatch = reply.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
+    if (fallbackMatch) jsonMatch = [null, fallbackMatch[1]];
+  }
+  if (!jsonMatch) {
+    const brute = reply.match(/\{[\s\S]+?\}/);
+    if (brute) jsonMatch = [null, brute[0]];
+  }
+
   if (jsonMatch) {
-  try {
-    eventoInfo = JSON.parse(jsonMatch[1]);
+    try {
+      eventoInfo = JSON.parse(jsonMatch[1]);
 
-    const camposObrigatorios = ['titulo', 'data', 'hora'];
-    const preenchido = camposObrigatorios.every(k => eventoInfo[k]);
+      const camposObrigatorios = ['titulo', 'data', 'hora'];
+      const completo = camposObrigatorios.every(k => eventoInfo[k]);
 
-    if (preenchido) {
-      await saveEventoToDB(sender, eventoInfo);
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null }); // ✅ Finaliza a conversa
-    } else {
-      console.warn('⚠️ JSON incompleto, mantendo trigger ativo.');
-      CONVERSATIONS.set(convoKey, convo); // ainda precisa interagir
+      if (completo) {
+        // ✅ Loga e salva
+        console.log('📆 Evento agendado:', eventoInfo);
+        await saveEventoToDB(sender, eventoInfo);
+
+        // ✅ Finaliza o trigger
+        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+
+        // ✅ Envia apenas confirmação ao usuário
+        await client.sendText(sender, `✅ Evento agendado com sucesso!`);
+
+        return;
+      }
+    } catch (err) {
+      console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
     }
-
-  } catch (err) {
-    console.warn('⚠️ JSON inválido retornado pelo GPT.', err.message);
-    CONVERSATIONS.set(convoKey, convo); // mantém a conversa ativa
   }
-} else {
-  // Se não achou JSON mas mensagem contém uma palavra-chave indicando fim
-  const encerrado = reply.toLowerCase().includes('evento agendado') || reply.toLowerCase().includes('boa reunião');
-  if (encerrado) {
-    console.log('🟢 Encerrando conversa com base em mensagem final.');
-    CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-  } else {
-    CONVERSATIONS.set(convoKey, convo); // ainda em andamento
-  }
-}
 
-
-
+  // ❗ Se não finalizou ainda, segue a conversa
+  CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
+
 
 async function handleTriggerTarefa(session, message, input) {
   return handleTriggerWithConversation('tarefa', session, message, input);
