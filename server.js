@@ -1164,25 +1164,34 @@ async function handleTBVEventosConversation(session, message, userInput) {
   convo.history.push({ role: 'assistant', content: reply });
 
   // Tenta extrair JSON do final da resposta
-  const jsonMatch = reply.match(/```json([\s\S]+?)```/);
-  let eventoInfo = null;
+  // Tenta capturar bloco ```json``` ou JSON puro
+  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
 
-  if (jsonMatch) {
-    try {
-      eventoInfo = JSON.parse(jsonMatch[1]);
-      // 🔄 Aqui você agenda no banco
-      await saveEventoToDB(sender, eventoInfo); 
-    } catch (err) {
-      console.warn('⚠️ JSON inválido retornado pelo GPT.');
+  if (!jsonMatch) {
+    const looseJson = reply.match(/\{[\s\S]*\}/); // JSON visível no meio da resposta
+    if (looseJson) {
+      jsonMatch = [null, looseJson[0]];
     }
   }
 
-  // Salva ou finaliza conversa
-  if (eventoInfo) {
-    CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-  } else {
-    CONVERSATIONS.set(convoKey, convo);
+  let eventoInfo = null;
+
+  if (jsonMatch) {
+  try {
+    eventoInfo = JSON.parse(jsonMatch[1]);
+    // 🔄 Aqui você agenda no banco
+    await saveEventoToDB(sender, eventoInfo); 
+  } catch (err) {
+    console.warn('⚠️ JSON inválido retornado pelo GPT.');
   }
+}
+
+if (eventoInfo) {
+  CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+} else {
+  CONVERSATIONS.set(convoKey, convo);
+}
+
 
   await client.sendText(sender, reply);
 }
