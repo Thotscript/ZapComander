@@ -1179,18 +1179,33 @@ async function handleTBVEventosConversation(session, message, userInput) {
   if (jsonMatch) {
   try {
     eventoInfo = JSON.parse(jsonMatch[1]);
-    // 🔄 Aqui você agenda no banco
-    await saveEventoToDB(sender, eventoInfo); 
+
+    const camposObrigatorios = ['titulo', 'data', 'hora'];
+    const preenchido = camposObrigatorios.every(k => eventoInfo[k]);
+
+    if (preenchido) {
+      await saveEventoToDB(sender, eventoInfo);
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null }); // ✅ Finaliza a conversa
+    } else {
+      console.warn('⚠️ JSON incompleto, mantendo trigger ativo.');
+      CONVERSATIONS.set(convoKey, convo); // ainda precisa interagir
+    }
+
   } catch (err) {
-    console.warn('⚠️ JSON inválido retornado pelo GPT.');
+    console.warn('⚠️ JSON inválido retornado pelo GPT.', err.message);
+    CONVERSATIONS.set(convoKey, convo); // mantém a conversa ativa
+  }
+} else {
+  // Se não achou JSON mas mensagem contém uma palavra-chave indicando fim
+  const encerrado = reply.toLowerCase().includes('evento agendado') || reply.toLowerCase().includes('boa reunião');
+  if (encerrado) {
+    console.log('🟢 Encerrando conversa com base em mensagem final.');
+    CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+  } else {
+    CONVERSATIONS.set(convoKey, convo); // ainda em andamento
   }
 }
 
-if (eventoInfo) {
-  CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-} else {
-  CONVERSATIONS.set(convoKey, convo);
-}
 
 
   await client.sendText(sender, reply);
