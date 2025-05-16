@@ -1494,7 +1494,7 @@ app.post('/api/agentes', async (req, res) => {
 
 
 async function checkTriggerInText(text) {
-  const rawPrompt = loadPrompt('bot-classifier'); // sem extensão .md
+  const rawPrompt = loadPrompt('TBV-Router'); // sem extensão .md
   const finalPrompt = `${rawPrompt}\n\nMensagem:\n"""${text}"""`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
