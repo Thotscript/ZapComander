@@ -1,41 +1,24 @@
 // Carrega variáveis de ambiente do arquivo .env para process.env
 import dotenv from 'dotenv';
 dotenv.config();
-// Habilita o CORS (Cross-Origin Resource Sharing) para permitir requisições de diferentes origens
 import cors from 'cors';
-// Biblioteca para integração com o WhatsApp Web via puppeteer
 import wppconnect from '@wppconnect-team/wppconnect';
-// Framework para criação de servidores HTTP com rotas e middlewares
 import express from 'express';
-// Módulo nativo do Node.js para criar servidores HTTPS (com certificado SSL)
 import https from 'https';
-// Módulo nativo do Node.js para manipular o sistema de arquivos
 import fs from 'fs';
-// Biblioteca para criar e gerenciar conexões WebSocket (comunicação em tempo real)
 import WebSocket from 'ws';
-// Módulo nativo do Node.js para manipulação de caminhos de arquivos de forma cross-platform
 import path from 'path';
-// Cliente HTTP para fazer requisições a APIs externas
 import axios from 'axios';
-// Utilitário para construir requisições HTTP com arquivos/form-data
 import FormData from 'form-data';
-// SDK oficial da OpenAI para integração com APIs como GPT, Whisper, DALL·E etc.
 import OpenAI from 'openai';
-// Utilitários para converter a URL do módulo em caminhos de arquivos reais (necessário em ES Modules)
 import { fileURLToPath } from 'url';
-// Biblioteca para processamento de áudio e vídeo com suporte ao FFmpeg
 import ffmpeg from 'fluent-ffmpeg';
-// Middleware de segurança para proteger seu app Express com headers HTTP apropriados
 import helmet from 'helmet';
-// Conexão com o banco de dados (possivelmente um pool de conexões do PostgreSQL, MySQL, etc.)
 import pool from './db/index.js';
-// Função que insere um usuário no banco, se ainda não existir
 import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { excluirSessaoPorEmail } from './db/sessions.js';
 import { insertDefaultFilters } from './db/default-filter.js';
-// Função que insere uma sessão no banco, se ainda não existir
 import { criarOuIgnorarSessao } from './db/sessions.js';
-// Função para salvar logs de sessões no banco de dados
 import { saveSessionLog } from './db/logs.js';
 import { constants } from 'crypto';
 import { scheduleReminder, getReminders, clearReminders } from './modulos/reminderManager.js';
@@ -46,24 +29,13 @@ import { DateTime } from 'luxon';
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
+
 const { utcToZonedTime } = require('date-fns-tz');
-
-
-
-
-
-const MAIN_BOT_NUMBER = '14073015137@c.us'; // substitua pelo seu número real com @c.us
-
-
+const MAIN_BOT_NUMBER = '14073015137@c.us';
 const processingQueues = new Map();
-
-// Converte a URL do módulo atual em um caminho de arquivo (necessário em ES Modules)
 const __filename = fileURLToPath(import.meta.url);
-// Obtém o diretório atual a partir do caminho do arquivo
 const __dirname = path.dirname(__filename);
-// Cria uma aplicação Express
 const app = express();
-// Define as opções de certificado SSL para HTTPS (usando certificados do Let's Encrypt)
 const options = {
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem'),
@@ -82,54 +54,51 @@ const options = {
 };
 const prompt_transcricao = fs.readFileSync(path.join(__dirname, 'prompts', 'transcricao.txt'), 'utf8');
 const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
-// Cria um servidor HTTPS usando as opções SSL e o app Express
 const server = https.createServer(options, app);
-
 const logStream = fs.createWriteStream('/var/log/wpptalk-errors.log', { flags: 'a' });
-
 server.on('clientError', (err, socket) => {
   const ip = socket.remoteAddress || 'IP desconhecido';
   const linha = `${new Date().toISOString()} | IP: ${ip} | clientError: ${err.message}\n`;
   logStream.write(linha);
   socket.destroy();
 });
-
-// Cria um servidor WebSocket associado ao servidor HTTPS (para comunicação em tempo real)
 const wss = new WebSocket.Server({ server });
-// Carrega a chave da API da OpenAI a partir das variáveis de ambiente
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-// Carrega (se necessário) um prompt de pré-qualificação a partir do .env
 const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
-// Cria uma instância do cliente OpenAI usando a chave da API
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-// Lê a porta do servidor a partir das variáveis de ambiente
 const PORT = process.env.PORT;
-// Mapa para armazenar sessões ativas em memória (pode ser vinculado a conexões de usuários ou sessões WhatsApp)
 const SESSIONS = new Map();
-
-
-// caminhos absolutos centralizados
 const TOKEN_DIR        = '/root/wpptalk_server/tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR    = path.join(__dirname, 'audios');
-
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
   path: TOKEN_DIR
 });
-
-// para disparar o bot e guardar o histórico por conversa
 const TRIGGER_KEYWORDS = ["@broker"];
 const CONVERSATIONS    = new Map();
 const ASSISTANT_MODEL  = "gpt-4o-mini";
 
-// Objeto para armazenar filtros em memória
+const DDI_TO_TIMEZONE = {
+  '1': 'America/New_York',
+  '44': 'Europe/London',
+  '33': 'Europe/Paris',
+  '49': 'Europe/Berlin',
+  '34': 'Europe/Madrid',
+  '39': 'Europe/Rome',
+  '55': 'America/Sao_Paulo',
+  '351': 'Europe/Lisbon',
+  '54': 'America/Argentina/Buenos_Aires',
+  '81': 'Asia/Tokyo',
+  '91': 'Asia/Kolkata',
+  '61': 'Australia/Sydney',
+  '86': 'Asia/Shanghai'
+};
+
 const SESSION_FILTERS = new Map();
 
-
-// garante que os folders existam
 [ 
   path.dirname(FILTERS_FILE),
   path.dirname(SESSIONS_FILE),
@@ -153,8 +122,6 @@ app.use(helmet({
     }
   }
 }));
-
-
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -163,26 +130,8 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
-
-
-const DDI_TO_TIMEZONE = {
-  '1': 'America/New_York',
-  '44': 'Europe/London',
-  '33': 'Europe/Paris',
-  '49': 'Europe/Berlin',
-  '34': 'Europe/Madrid',
-  '39': 'Europe/Rome',
-  '55': 'America/Sao_Paulo',
-  '351': 'Europe/Lisbon',
-  '54': 'America/Argentina/Buenos_Aires',
-  '81': 'Asia/Tokyo',
-  '91': 'Asia/Kolkata',
-  '61': 'Australia/Sydney',
-  '86': 'Asia/Shanghai'
-};
 
 function getTimezoneFromNumber(number) {
   const clean = number.replace(/\D/g, '');
@@ -1186,6 +1135,7 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
   // 🔁 Lógica padrão: primeira entrada do usuário
   let prompt;
   try {
+    
     const [rows] = await pool.query(
       'SELECT prompt FROM agentes WHERE `trigger` = ? AND ativo = 1 LIMIT 1',
       [triggerName]
@@ -1343,6 +1293,7 @@ const TRIGGERS = {
 
 // Detecta trigger com base no áudio bruto
 async function checkTriggerInAudio(buffer, sessionName, messageId) {
+
   const formData = new FormData();
   const tempFile = path.join(AUDIO_DIR, `temp_trigger_${sessionName}_${messageId}.ogg`);
   fs.writeFileSync(tempFile, buffer);
@@ -1357,6 +1308,11 @@ async function checkTriggerInAudio(buffer, sessionName, messageId) {
   });
 
   const transcript = response.data.text;
+
+  if (message.to !== MAIN_BOT_NUMBER) {
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return 'nenhum';
+  }
 
   const checkPrompt = `
   Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
@@ -1411,7 +1367,8 @@ async function processAudio(sessionName, message) {
 
     let buffer = await client.decryptFile(message);
 
-    const trigger = await checkTriggerInAudio(buffer, sessionName.replace(/\W/g, ''), message.id);
+    const trigger = await checkTriggerInAudio(buffer, sessionName.replace(/\W/g, ''), message.id, message);
+
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
       await TRIGGERS[trigger](session, message, buffer);
       return;
@@ -1638,6 +1595,7 @@ app.post('/api/agentes', async (req, res) => {
 
 
 async function checkTriggerInText(text) {
+
  const checkPrompt = `
 Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
 
@@ -1686,6 +1644,8 @@ async function processText(sessionName, message, email) {
     }
 
     if (message.from === myNumber) return;
+    
+    if (message.to !== MAIN_BOT_NUMBER) return;
 
     const text = message.body?.trim();
     if (!text) return;
