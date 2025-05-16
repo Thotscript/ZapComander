@@ -1292,8 +1292,7 @@ const TRIGGERS = {
 };
 
 // Detecta trigger com base no áudio bruto
-async function checkTriggerInAudio(buffer, sessionName, messageId) {
-
+async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   const formData = new FormData();
   const tempFile = path.join(AUDIO_DIR, `temp_trigger_${sessionName}_${messageId}.ogg`);
   fs.writeFileSync(tempFile, buffer);
@@ -1309,23 +1308,24 @@ async function checkTriggerInAudio(buffer, sessionName, messageId) {
 
   const transcript = response.data.text;
 
+  // Verifica se a mensagem não foi enviada ao número do bot
   if (message.to !== MAIN_BOT_NUMBER) {
     try { fs.unlinkSync(tempFile); } catch (err) {}
-    return 'nenhum';
+    return { trigger: 'nenhum', transcript };
   }
 
   const checkPrompt = `
-  Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
+Analise a transcrição de áudio abaixo e identifique se o usuário está solicitando a ativação de alguma das seguintes funções: "evento", "tarefa", "lembrete" ou "financiamento".
 
-  Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
+Responda **apenas** com uma das palavras: "evento", "tarefa", "lembrete", "financiamento".
 
-  Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
+Se a transcrição indicar um pedido como "me avise", "me lembra", "não esquecer", "me recordar", "me lembrar", "lembrar de", ou outras formas de lembrete com indicação de tempo (como minutos, horas, data, horário), **responda com "lembrete"**.
 
-  Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
+Se não encontrar nenhum desses gatilhos, responda apenas com "nenhum".
 
-  Transcrição:
-  """${transcript}"""
-  `;
+Transcrição:
+"""${transcript}"""
+`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
@@ -1346,8 +1346,10 @@ async function checkTriggerInAudio(buffer, sessionName, messageId) {
     console.warn(`⚠️ Arquivo já deletado ou inexistente: ${tempFile}`);
   }
 
-  return result.data.choices[0].message.content.trim().toLowerCase();
+  const trigger = result.data.choices[0].message.content.trim().toLowerCase();
+  return { trigger, transcript };
 }
+
 
 // =======================================================================================================================================================
 
@@ -1367,7 +1369,12 @@ async function processAudio(sessionName, message) {
 
     let buffer = await client.decryptFile(message);
 
-    const trigger = await checkTriggerInAudio(buffer, sessionName.replace(/\W/g, ''), message.id, message);
+    const { trigger, transcript } = await checkTriggerInAudio(
+      buffer,
+      sessionName.replace(/\W/g, ''),
+      message.id,
+      message
+    );
 
     if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
       await TRIGGERS[trigger](session, message, buffer);
@@ -1385,7 +1392,6 @@ async function processAudio(sessionName, message) {
     const inputPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
     const denoisedPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
 
-
     await new Promise((resolve, reject) => {
       const stream = fs.createWriteStream(inputPath);
       stream.write(buffer, (err) => err ? reject(err) : resolve());
@@ -1396,25 +1402,11 @@ async function processAudio(sessionName, message) {
 
     await new Promise((resolve, reject) => {
       const ffmpeg = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
-      // ffmpeg.stderr.on('data', data => console.log(`FFmpeg: ${data}`)); // Comentado para não logar
       ffmpeg.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg exited with code ${code}`)));
     });
 
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
-
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(denoisedPath));
-    formData.append('model', 'whisper-1');
-
-    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-      headers: {
-        ...formData.getHeaders(),
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      }
-    });
-
-    const transcricao = response.data.text;
 
     let languagePrompt = '';
     if (filtros.translation_enabled) {
@@ -1447,7 +1439,7 @@ async function processAudio(sessionName, message) {
         model: "gpt-4o-mini",
         messages: [
           { role: "system", content: prompt_base },
-          { role: "user", content: transcricao }
+          { role: "user", content: transcript }
         ]
       },
       {
@@ -1463,9 +1455,8 @@ async function processAudio(sessionName, message) {
     await new Promise(resolve => setTimeout(resolve, 10));
     await client.sendText(recipient, resumo, { quotedMsg: message.id });
 
-    const safeSession = sessionName.replace(/\W/g, '');
-    const inputPathFinal = path.join(AUDIO_DIR, `${safeSession}_${message.id}.ogg`);
-    const denoisedPathFinal = path.join(AUDIO_DIR, `${safeSession}_${message.id}_clean.ogg`);
+    const inputPathFinal = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
+    const denoisedPathFinal = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
 
     for (const filePath of [inputPathFinal, denoisedPathFinal]) {
       try {
@@ -1474,7 +1465,6 @@ async function processAudio(sessionName, message) {
         console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
       }
     }
-
 
     const now = new Date();
     const logData = {
@@ -1502,6 +1492,7 @@ async function processAudio(sessionName, message) {
     console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
+
 
 
 
