@@ -86,6 +86,28 @@ function extractPhoneNumberInfo(sender) {
   };
 }
 
+function normalizarHorario(input, timezone) {
+  const now = DateTime.now().setZone(timezone);
+  const str = input.toLowerCase().trim();
+
+  // Caso: "em 20min", "em 20 minutos", etc.
+  const matchMin = str.match(/em\s*(\d+)\s*(min|mins|minuto|minutos)/);
+  if (matchMin) {
+    const minutos = parseInt(matchMin[1], 10);
+    return now.plus({ minutes: minutos });
+  }
+
+  // Caso: "18h30", "18:30", "18 horas", etc.
+  const matchHora = str.match(/(\d{1,2})\s*(h|horas)?\s*(\d{2})?/);
+  if (matchHora) {
+    const hora = parseInt(matchHora[1], 10);
+    const minuto = matchHora[3] ? parseInt(matchHora[3], 10) : 0;
+    return now.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+  }
+
+  return null; // Formato inválido
+}
+
 const MAIN_BOT_NUMBER = '14073015137@c.us';
 const processingQueues = new Map();
 const __filename = fileURLToPath(import.meta.url);
@@ -1160,12 +1182,10 @@ async function handleTBVEventosConversation(session, message, userInput, session
   if (jsonMatch) {
     try {
       eventoInfo = JSON.parse(jsonMatch[1]);
-
       const camposObrigatorios = ['titulo', 'data', 'hora'];
       const completo = camposObrigatorios.every(k => eventoInfo[k]);
 
       if (completo) {
-        // ⏰ Verifica se o horário já passou
         const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
         if (!timezone) {
           await client.sendText(sender, `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`);
@@ -1173,43 +1193,53 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        const agora = DateTime.now().setZone(timezone);
         const dataCorrigida = resolverDataRelativa(eventoInfo.data, timezone);
-        const horaEvento = parseHorario(dataCorrigida, eventoInfo.hora, timezone);
+        const horaEvento = normalizarHorario(eventoInfo.hora, timezone)?.set({
+          year: dataCorrigida.year,
+          month: dataCorrigida.month,
+          day: dataCorrigida.day
+        });
 
-
-        if (!horaEvento.isValid) {
-          await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Por favor, use o formato HH:mm ou HHhMM.`);
+        if (!horaEvento || !horaEvento.isValid) {
+          await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
 
+        const agora = DateTime.now().setZone(timezone);
         if (horaEvento < agora) {
-          // ❌ Horário já passou
           await client.sendText(sender,
             `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
             `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
           );
-
-          // Mantém a conversa aberta para o próximo passo
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
 
-        // ✅ Tudo certo, salva o evento
+        // ✅ Salvar no banco e responder
         reply = reply.replace(jsonMatch[0], '').trim();
 
         await saveEventoToDB(sender, {
-        ...eventoInfo,
-        data: horaEvento.toISODate(),
-        hora: horaEvento.toFormat('HH:mm')
-      });
-
-
+          ...eventoInfo,
+          data: horaEvento.toISODate(),
+          hora: horaEvento.toFormat('HH:mm')
+        });
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
-        await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso para ${horaEvento.toFormat('dd/MM/yyyy HH:mm')}!`);
+        const horaFormatada = horaEvento.toFormat('HH:mm');
+        const dataFormatada = horaEvento.toFormat('dd/MM/yyyy');
+
+        const resumo = [
+          `📋 *Evento agendado com sucesso!*`,
+          `1. *Título:* ${eventoInfo.titulo}`,
+          `2. *Data:* ${dataFormatada}`,
+          `3. *Hora:* ${horaFormatada}`,
+          `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
+          `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
+        ].join('\n');
+
+        await client.sendText(sender, resumo);
         return;
       }
     } catch (err) {
@@ -1217,11 +1247,10 @@ async function handleTBVEventosConversation(session, message, userInput, session
     }
   }
 
-  // ❗ Se não finalizou ainda, segue a conversa
+  // ❗ Caso não tenha finalizado
   CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
-
 
 
 
