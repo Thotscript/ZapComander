@@ -1134,14 +1134,14 @@ function resolverDataRelativa(dataCampo, timezone) {
     if (dt.isValid) return dt.startOf('day');
   }
 
-  // SOLUÇÃO PARA NÚMERO ÚNICO DE DIA (CASO PRINCIPAL DO PROBLEMA)
+  // SOLUÇÃO PARA NÚMERO ÚNICO DE DIA
   if (apenasNumeros.length === 1) {
     console.log('🧪 [DEBUG] Processando número único:', apenasNumeros[0]);
     
     const dia = apenasNumeros[0];
     console.log(`🧪 [DEBUG] Comparando: dia ${dia} vs dia atual ${agora.day}`);
 
-    // SOLUÇÃO DIRETA: Se for um número >= 1 e <= 31, é um dia do mês
+    // Verificar se é um dia válido (entre 1 e 31)
     if (dia >= 1 && dia <= 31) {
       let dataResultado;
       
@@ -1156,8 +1156,11 @@ function resolverDataRelativa(dataCampo, timezone) {
         console.log(`🧪 [DEBUG] Dia ${dia} <= dia atual ${agora.day} → próximo mês: ${dataResultado.toISODate()}`);
       }
       
-      console.log(`🧪 [DEBUG] Data final escolhida: ${dataResultado.toISODate()}`);
-      return dataResultado.startOf('day');
+      // Validar se o dia existe no mês (evita 31 de fevereiro, etc)
+      if (dataResultado.isValid) {
+        console.log(`🧪 [DEBUG] Data final escolhida: ${dataResultado.toISODate()}`);
+        return dataResultado.startOf('day');
+      }
     }
   }
 
@@ -1165,7 +1168,6 @@ function resolverDataRelativa(dataCampo, timezone) {
   console.log('🧪 [DEBUG] Nenhum padrão reconhecido, usando hoje:', agora.toISODate());
   return agora.startOf('day');
 }
-
 
 
 
@@ -1231,21 +1233,24 @@ async function handleTBVEventosConversation(session, message, userInput, session
     temperature: 0.2
   });
 
-  let reply = gptResponse.choices[0].message.content.trim();
-  convo.history.push({ role: 'assistant', content: reply });
+  let assistantResponse = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: assistantResponse });
 
+  // Extract JSON without sending it to the user
   let eventoInfo = null;
-  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
+  let jsonMatch = assistantResponse.match(/```json([\s\S]+?)```/);
 
   if (!jsonMatch) {
-    const fallbackMatch = reply.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
+    const fallbackMatch = assistantResponse.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
     if (fallbackMatch) jsonMatch = [null, fallbackMatch[1]];
   }
   if (!jsonMatch) {
-    const brute = reply.match(/\{[\s\S]+?\}/);
+    const brute = assistantResponse.match(/\{[\s\S]+?\}/);
     if (brute) jsonMatch = [null, brute[0]];
   }
 
+  let reply = "";
+  
   if (jsonMatch) {
     try {
       eventoInfo = JSON.parse(jsonMatch[1]);
@@ -1255,7 +1260,8 @@ async function handleTBVEventosConversation(session, message, userInput, session
       if (completo) {
         const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
         if (!timezone) {
-          await client.sendText(sender, `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`);
+          reply = `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`;
+          await client.sendText(sender, reply);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
@@ -1269,7 +1275,8 @@ async function handleTBVEventosConversation(session, message, userInput, session
         });
 
         if (!horaInterna || !horaInterna.isValid) {
-          await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`);
+          reply = `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`;
+          await client.sendText(sender, reply);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
@@ -1282,34 +1289,16 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
         // Evita falsos positivos em eventos futuros
         if (horaInterna < agora.minus({ minutes: 1 })) {
-          await client.sendText(sender,
-            `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
-            `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
-          );
+          reply = `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
+            `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`;
+          await client.sendText(sender, reply);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
 
-        // Remove qualquer bloco JSON do texto do GPT
-        reply = reply
-          .replace(/```json[\s\S]*?```/gi, '')              // Bloco markdown
-          .replace(/json\s*\n?\s*(\{[\s\S]*\})/gi, '')       // json + objeto
-          .replace(/\{[\s\S]*?\}/g, '')                      // Qualquer objeto isolado
-          .replace(/\n{2,}/g, '\n')                          // Remove linhas duplas extras
-          .trim();
-
-        // Se depois da limpeza o reply estiver vazio ou muito curto, use uma mensagem padrão
-        if (reply.length < 20) {
-          // Removido o reply com JSON para o usuário
-          const resumoEvento = `
-• Título: ${eventoInfo.titulo || 'Não informado'}
-• Data: ${eventoInfo.data}
-• Hora: ${eventoInfo.hora}
-• Local: ${eventoInfo.local || 'Não informado'}
-• Observações: ${eventoInfo.observacoes || 'Não informado'}`;
-          
-          reply = `Entendi! Vou registrar seu evento conforme solicitado. Aqui está o resumo:${resumoEvento}`;
-        }
+        // Prepare a clean user-facing message without JSON
+        const horaFormatada = horaInterna.toFormat('HH:mm');
+        const dataFormatada = horaInterna.toFormat('dd/MM/yyyy');
 
         await saveEventoToDB(sender, {
           titulo: sanitizeUTF8(eventoInfo.titulo),
@@ -1321,10 +1310,7 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
-        const horaFormatada = horaInterna.toFormat('HH:mm');
-        const dataFormatada = horaInterna.toFormat('dd/MM/yyyy');
-
-        const resumo = [
+        reply = [
           `📋 *Evento agendado com sucesso!*`,
           `1. *Título:* ${eventoInfo.titulo || 'Não informado'}`,
           `2. *Data:* ${dataFormatada}`,
@@ -1333,25 +1319,27 @@ async function handleTBVEventosConversation(session, message, userInput, session
           `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
         ].join('\n');
 
-        // Enviar apenas o resumo sem o JSON
-        await client.sendText(sender, resumo);
+        await client.sendText(sender, reply);
         return;
       }
     } catch (err) {
       console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
       
-      // Em caso de erro de interpretação de JSON, remova qualquer conteúdo que pareça JSON da resposta
-      reply = reply
-        .replace(/```json[\s\S]*?```/gi, '')
-        .replace(/json\s*\n?\s*(\{[\s\S]*\})/gi, '')
-        .replace(/\{[\s\S]*?\}/g, '')
-        .replace(/\n{2,}/g, '\n')
-        .trim();
-        
-      // Se a resposta ficar muito curta, use um fallback
-      if (reply.length < 20) {
-        reply = "Desculpe, tive um problema ao processar sua solicitação. Poderia fornecer mais detalhes sobre o evento que gostaria de agendar?";
-      }
+      // Fallback em caso de erro de parsing
+      reply = "Desculpe, tive um problema ao processar sua solicitação. Poderia fornecer mais detalhes sobre o evento que gostaria de agendar?";
+    }
+  } else {
+    // Se não encontrou JSON, use a resposta do assistente mas remova qualquer trecho que pareça JSON
+    reply = assistantResponse
+      .replace(/```json[\s\S]*?```/gi, '')
+      .replace(/json\s*\n?\s*(\{[\s\S]*\})/gi, '')
+      .replace(/\{[\s\S]*?\}/g, '')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+      
+    // Se a resposta ficar muito curta após a limpeza
+    if (reply.length < 20) {
+      reply = "Poderia fornecer mais detalhes sobre o evento que deseja agendar? Preciso do título, data e hora do evento.";
     }
   }
 
