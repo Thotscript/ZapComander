@@ -1264,8 +1264,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
           day: dataInterna.day
         });
 
-        
-
         if (!horaInterna || !horaInterna.isValid) {
           await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`);
           CONVERSATIONS.set(convoKey, convo);
@@ -1277,7 +1275,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
         console.log('📝 [DEBUG] Hora original (eventoInfo.hora):', eventoInfo.hora);
         console.log('📅 [DEBUG] Data interpretada (dataInterna):', dataInterna.toISODate());
         console.log('⏰ [DEBUG] Hora interpretada (horaInterna):', horaInterna.toISO());
-
 
         // Evita falsos positivos em eventos futuros
         if (horaInterna < agora.minus({ minutes: 1 })) {
@@ -1297,6 +1294,18 @@ async function handleTBVEventosConversation(session, message, userInput, session
           .replace(/\n{2,}/g, '\n')                          // Remove linhas duplas extras
           .trim();
 
+        // Se depois da limpeza o reply estiver vazio ou muito curto, use uma mensagem padrão
+        if (reply.length < 20) {
+          // Removido o reply com JSON para o usuário
+          const resumoEvento = `
+• Título: ${eventoInfo.titulo || 'Não informado'}
+• Data: ${eventoInfo.data}
+• Hora: ${eventoInfo.hora}
+• Local: ${eventoInfo.local || 'Não informado'}
+• Observações: ${eventoInfo.observacoes || 'Não informado'}`;
+          
+          reply = `Entendi! Vou registrar seu evento conforme solicitado. Aqui está o resumo:${resumoEvento}`;
+        }
 
         await saveEventoToDB(sender, {
           titulo: sanitizeUTF8(eventoInfo.titulo),
@@ -1313,18 +1322,32 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
         const resumo = [
           `📋 *Evento agendado com sucesso!*`,
-          `1. *Título:* ${eventoInfo.titulo}`,
+          `1. *Título:* ${eventoInfo.titulo || 'Não informado'}`,
           `2. *Data:* ${dataFormatada}`,
           `3. *Hora:* ${horaFormatada}`,
           `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
           `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
         ].join('\n');
 
+        // Enviar apenas o resumo sem o JSON
         await client.sendText(sender, resumo);
         return;
       }
     } catch (err) {
       console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
+      
+      // Em caso de erro de interpretação de JSON, remova qualquer conteúdo que pareça JSON da resposta
+      reply = reply
+        .replace(/```json[\s\S]*?```/gi, '')
+        .replace(/json\s*\n?\s*(\{[\s\S]*\})/gi, '')
+        .replace(/\{[\s\S]*?\}/g, '')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
+        
+      // Se a resposta ficar muito curta, use um fallback
+      if (reply.length < 20) {
+        reply = "Desculpe, tive um problema ao processar sua solicitação. Poderia fornecer mais detalhes sobre o evento que gostaria de agendar?";
+      }
     }
   }
 
