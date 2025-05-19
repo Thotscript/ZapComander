@@ -1176,8 +1176,8 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
   // 🧠 Extração do JSON
   let eventoInfo = null;
-
   let jsonMatch = reply.match(/```json([\s\S]+?)```/);
+
   if (!jsonMatch) {
     const fallbackMatch = reply.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
     if (fallbackMatch) jsonMatch = [null, fallbackMatch[1]];
@@ -1224,17 +1224,20 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        // ✅ Salvar no banco e responder
-        reply = reply.replace(jsonMatch[0], '').trim();
+        // ✅ Remove qualquer JSON do texto
+        reply = reply.replace(/```json[\s\S]+?```/, '')
+                     .replace(/json\s*\n?\s*(\{[\s\S]*\})/i, '')
+                     .replace(/\{[\s\S]+?\}/, '')
+                     .trim();
 
+        // ✅ Salvar no banco com campos limpos
         await saveEventoToDB(sender, {
-        titulo: sanitizeUTF8(eventoInfo.titulo),
-        data: horaEvento.toISODate(),
-        hora: horaEvento.toFormat('HH:mm'),
-        local: sanitizeUTF8(eventoInfo.local || ''),
-        observacoes: sanitizeUTF8(eventoInfo.observacoes || '')
-      });
-
+          titulo: sanitizeUTF8(eventoInfo.titulo),
+          data: horaEvento.toISODate(),
+          hora: horaEvento.toFormat('HH:mm'),
+          local: sanitizeUTF8(eventoInfo.local || ''),
+          observacoes: sanitizeUTF8(eventoInfo.observacoes || '')
+        });
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
@@ -1242,14 +1245,13 @@ async function handleTBVEventosConversation(session, message, userInput, session
         const dataFormatada = horaEvento.toFormat('dd/MM/yyyy');
 
         const resumo = [
-        `📋 *Evento agendado com sucesso!*`,
-        `1. *Título:* ${eventoInfo.titulo}`,
-        `2. *Data:* ${dataFormatada}`,
-        `3. *Hora:* ${horaFormatada}`,
-        `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
-        `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
-      ].join('\n');
-
+          `📋 *Evento agendado com sucesso!*`,
+          `1. *Título:* ${eventoInfo.titulo}`,
+          `2. *Data:* ${dataFormatada}`,
+          `3. *Hora:* ${horaFormatada}`,
+          `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
+          `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
+        ].join('\n');
 
         await client.sendText(sender, resumo);
         return;
@@ -1263,6 +1265,7 @@ async function handleTBVEventosConversation(session, message, userInput, session
   CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
+
 
 
 
