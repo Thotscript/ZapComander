@@ -1087,13 +1087,8 @@ function resolverDataRelativa(dataCampo, timezone) {
     .replace(/[^\w\s\/\-]/g, '')
     .trim();
 
-  if (normalizada === 'hoje') {
-    return agora.startOf('day');
-  }
-
-  if (normalizada === 'amanha') {
-    return agora.plus({ days: 1 }).startOf('day');
-  }
+  if (normalizada === 'hoje') return agora.startOf('day');
+  if (normalizada === 'amanha') return agora.plus({ days: 1 }).startOf('day');
 
   const diasSemana = {
     segunda: 1, terca: 2, quarta: 3,
@@ -1107,38 +1102,41 @@ function resolverDataRelativa(dataCampo, timezone) {
     return agora.plus({ days: diasParaAdicionar }).startOf('day');
   }
 
-  // Tentativa: ISO (yyyy-mm-dd)
+  // yyyy-MM-dd
   const tentativaISO = DateTime.fromISO(normalizada, { zone: timezone });
   if (tentativaISO.isValid) return tentativaISO.startOf('day');
 
-  // Tentativas numéricas
-  const partes = normalizada.split('/').map(p => parseInt(p));
-  let tentativa = null;
+  // Partes separadas por /
+  const partes = normalizada.split('/').map(p => parseInt(p)).filter(p => !isNaN(p));
 
   if (partes.length === 3) {
     const [dia, mes, ano] = partes;
-    tentativa = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
-  } else if (partes.length === 2) {
-    const [dia, mes] = partes;
-    let ano = agora.year;
-    tentativa = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
-    if (tentativa < agora.startOf('day')) {
-      tentativa = tentativa.plus({ years: 1 });
-    }
-  } else if (partes.length === 1 && !isNaN(partes[0])) {
-    const [dia] = partes;
-    let tentativaMes = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
-    if (tentativaMes < agora.startOf('day')) {
-      tentativaMes = tentativaMes.plus({ months: 1 });
-    }
-    tentativa = tentativaMes;
+    const dt = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
+    if (dt.isValid) return dt.startOf('day');
   }
 
-  if (tentativa?.isValid) return tentativa.startOf('day');
+  if (partes.length === 2) {
+    const [dia, mes] = partes;
+    let ano = agora.year;
+    let dt = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
+    if (dt < agora.startOf('day')) dt = dt.plus({ years: 1 });
+    if (dt.isValid) return dt.startOf('day');
+  }
 
-  // Caso nenhuma das tentativas funcione
-  return agora.startOf('day');
+  if (partes.length === 1) {
+    const [dia] = partes;
+    let dt = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
+    if (dt < agora.startOf('day')) {
+      // Avança para o mês seguinte
+      const proximoMes = agora.plus({ months: 1 });
+      dt = DateTime.fromObject({ day: dia, month: proximoMes.month, year: proximoMes.year }, { zone: timezone });
+    }
+    if (dt.isValid) return dt.startOf('day');
+  }
+
+  return agora.startOf('day'); // fallback
 }
+
 
 
 
