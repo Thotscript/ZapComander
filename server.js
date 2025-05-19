@@ -1083,7 +1083,9 @@ function resolverDataRelativa(dataCampo, timezone) {
   const normalizada = dataCampo
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s\/\-]/g, '') // remove pontuação extra
+    .trim();
 
   if (normalizada === 'hoje') {
     return agora.startOf('day');
@@ -1093,6 +1095,7 @@ function resolverDataRelativa(dataCampo, timezone) {
     return agora.plus({ days: 1 }).startOf('day');
   }
 
+  // Dias da semana: próxima ocorrência
   const diasSemana = {
     segunda: 1, terca: 2, quarta: 3,
     quinta: 4, sexta: 5, sabado: 6, domingo: 7
@@ -1105,13 +1108,49 @@ function resolverDataRelativa(dataCampo, timezone) {
     return agora.plus({ days: diasParaAdicionar }).startOf('day');
   }
 
-  // tenta converter se for yyyy-MM-dd
-  const tentativa = DateTime.fromISO(dataCampo.trim(), { zone: timezone });
-  if (tentativa.isValid) return tentativa.startOf('day');
+  // Formato "yyyy-MM-dd"
+  const tentativaISO = DateTime.fromISO(normalizada, { zone: timezone });
+  if (tentativaISO.isValid) {
+    return tentativaISO.startOf('day');
+  }
 
-  // fallback: retorna hoje
+  // Formatos: "22/05/2025", "22/05", "22"
+  const partes = normalizada.split('/').map(p => parseInt(p));
+  if (partes.length === 3) {
+    const [dia, mes, ano] = partes;
+    const data = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
+    if (data.isValid) return data.startOf('day');
+  }
+
+  if (partes.length === 2) {
+    const [dia, mes] = partes;
+    let ano = agora.year;
+    let data = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
+
+    // Se já passou neste ano, usa o próximo
+    if (data < agora.startOf('day')) {
+      data = data.plus({ years: 1 });
+    }
+
+    if (data.isValid) return data.startOf('day');
+  }
+
+  if (partes.length === 1) {
+    const [dia] = partes;
+    let data = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
+
+    // Se já passou este mês, pula para o mês seguinte
+    if (data < agora.startOf('day')) {
+      data = data.plus({ months: 1 });
+    }
+
+    if (data.isValid) return data.startOf('day');
+  }
+
+  // Fallback: retorna hoje
   return agora.startOf('day');
 }
+
 
 
 
@@ -1206,7 +1245,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        // 🔎 Internamente converte data/hora para validação, sem alterar os valores do usuário
         const agora = DateTime.now().setZone(timezone);
         const dataInterna = resolverDataRelativa(eventoInfo.data, timezone);
         const horaInterna = normalizarHorario(eventoInfo.hora, timezone)?.set({
@@ -1221,7 +1259,8 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        if (horaInterna < agora) {
+        // Evita falsos positivos em eventos futuros
+        if (horaInterna < agora.minus({ minutes: 1 })) {
           await client.sendText(sender,
             `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
             `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
@@ -1230,13 +1269,11 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        // 🧼 Remove qualquer JSON do texto de resposta
         reply = reply.replace(/```json[\s\S]+?```/, '')
                      .replace(/json\s*\n?\s*(\{[\s\S]*\})/i, '')
                      .replace(/\{[\s\S]+?\}/, '')
                      .trim();
 
-        // 💾 Salva evento com data/hora absoluta no banco, mantendo strings originais para o usuário
         await saveEventoToDB(sender, {
           titulo: sanitizeUTF8(eventoInfo.titulo),
           data: horaInterna.toISODate(),
@@ -1267,10 +1304,10 @@ async function handleTBVEventosConversation(session, message, userInput, session
     }
   }
 
-  // 🧠 Mantém o histórico se a conversa não foi finalizada
   CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
+
 
 
 
