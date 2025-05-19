@@ -24,11 +24,68 @@ import { saveEventoToDB } from './db/eventos.js';
 import { constants } from 'crypto';
 import { spawn } from 'child_process';
 import { DateTime } from 'luxon';
-
 import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
 
-const { utcToZonedTime } = require('date-fns-tz');
+
+
+const DDI_TO_TIMEZONE = {
+  '1': 'America/New_York',
+  '44': 'Europe/London',
+  '33': 'Europe/Paris',
+  '49': 'Europe/Berlin',
+  '34': 'Europe/Madrid',
+  '39': 'Europe/Rome',
+  '55': 'America/Sao_Paulo',
+  '351': 'Europe/Lisbon',
+  '54': 'America/Argentina/Buenos_Aires',
+  '81': 'Asia/Tokyo',
+  '91': 'Asia/Kolkata',
+  '61': 'Australia/Sydney',
+  '86': 'Asia/Shanghai'
+};
+
+/**
+ * Extrai número limpo, DDI, timezone e também formata para visualização
+ * @param {string} sender - Ex: "5511999999999@c.us"
+ * @returns {{ numeroLimpo: string, ddi: string|null, timezone: string|null, numeroFormatado: string }}
+ */
+function extractPhoneNumberInfo(sender) {
+  const raw = sender.split('@')[0]; // "5511999999999"
+  const clean = raw.replace(/[^\d]/g, '');
+
+  let ddi = null;
+  let timezone = null;
+
+  for (let len of [3, 2, 1]) {
+    const code = clean.slice(0, len);
+    if (DDI_TO_TIMEZONE[code]) {
+      ddi = code;
+      timezone = DDI_TO_TIMEZONE[code];
+      break;
+    }
+  }
+
+  const semDDI = clean.slice(ddi?.length || 0);
+
+  let numeroFormatado = `+${ddi} ${semDDI}`;
+
+  // Formatação básica para celular com DDD (como Brasil e EUA)
+  if (ddi === '1') {
+    // EUA/Canadá: +1 (786) 241-7619
+    numeroFormatado = `+${ddi} (${semDDI.slice(0, 3)}) ${semDDI.slice(3, 6)}-${semDDI.slice(6)}`;
+  } else if (ddi === '55') {
+    // Brasil: +55 (11) 99999-9999
+    numeroFormatado = `+${ddi} (${semDDI.slice(0, 2)}) ${semDDI.slice(2, 7)}-${semDDI.slice(7)}`;
+  }
+
+  return {
+    numeroLimpo: clean,
+    ddi,
+    timezone,
+    numeroFormatado
+  };
+}
+
 const MAIN_BOT_NUMBER = '14073015137@c.us';
 const processingQueues = new Map();
 const __filename = fileURLToPath(import.meta.url);
@@ -50,7 +107,7 @@ const options = {
   ].join(':'),
   honorCipherOrder: true
 };
-const prompt_transcricao = fs.readFileSync(path.join(__dirname, 'prompts', 'transcricao.txt'), 'utf8');
+
 const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
 const server = https.createServer(options, app);
 const logStream = fs.createWriteStream('/var/log/wpptalk-errors.log', { flags: 'a' });
@@ -62,7 +119,6 @@ server.on('clientError', (err, socket) => {
 });
 const wss = new WebSocket.Server({ server });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const PROMPT_PRE_QUALIFICACAO = process.env.PROMPT_PRE_QUALIFICACAO;
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 const PORT = process.env.PORT;
 const SESSIONS = new Map();
@@ -78,23 +134,6 @@ const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
 const TRIGGER_KEYWORDS = ["@broker"];
 const CONVERSATIONS    = new Map();
 const ASSISTANT_MODEL  = "gpt-4o-mini";
-
-const DDI_TO_TIMEZONE = {
-  '1': 'America/New_York',
-  '44': 'Europe/London',
-  '33': 'Europe/Paris',
-  '49': 'Europe/Berlin',
-  '34': 'Europe/Madrid',
-  '39': 'Europe/Rome',
-  '55': 'America/Sao_Paulo',
-  '351': 'Europe/Lisbon',
-  '54': 'America/Argentina/Buenos_Aires',
-  '81': 'Asia/Tokyo',
-  '91': 'Asia/Kolkata',
-  '61': 'Australia/Sydney',
-  '86': 'Asia/Shanghai'
-};
-
 const SESSION_FILTERS = new Map();
 
 [ 
@@ -138,59 +177,6 @@ function getTimezoneFromNumber(number) {
 
   return DDI_TO_TIMEZONE[ddi] || DDI_TO_TIMEZONE[ddi.slice(0, 2)] || 'UTC';
 }
-
-
-function extractDelayMinutes(text, senderNumber = '', explicitTimezone = null) {
-  const matchMin = text.match(/em (\d+)\s*(minutos|min|m)\b/i);
-  const matchHoras = text.match(/em (\d+)\s*(horas|h)\b/i);
-  const matchHoraRelogio = text.match(/(?:às|as)?\s*(\d{1,2}):?(\d{2})?\b/i);
-
-  const timezone = explicitTimezone || getTimezoneFromNumber(senderNumber);
-  const now = DateTime.now().setZone(timezone);
-
-  if (matchMin) {
-    const delay = parseInt(matchMin[1]);
-    return {
-      delayMinutos: delay,
-      descricaoOriginal: `${delay} minutos`,
-      jaPassou: false
-    };
-  }
-
-  if (matchHoras) {
-    const delay = parseInt(matchHoras[1]) * 60;
-    return {
-      delayMinutos: delay,
-      descricaoOriginal: `${matchHoras[1]} hora(s)`,
-      jaPassou: false
-    };
-  }
-
-  if (matchHoraRelogio) {
-    const hour = parseInt(matchHoraRelogio[1]);
-    const minutes = parseInt(matchHoraRelogio[2] || '0');
-
-    let targetTime = now.set({ hour, minute: minutes, second: 0, millisecond: 0 });
-
-    // se passou, considera como no dia seguinte
-    if (targetTime < now) {
-      targetTime = targetTime.plus({ days: 1 });
-    }
-
-    const delay = Math.round(targetTime.diff(now, 'minutes').minutes);
-
-    return {
-      delayMinutos: delay,
-      descricaoOriginal: `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,
-      jaPassou: false
-    };
-  }
-
-  return { delayMinutos: null, descricaoOriginal: '', jaPassou: false };
-}
-
-
-
 
 // ===== Rotas e lógica de sessão =====
 
@@ -1091,78 +1077,50 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-async function handleTBVEventosConversation(session, message, userInput, sessionName, email) {
-  const client = session.client;
-  const sender = message.from;
-  const convoKey = `${session.myNumber}:${sender}`;
+if (completo) {
+  // ⏰ Verifica se o horário já passou
+  const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
+    if (!timezone) {
+      await client.sendText(sender, `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`);
+      return;
+    }
 
-  let convo = CONVERSATIONS.get(convoKey) || {
-    history: [],
-    activeTrigger: 'tbvevents'
-  };
+  const agora = DateTime.now().setZone(timezone);
+  const horaEvento = parseHorario(eventoInfo.data, eventoInfo.hora, timezone);
 
-  const prompt = loadPrompt('TBVEvents');
-
-  if (convo.history.length === 0) {
-    convo.history.push({ role: 'system', content: prompt });
+  if (!horaEvento.isValid) {
+    await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Por favor, use o formato HH:mm ou HHhMM.`);
+    return;
   }
 
-  convo.history.push({ role: 'user', content: userInput });
+  const diff = horaEvento.diff(agora, ['hours', 'minutes']).toObject();
 
-  const gptResponse = await openai.chat.completions.create({
-    model: ASSISTANT_MODEL,
-    messages: convo.history,
-    temperature: 0.3
+  if (horaEvento < agora) {
+    // ❌ Horário já passou
+    await client.sendText(sender,
+      `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
+      `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
+    );
+
+    // Mantém a conversa aberta para o próximo passo
+    CONVERSATIONS.set(convoKey, convo);
+    return;
+  }
+
+  // ✅ Tudo certo, segue
+  reply = reply.replace(jsonMatch[0], '').trim();
+  await saveEventoToDB(email, sessionName, {
+    ...eventoInfo,
+    data: horaEvento.toISODate(),
+    hora: horaEvento.toFormat('HH:mm')
   });
 
-  let reply = gptResponse.choices[0].message.content.trim();
-  convo.history.push({ role: 'assistant', content: reply });
+  CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
-  // 🧠 Extração do JSON
-  let eventoInfo = null;
-
-  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
-  if (!jsonMatch) {
-    const fallbackMatch = reply.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
-    if (fallbackMatch) jsonMatch = [null, fallbackMatch[1]];
-  }
-  if (!jsonMatch) {
-    const brute = reply.match(/\{[\s\S]+?\}/);
-    if (brute) jsonMatch = [null, brute[0]];
-  }
-
-  if (jsonMatch) {
-    try {
-      eventoInfo = JSON.parse(jsonMatch[1]);
-
-      const camposObrigatorios = ['titulo', 'data', 'hora'];
-      const completo = camposObrigatorios.every(k => eventoInfo[k]);
-
-      if (completo) {
-        // 🧼 Remove o JSON da resposta que será mostrada ao usuário
-        reply = reply.replace(jsonMatch[0], '').trim();
-
-        // ✅ Salva o evento
-        console.log('📆 Evento agendado:', eventoInfo);
-        await saveEventoToDB(email, sessionName, eventoInfo);
-
-        // ✅ Finaliza o gatilho
-        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-
-        // ✅ Envia resposta final formatada para o usuário
-        await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso!`);
-
-        return;
-      }
-    } catch (err) {
-      console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
-    }
-  }
-
-  // ❗ Se não finalizou ainda, segue a conversa
-  CONVERSATIONS.set(convoKey, convo);
-  await client.sendText(sender, reply);
+  await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso para ${horaEvento.toFormat('dd/MM/yyyy HH:mm')}!`);
+  return;
 }
+
 
 
 
