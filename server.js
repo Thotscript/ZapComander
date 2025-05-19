@@ -1243,11 +1243,20 @@ async function handleTBVEventosConversation(session, message, userInput, session
           day: dataInterna.day
         });
 
+        
+
         if (!horaInterna || !horaInterna.isValid) {
           await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
+
+        console.log('🕒 [DEBUG] Agora:', agora.toISO());
+        console.log('📝 [DEBUG] Data original (eventoInfo.data):', eventoInfo.data);
+        console.log('📝 [DEBUG] Hora original (eventoInfo.hora):', eventoInfo.hora);
+        console.log('📅 [DEBUG] Data interpretada (dataInterna):', dataInterna.toISODate());
+        console.log('⏰ [DEBUG] Hora interpretada (horaInterna):', horaInterna.toISO());
+
 
         // Evita falsos positivos em eventos futuros
         if (horaInterna < agora.minus({ minutes: 1 })) {
