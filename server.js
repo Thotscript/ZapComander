@@ -19,8 +19,8 @@ import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { excluirSessaoPorEmail } from './db/sessions.js';
 import { insertDefaultFilters } from './db/default-filter.js';
 import { criarOuIgnorarSessao } from './db/sessions.js';
-import { saveFiltersToDB } from './db/filters.js';
 import { saveSessionLog } from './db/logs.js';
+import { saveEventoToDB } from './db/eventos.js';
 import { constants } from 'crypto';
 import { spawn } from 'child_process';
 import { DateTime } from 'luxon';
@@ -669,45 +669,6 @@ async function loadFiltersFromDB(email, sessionName) {
     conn.release();
   }
 }
-
-
-
-async function saveFiltersToDB(email, sessaoNumero, filters) {
-  // Remove blockedNumbers do objeto antes de tudo
-  const { blockedNumbers, ...otherFilters } = filters;
-
-  const conn = await pool.getConnection();
-  try {
-    // Limpa apenas os filtros que NÃO são blockedNumbers
-    await conn.execute(
-      `DELETE FROM filtros
-        WHERE email = ?
-          AND sessao_numero = ?
-          AND filtro_nome <> 'blockedNumbers'`,
-      [email, sessaoNumero]
-    );
-
-    // Prepara as linhas só para otherFilters
-    const rows = Object.entries(otherFilters).map(([nome, valor]) => {
-      let v;
-      if (typeof valor === 'string')       v = valor;
-      else if (typeof valor === 'boolean') v = valor ? '1' : '0';
-      else                                 v = JSON.stringify(valor);
-      return [ email, sessaoNumero, nome, v ];
-    });
-
-    if (rows.length > 0) {
-      await conn.query(
-        'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
-        [rows]
-      );
-    }
-  } finally {
-    conn.release();
-  }
-}
-
-
 
 // -----------------------------------------------------------------------------------------
 
