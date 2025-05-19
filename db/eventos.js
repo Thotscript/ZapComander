@@ -1,13 +1,12 @@
 import db from './index.js';
 
-export async function saveEventoToDB(email, sessionName, eventoInfo) {
+export async function saveEventoToDB(numero, eventoInfo) {
   try {
     await db.query(
-      `INSERT INTO lembretes (email, session_name, titulo, data, hora, local, observacoes)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO lembretes (numero, titulo, data, hora, local, observacoes)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [
-        email,
-        sessionName,
+        numero,
         eventoInfo.titulo || '',
         eventoInfo.data || '',
         eventoInfo.hora || '',

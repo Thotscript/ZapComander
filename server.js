@@ -1199,11 +1199,13 @@ async function handleTBVEventosConversation(session, message, userInput, session
         // ✅ Tudo certo, salva o evento
         reply = reply.replace(jsonMatch[0], '').trim();
 
-        await saveEventoToDB(email, sessionName, {
-          ...eventoInfo,
-          data: horaEvento.toISODate(),
-          hora: horaEvento.toFormat('HH:mm')
-        });
+        await saveEventoToDB(sender, {
+        ...eventoInfo,
+        data: horaEvento.toISODate(),
+        hora: horaEvento.toFormat('HH:mm')
+      });
+
+
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
