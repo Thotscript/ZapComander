@@ -1180,7 +1180,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
   let reply = gptResponse.choices[0].message.content.trim();
   convo.history.push({ role: 'assistant', content: reply });
 
-  // 🧠 Extração do JSON
   let eventoInfo = null;
   let jsonMatch = reply.match(/```json([\s\S]+?)```/);
 
@@ -1207,21 +1206,22 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        const dataCorrigida = resolverDataRelativa(eventoInfo.data, timezone);
-        const horaEvento = normalizarHorario(eventoInfo.hora, timezone)?.set({
-          year: dataCorrigida.year,
-          month: dataCorrigida.month,
-          day: dataCorrigida.day
+        // 🔎 Internamente converte data/hora para validação, sem alterar os valores do usuário
+        const agora = DateTime.now().setZone(timezone);
+        const dataInterna = resolverDataRelativa(eventoInfo.data, timezone);
+        const horaInterna = normalizarHorario(eventoInfo.hora, timezone)?.set({
+          year: dataInterna.year,
+          month: dataInterna.month,
+          day: dataInterna.day
         });
 
-        if (!horaEvento || !horaEvento.isValid) {
+        if (!horaInterna || !horaInterna.isValid) {
           await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Use formatos como "18h", "18:30", ou "em 20min".`);
           CONVERSATIONS.set(convoKey, convo);
           return;
         }
 
-        const agora = DateTime.now().setZone(timezone);
-        if (horaEvento < agora) {
+        if (horaInterna < agora) {
           await client.sendText(sender,
             `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
             `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
@@ -1230,25 +1230,25 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        // ✅ Remove qualquer JSON do texto
+        // 🧼 Remove qualquer JSON do texto de resposta
         reply = reply.replace(/```json[\s\S]+?```/, '')
                      .replace(/json\s*\n?\s*(\{[\s\S]*\})/i, '')
                      .replace(/\{[\s\S]+?\}/, '')
                      .trim();
 
-        // ✅ Salvar no banco com campos limpos
+        // 💾 Salva evento com data/hora absoluta no banco, mantendo strings originais para o usuário
         await saveEventoToDB(sender, {
           titulo: sanitizeUTF8(eventoInfo.titulo),
-          data: horaEvento.toISODate(),
-          hora: horaEvento.toFormat('HH:mm'),
+          data: horaInterna.toISODate(),
+          hora: horaInterna.toFormat('HH:mm'),
           local: sanitizeUTF8(eventoInfo.local || ''),
           observacoes: sanitizeUTF8(eventoInfo.observacoes || '')
         });
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
-        const horaFormatada = horaEvento.toFormat('HH:mm');
-        const dataFormatada = horaEvento.toFormat('dd/MM/yyyy');
+        const horaFormatada = horaInterna.toFormat('HH:mm');
+        const dataFormatada = horaInterna.toFormat('dd/MM/yyyy');
 
         const resumo = [
           `📋 *Evento agendado com sucesso!*`,
@@ -1267,7 +1267,7 @@ async function handleTBVEventosConversation(session, message, userInput, session
     }
   }
 
-  // ❗ Caso não tenha finalizado
+  // 🧠 Mantém o histórico se a conversa não foi finalizada
   CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
