@@ -1056,6 +1056,37 @@ function parseHorario(dataStr, horaStr, timezone) {
   return DateTime.fromFormat(fullStr, 'yyyy-MM-dd HH:mm', { zone: timezone });
 }
 
+function resolverDataRelativa(dataCampo, timezone) {
+  const agora = DateTime.now().setZone(timezone);
+  const normalizada = dataCampo
+    .toLowerCase()
+    .normalize("NFD") // remove acentos
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (normalizada === 'hoje') {
+    return agora.toFormat('yyyy-MM-dd');
+  }
+
+  if (normalizada === 'amanha') {
+    return agora.plus({ days: 1 }).toFormat('yyyy-MM-dd');
+  }
+
+  const diasSemana = {
+    segunda: 1, terca: 2, quarta: 3,
+    quinta: 4, sexta: 5, sabado: 6, domingo: 7
+  };
+
+  if (diasSemana[normalizada]) {
+    const alvo = diasSemana[normalizada];
+    const atual = agora.weekday;
+    const diasParaAdicionar = (alvo + 7 - atual) % 7 || 7;
+    return agora.plus({ days: diasParaAdicionar }).toFormat('yyyy-MM-dd');
+  }
+
+  return dataCampo; // já está em formato yyyy-MM-dd
+}
+
+
 
 
 
@@ -1143,7 +1174,9 @@ async function handleTBVEventosConversation(session, message, userInput, session
         }
 
         const agora = DateTime.now().setZone(timezone);
-        const horaEvento = parseHorario(eventoInfo.data, eventoInfo.hora, timezone);
+        const dataCorrigida = resolverDataRelativa(eventoInfo.data, timezone);
+        const horaEvento = parseHorario(dataCorrigida, eventoInfo.hora, timezone);
+
 
         if (!horaEvento.isValid) {
           await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Por favor, use o formato HH:mm ou HHhMM.`);
