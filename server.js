@@ -1047,6 +1047,20 @@ async function handleTriggerWithConversation(triggerName, session, message, inpu
 }
 
 
+function extractPhoneNumber(sender) {
+  // Ex: "5511994297562@c.us" => "55"
+  return sender.split('@')[0];
+}
+
+function parseHorario(dataStr, horaStr, timezone) {
+  // Ex: data = '2025-05-20', hora = '15h' ou '15:30'
+  let horaFormatada = horaStr.replace('h', ':').trim();
+  if (!horaFormatada.includes(':')) horaFormatada += ':00';
+
+  const fullStr = `${dataStr} ${horaFormatada}`;
+  return DateTime.fromFormat(fullStr, 'yyyy-MM-dd HH:mm', { zone: timezone });
+}
+
 
 
 
