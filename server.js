@@ -1225,7 +1225,7 @@ async function handleTBVEventosConversation(session, message, userInput, session
     try {
       eventoInfo = JSON.parse(jsonMatch[1]);
       const camposObrigatorios = ['titulo', 'data', 'hora'];
-      const completo = camposObrigatorios.every(k => eventoInfo[k]);
+      const completo = camposObrigatorios.every(k => eventoInfo[k] && eventoInfo[k].trim() !== '');
 
       if (completo) {
         const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
@@ -1268,10 +1268,14 @@ async function handleTBVEventosConversation(session, message, userInput, session
           return;
         }
 
-        reply = reply.replace(/```json[\s\S]+?```/, '')
-                     .replace(/json\s*\n?\s*(\{[\s\S]*\})/i, '')
-                     .replace(/\{[\s\S]+?\}/, '')
-                     .trim();
+        // Remove qualquer bloco JSON do texto do GPT
+        reply = reply
+          .replace(/```json[\s\S]*?```/gi, '')              // Bloco markdown
+          .replace(/json\s*\n?\s*(\{[\s\S]*\})/gi, '')       // json + objeto
+          .replace(/\{[\s\S]*?\}/g, '')                      // Qualquer objeto isolado
+          .replace(/\n{2,}/g, '\n')                          // Remove linhas duplas extras
+          .trim();
+
 
         await saveEventoToDB(sender, {
           titulo: sanitizeUTF8(eventoInfo.titulo),
