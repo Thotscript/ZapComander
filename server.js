@@ -1139,6 +1139,14 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+// Função auxiliar para forçar UTF-8 (normalização + remoção de caracteres inválidos)
+function sanitizeUTF8(str) {
+  return typeof str === 'string'
+    ? Buffer.from(str, 'utf8').toString('utf8').normalize('NFC').trim()
+    : '';
+}
+
+
 async function handleTBVEventosConversation(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
@@ -1160,7 +1168,7 @@ async function handleTBVEventosConversation(session, message, userInput, session
   const gptResponse = await openai.chat.completions.create({
     model: ASSISTANT_MODEL,
     messages: convo.history,
-    temperature: 0.3
+    temperature: 0.2
   });
 
   let reply = gptResponse.choices[0].message.content.trim();
@@ -1220,10 +1228,13 @@ async function handleTBVEventosConversation(session, message, userInput, session
         reply = reply.replace(jsonMatch[0], '').trim();
 
         await saveEventoToDB(sender, {
-          ...eventoInfo,
-          data: horaEvento.toISODate(),
-          hora: horaEvento.toFormat('HH:mm')
-        });
+        titulo: sanitizeUTF8(eventoInfo.titulo),
+        data: horaEvento.toISODate(),
+        hora: horaEvento.toFormat('HH:mm'),
+        local: sanitizeUTF8(eventoInfo.local || ''),
+        observacoes: sanitizeUTF8(eventoInfo.observacoes || '')
+      });
+
 
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
@@ -1231,13 +1242,14 @@ async function handleTBVEventosConversation(session, message, userInput, session
         const dataFormatada = horaEvento.toFormat('dd/MM/yyyy');
 
         const resumo = [
-          `📋 *Evento agendado com sucesso!*`,
-          `1. *Título:* ${eventoInfo.titulo}`,
-          `2. *Data:* ${dataFormatada}`,
-          `3. *Hora:* ${horaFormatada}`,
-          `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
-          `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
-        ].join('\n');
+        `📋 *Evento agendado com sucesso!*`,
+        `1. *Título:* ${eventoInfo.titulo}`,
+        `2. *Data:* ${dataFormatada}`,
+        `3. *Hora:* ${horaFormatada}`,
+        `4. *Local:* ${eventoInfo.local?.trim() || 'Não informado'}`,
+        `5. *Observações:* ${eventoInfo.observacoes?.trim() || 'Nenhuma'}`
+      ].join('\n');
+
 
         await client.sendText(sender, resumo);
         return;
