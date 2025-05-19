@@ -1080,6 +1080,9 @@ function parseHorario(dataStr, horaStr, timezone) {
 
 function resolverDataRelativa(dataCampo, timezone) {
   const agora = DateTime.now().setZone(timezone);
+
+  console.log('🧪 [DEBUG] dataCampo original:', JSON.stringify(dataCampo));
+
   const normalizada = dataCampo
     .toLowerCase()
     .normalize("NFD")
@@ -1106,35 +1109,34 @@ function resolverDataRelativa(dataCampo, timezone) {
   const tentativaISO = DateTime.fromISO(normalizada, { zone: timezone });
   if (tentativaISO.isValid) return tentativaISO.startOf('day');
 
-  // Partes separadas por /
-  const partes = normalizada.split('/').map(p => parseInt(p)).filter(p => !isNaN(p));
+  // Partes como "22", "22/05", "22/05/2025"
+  const apenasNumeros = normalizada.match(/\d+/g)?.map(n => parseInt(n)).filter(n => !isNaN(n)) || [];
 
-  if (partes.length === 3) {
-    const [dia, mes, ano] = partes;
+  if (apenasNumeros.length === 3) {
+    const [dia, mes, ano] = apenasNumeros;
     const dt = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
     if (dt.isValid) return dt.startOf('day');
   }
 
-  if (partes.length === 2) {
-    const [dia, mes] = partes;
+  if (apenasNumeros.length === 2) {
+    const [dia, mes] = apenasNumeros;
     let ano = agora.year;
     let dt = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
     if (dt < agora.startOf('day')) dt = dt.plus({ years: 1 });
     if (dt.isValid) return dt.startOf('day');
   }
 
-  if (partes.length === 1) {
-    const [dia] = partes;
+  if (apenasNumeros.length === 1) {
+    const [dia] = apenasNumeros;
     let dt = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
     if (dt < agora.startOf('day')) {
-      // Avança para o mês seguinte
       const proximoMes = agora.plus({ months: 1 });
       dt = DateTime.fromObject({ day: dia, month: proximoMes.month, year: proximoMes.year }, { zone: timezone });
     }
     if (dt.isValid) return dt.startOf('day');
   }
 
-  return agora.startOf('day'); // fallback
+  return agora.startOf('day');
 }
 
 
