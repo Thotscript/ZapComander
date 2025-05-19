@@ -1128,11 +1128,22 @@ function resolverDataRelativa(dataCampo, timezone) {
 
   if (apenasNumeros.length === 1) {
     const [dia] = apenasNumeros;
+    
+    // Primeiro tenta no mês atual
     let dt = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
-    if (dt < agora.startOf('day')) {
+    
+    // Se o dia informado for menor que o dia atual, considera que é do próximo mês
+    if (dia < agora.day) {
       const proximoMes = agora.plus({ months: 1 });
       dt = DateTime.fromObject({ day: dia, month: proximoMes.month, year: proximoMes.year }, { zone: timezone });
     }
+    
+    // Se o dia informado for maior que o dia atual, é deste mês
+    else if (dia > agora.day) {
+      // Mantém dt como já está (mesmo mês, mesmo ano)
+    }
+    // Se o dia for exatamente o dia atual, mantém o dt como está
+    
     if (dt.isValid) return dt.startOf('day');
   }
 
