@@ -1082,15 +1082,15 @@ function resolverDataRelativa(dataCampo, timezone) {
   const agora = DateTime.now().setZone(timezone);
   const normalizada = dataCampo
     .toLowerCase()
-    .normalize("NFD") // remove acentos
+    .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, '');
 
   if (normalizada === 'hoje') {
-    return agora.toFormat('yyyy-MM-dd');
+    return agora.startOf('day');
   }
 
   if (normalizada === 'amanha') {
-    return agora.plus({ days: 1 }).toFormat('yyyy-MM-dd');
+    return agora.plus({ days: 1 }).startOf('day');
   }
 
   const diasSemana = {
@@ -1102,11 +1102,17 @@ function resolverDataRelativa(dataCampo, timezone) {
     const alvo = diasSemana[normalizada];
     const atual = agora.weekday;
     const diasParaAdicionar = (alvo + 7 - atual) % 7 || 7;
-    return agora.plus({ days: diasParaAdicionar }).toFormat('yyyy-MM-dd');
+    return agora.plus({ days: diasParaAdicionar }).startOf('day');
   }
 
-  return dataCampo; // já está em formato yyyy-MM-dd
+  // tenta converter se for yyyy-MM-dd
+  const tentativa = DateTime.fromISO(dataCampo.trim(), { zone: timezone });
+  if (tentativa.isValid) return tentativa.startOf('day');
+
+  // fallback: retorna hoje
+  return agora.startOf('day');
 }
+
 
 
 
