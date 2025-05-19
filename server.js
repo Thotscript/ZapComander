@@ -1604,13 +1604,9 @@ async function processText(sessionName, message, email) {
     if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
     const { client, myNumber } = session;
-    if (!myNumber) {
-      console.log('[processText] Número da sessão não definido. Abortando.');
-      return;
-    }
+    if (!myNumber) return;
 
     if (message.from === myNumber) return;
-    
     if (message.to !== MAIN_BOT_NUMBER) return;
 
     const text = message.body?.trim();
@@ -1620,7 +1616,7 @@ async function processText(sessionName, message, email) {
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored = CONVERSATIONS.get(convoKey);
 
-    // 🛑 Comando para desligar o bot ativo
+    // 🛑 Comando para desligar o bot
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
@@ -1631,27 +1627,27 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // ✅ Continuação de trigger ativa (como lembrete em andamento)
+    // ❌ Impede qualquer resposta se não houver trigger ativa e a última foi finalizada
+    if (stored && stored.activeTrigger === null) return;
+
+    // ✅ Continuação de trigger ativa
     if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
-    // Se o trigger ativo for 'tbvevents', envie os parâmetros adicionais
-    if (stored.activeTrigger === 'tbvevents') {
-      await TRIGGERS['tbvevents'](session, message, text, sessionName, email);
-    } else {
-      await TRIGGERS[stored.activeTrigger](session, message, text);
+      if (stored.activeTrigger === 'tbvevents') {
+        await TRIGGERS['tbvevents'](session, message, text, sessionName, email);
+      } else {
+        await TRIGGERS[stored.activeTrigger](session, message, text);
+      }
+      return;
     }
-    return;
-  }
 
-
-    // 🔍 Detectar trigger automaticamente
+    // 🔍 Detecta novo trigger se ainda não há um definido
     const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
-
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text);
       return;
     }
 
-    // 💬 Fallback: Conversa padrão com @broker
+    // 💬 Fallback: só se contiver @broker ou tiver histórico
     const containsTrigger = lowerText.includes('@broker');
     const hasHistory = stored?.history?.length > 0;
 
@@ -1682,6 +1678,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
