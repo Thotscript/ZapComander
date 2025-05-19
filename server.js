@@ -1083,6 +1083,12 @@ function resolverDataRelativa(dataCampo, timezone) {
 
   console.log('🧪 [DEBUG] dataCampo original:', JSON.stringify(dataCampo));
 
+  // Garantir que temos uma string
+  if (typeof dataCampo !== 'string') {
+    dataCampo = String(dataCampo);
+    console.log('🧪 [DEBUG] dataCampo convertido para string:', JSON.stringify(dataCampo));
+  }
+
   const normalizada = dataCampo
     .toLowerCase()
     .normalize("NFD")
@@ -1112,6 +1118,8 @@ function resolverDataRelativa(dataCampo, timezone) {
   // Partes como "22", "22/05", "22/05/2025"
   const apenasNumeros = normalizada.match(/\d+/g)?.map(n => parseInt(n)).filter(n => !isNaN(n)) || [];
 
+  console.log('🧪 [DEBUG] apenasNumeros:', apenasNumeros);
+
   if (apenasNumeros.length === 3) {
     const [dia, mes, ano] = apenasNumeros;
     const dt = DateTime.fromObject({ day: dia, month: mes, year: ano }, { zone: timezone });
@@ -1126,41 +1134,37 @@ function resolverDataRelativa(dataCampo, timezone) {
     if (dt.isValid) return dt.startOf('day');
   }
 
+  // SOLUÇÃO PARA NÚMERO ÚNICO DE DIA (CASO PRINCIPAL DO PROBLEMA)
   if (apenasNumeros.length === 1) {
-    const [dia] = apenasNumeros;
+    console.log('🧪 [DEBUG] Processando número único:', apenasNumeros[0]);
     
-    // Verificar se o dia informado é válido para o mês atual
-    const diasNoMesAtual = agora.daysInMonth;
-    if (dia > 0 && dia <= diasNoMesAtual) {
-      let dt;
+    const dia = apenasNumeros[0];
+    console.log(`🧪 [DEBUG] Comparando: dia ${dia} vs dia atual ${agora.day}`);
+
+    // SOLUÇÃO DIRETA: Se for um número >= 1 e <= 31, é um dia do mês
+    if (dia >= 1 && dia <= 31) {
+      let dataResultado;
       
-      // Se o dia informado for menor ou igual ao dia atual...
-      if (dia <= agora.day) {
-        // ... considerar que é do próximo mês
-        const proximoMes = agora.plus({ months: 1 });
-        dt = DateTime.fromObject(
-          { day: dia, month: proximoMes.month, year: proximoMes.year }, 
-          { zone: timezone }
-        );
-        console.log(`🧪 [DEBUG] Dia ${dia} <= dia atual ${agora.day}, agendando para próximo mês: ${dt.toISODate()}`);
+      // Se o dia for maior que o dia atual → é deste mês
+      if (dia > agora.day) {
+        dataResultado = agora.set({ day: dia });
+        console.log(`🧪 [DEBUG] Dia ${dia} > dia atual ${agora.day} → este mês: ${dataResultado.toISODate()}`);
       } 
-      // Se o dia informado for maior que o dia atual...
+      // Se o dia for menor ou igual ao dia atual → é do próximo mês
       else {
-        // ... é deste mês
-        dt = DateTime.fromObject(
-          { day: dia, month: agora.month, year: agora.year }, 
-          { zone: timezone }
-        );
-        console.log(`🧪 [DEBUG] Dia ${dia} > dia atual ${agora.day}, agendando para este mês: ${dt.toISODate()}`);
+        dataResultado = agora.plus({ months: 1 }).set({ day: Math.min(dia, agora.plus({ months: 1 }).daysInMonth) });
+        console.log(`🧪 [DEBUG] Dia ${dia} <= dia atual ${agora.day} → próximo mês: ${dataResultado.toISODate()}`);
       }
       
-      if (dt.isValid) return dt.startOf('day');
+      console.log(`🧪 [DEBUG] Data final escolhida: ${dataResultado.toISODate()}`);
+      return dataResultado.startOf('day');
     }
   }
 
+  // Fallback para hoje
+  console.log('🧪 [DEBUG] Nenhum padrão reconhecido, usando hoje:', agora.toISODate());
   return agora.startOf('day');
 }
-
 
 
 
