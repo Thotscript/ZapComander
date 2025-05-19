@@ -19,12 +19,10 @@ import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { excluirSessaoPorEmail } from './db/sessions.js';
 import { insertDefaultFilters } from './db/default-filter.js';
 import { criarOuIgnorarSessao } from './db/sessions.js';
+import { saveFiltersToDB } from './db/filters.js';
 import { saveSessionLog } from './db/logs.js';
 import { constants } from 'crypto';
-import { scheduleReminder, getReminders, clearReminders } from './modulos/reminderManager.js';
 import { spawn } from 'child_process';
-
-import { parse, differenceInMinutes } from 'date-fns';
 import { DateTime } from 'luxon';
 
 import { createRequire } from 'module';
@@ -1132,7 +1130,7 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-async function handleTBVEventosConversation(session, message, userInput) {
+async function handleTBVEventosConversation(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
   const convoKey = `${session.myNumber}:${sender}`;
@@ -1156,7 +1154,7 @@ async function handleTBVEventosConversation(session, message, userInput) {
     temperature: 0.3
   });
 
-  const reply = gptResponse.choices[0].message.content.trim();
+  let reply = gptResponse.choices[0].message.content.trim();
   convo.history.push({ role: 'assistant', content: reply });
 
   // 🧠 Extração do JSON
@@ -1180,15 +1178,18 @@ async function handleTBVEventosConversation(session, message, userInput) {
       const completo = camposObrigatorios.every(k => eventoInfo[k]);
 
       if (completo) {
-        // ✅ Loga e salva
-        console.log('📆 Evento agendado:', eventoInfo);
-        await saveEventoToDB(sender, eventoInfo);
+        // 🧼 Remove o JSON da resposta que será mostrada ao usuário
+        reply = reply.replace(jsonMatch[0], '').trim();
 
-        // ✅ Finaliza o trigger
+        // ✅ Salva o evento
+        console.log('📆 Evento agendado:', eventoInfo);
+        await saveEventoToDB(email, sessionName, eventoInfo);
+
+        // ✅ Finaliza o gatilho
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
 
-        // ✅ Envia apenas confirmação ao usuário
-        await client.sendText(sender, `✅ Evento agendado com sucesso!`);
+        // ✅ Envia resposta final formatada para o usuário
+        await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso!`);
 
         return;
       }
@@ -1201,6 +1202,8 @@ async function handleTBVEventosConversation(session, message, userInput) {
   CONVERSATIONS.set(convoKey, convo);
   await client.sendText(sender, reply);
 }
+
+
 
 
 async function handleTriggerTarefa(session, message, input) {
@@ -1570,9 +1573,15 @@ async function processText(sessionName, message, email) {
 
     // ✅ Continuação de trigger ativa (como lembrete em andamento)
     if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
+    // Se o trigger ativo for 'tbvevents', envie os parâmetros adicionais
+    if (stored.activeTrigger === 'tbvevents') {
+      await TRIGGERS['tbvevents'](session, message, text, sessionName, email);
+    } else {
       await TRIGGERS[stored.activeTrigger](session, message, text);
-      return;
     }
+    return;
+  }
+
 
     // 🔍 Detectar trigger automaticamente
     const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
