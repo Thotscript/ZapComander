@@ -1077,50 +1077,106 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-if (completo) {
-  // ⏰ Verifica se o horário já passou
-  const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
-    if (!timezone) {
-      await client.sendText(sender, `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`);
-      return;
-    }
+async function handleTBVEventosConversation(session, message, userInput, sessionName, email) {
+  const client = session.client;
+  const sender = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
 
-  const agora = DateTime.now().setZone(timezone);
-  const horaEvento = parseHorario(eventoInfo.data, eventoInfo.hora, timezone);
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvevents'
+  };
 
-  if (!horaEvento.isValid) {
-    await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Por favor, use o formato HH:mm ou HHhMM.`);
-    return;
+  const prompt = loadPrompt('TBVEvents');
+
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
   }
 
-  const diff = horaEvento.diff(agora, ['hours', 'minutes']).toObject();
+  convo.history.push({ role: 'user', content: userInput });
 
-  if (horaEvento < agora) {
-    // ❌ Horário já passou
-    await client.sendText(sender,
-      `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
-      `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
-    );
-
-    // Mantém a conversa aberta para o próximo passo
-    CONVERSATIONS.set(convoKey, convo);
-    return;
-  }
-
-  // ✅ Tudo certo, segue
-  reply = reply.replace(jsonMatch[0], '').trim();
-  await saveEventoToDB(email, sessionName, {
-    ...eventoInfo,
-    data: horaEvento.toISODate(),
-    hora: horaEvento.toFormat('HH:mm')
+  const gptResponse = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.3
   });
 
-  CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+  let reply = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: reply });
 
-  await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso para ${horaEvento.toFormat('dd/MM/yyyy HH:mm')}!`);
-  return;
+  // 🧠 Extração do JSON
+  let eventoInfo = null;
+
+  let jsonMatch = reply.match(/```json([\s\S]+?)```/);
+  if (!jsonMatch) {
+    const fallbackMatch = reply.match(/json\s*\n?\s*(\{[\s\S]*\})/i);
+    if (fallbackMatch) jsonMatch = [null, fallbackMatch[1]];
+  }
+  if (!jsonMatch) {
+    const brute = reply.match(/\{[\s\S]+?\}/);
+    if (brute) jsonMatch = [null, brute[0]];
+  }
+
+  if (jsonMatch) {
+    try {
+      eventoInfo = JSON.parse(jsonMatch[1]);
+
+      const camposObrigatorios = ['titulo', 'data', 'hora'];
+      const completo = camposObrigatorios.every(k => eventoInfo[k]);
+
+      if (completo) {
+        // ⏰ Verifica se o horário já passou
+        const { timezone, numeroFormatado } = extractPhoneNumberInfo(sender);
+        if (!timezone) {
+          await client.sendText(sender, `⚠️ Não foi possível identificar seu fuso horário pelo número ${numeroFormatado}.`);
+          CONVERSATIONS.set(convoKey, convo);
+          return;
+        }
+
+        const agora = DateTime.now().setZone(timezone);
+        const horaEvento = parseHorario(eventoInfo.data, eventoInfo.hora, timezone);
+
+        if (!horaEvento.isValid) {
+          await client.sendText(sender, `⚠️ O horário informado ("${eventoInfo.hora}") é inválido. Por favor, use o formato HH:mm ou HHhMM.`);
+          CONVERSATIONS.set(convoKey, convo);
+          return;
+        }
+
+        if (horaEvento < agora) {
+          // ❌ Horário já passou
+          await client.sendText(sender,
+            `⏰ O horário informado (${eventoInfo.data} às ${eventoInfo.hora}) já passou no seu fuso horário (${timezone}).\n` +
+            `Deseja agendar para o dia seguinte no mesmo horário? Responda "sim" ou informe um novo horário.`
+          );
+
+          // Mantém a conversa aberta para o próximo passo
+          CONVERSATIONS.set(convoKey, convo);
+          return;
+        }
+
+        // ✅ Tudo certo, salva o evento
+        reply = reply.replace(jsonMatch[0], '').trim();
+
+        await saveEventoToDB(email, sessionName, {
+          ...eventoInfo,
+          data: horaEvento.toISODate(),
+          hora: horaEvento.toFormat('HH:mm')
+        });
+
+        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+
+        await client.sendText(sender, `${reply}\n\n✅ Evento agendado com sucesso para ${horaEvento.toFormat('dd/MM/yyyy HH:mm')}!`);
+        return;
+      }
+    } catch (err) {
+      console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
+    }
+  }
+
+  // ❗ Se não finalizou ainda, segue a conversa
+  CONVERSATIONS.set(convoKey, convo);
+  await client.sendText(sender, reply);
 }
-
 
 
 
