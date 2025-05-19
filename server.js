@@ -1129,27 +1129,37 @@ function resolverDataRelativa(dataCampo, timezone) {
   if (apenasNumeros.length === 1) {
     const [dia] = apenasNumeros;
     
-    // Primeiro tenta no mês atual
-    let dt = DateTime.fromObject({ day: dia, month: agora.month, year: agora.year }, { zone: timezone });
-    
-    // Se o dia informado for menor que o dia atual, considera que é do próximo mês
-    if (dia < agora.day) {
-      const proximoMes = agora.plus({ months: 1 });
-      dt = DateTime.fromObject({ day: dia, month: proximoMes.month, year: proximoMes.year }, { zone: timezone });
+    // Verificar se o dia informado é válido para o mês atual
+    const diasNoMesAtual = agora.daysInMonth;
+    if (dia > 0 && dia <= diasNoMesAtual) {
+      let dt;
+      
+      // Se o dia informado for menor ou igual ao dia atual...
+      if (dia <= agora.day) {
+        // ... considerar que é do próximo mês
+        const proximoMes = agora.plus({ months: 1 });
+        dt = DateTime.fromObject(
+          { day: dia, month: proximoMes.month, year: proximoMes.year }, 
+          { zone: timezone }
+        );
+        console.log(`🧪 [DEBUG] Dia ${dia} <= dia atual ${agora.day}, agendando para próximo mês: ${dt.toISODate()}`);
+      } 
+      // Se o dia informado for maior que o dia atual...
+      else {
+        // ... é deste mês
+        dt = DateTime.fromObject(
+          { day: dia, month: agora.month, year: agora.year }, 
+          { zone: timezone }
+        );
+        console.log(`🧪 [DEBUG] Dia ${dia} > dia atual ${agora.day}, agendando para este mês: ${dt.toISODate()}`);
+      }
+      
+      if (dt.isValid) return dt.startOf('day');
     }
-    
-    // Se o dia informado for maior que o dia atual, é deste mês
-    else if (dia > agora.day) {
-      // Mantém dt como já está (mesmo mês, mesmo ano)
-    }
-    // Se o dia for exatamente o dia atual, mantém o dt como está
-    
-    if (dt.isValid) return dt.startOf('day');
   }
 
   return agora.startOf('day');
 }
-
 
 
 
