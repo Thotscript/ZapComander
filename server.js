@@ -90,23 +90,23 @@ function normalizarHorario(input, timezone) {
   const now = DateTime.now().setZone(timezone);
   const str = input.toLowerCase().trim();
 
-  // Caso: "em 20min", "em 20 minutos", etc.
+  // em X minutos
   const matchMin = str.match(/em\s*(\d+)\s*(min|mins|minuto|minutos)/);
   if (matchMin) {
-    const minutos = parseInt(matchMin[1], 10);
-    return now.plus({ minutes: minutos });
+    return now.plus({ minutes: parseInt(matchMin[1], 10) });
   }
 
-  // Caso: "18h30", "18:30", "18 horas", etc.
-  const matchHora = str.match(/(\d{1,2})\s*(h|horas)?\s*(\d{2})?/);
+  // formato HH:MM ou HHhMM ou HH MM
+  const matchHora = str.match(/(\d{1,2})(?:[:h]\s*(\d{2}))?/);
   if (matchHora) {
-    const hora = parseInt(matchHora[1], 10);
-    const minuto = matchHora[3] ? parseInt(matchHora[3], 10) : 0;
-    return now.set({ hour: hora, minute: minuto, second: 0, millisecond: 0 });
+    const hora   = parseInt(matchHora[1], 10);
+    const minute = matchHora[2] ? parseInt(matchHora[2], 10) : 0;
+    return now.set({ hour: hora, minute, second: 0, millisecond: 0 });
   }
 
-  return null; // Formato inválido
+  return null;
 }
+
 
 const MAIN_BOT_NUMBER = '14073015137@c.us';
 const processingQueues = new Map();
