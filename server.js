@@ -2028,10 +2028,93 @@ const restoreSessions = async () => {
   }
 };
 
-//INICIA A FUNCAO DE RESTAURAR SESSOES JUNTO COM O START DO SERVIDOR
+
+/**
+ * A cada minuto, verifica lembretes para cada sessão ativa
+ */
+/**
+ * A cada minuto, verifica lembretes para cada sessão cadastrada no banco
+ */
+async function startReminderChecks() {
+  const check = async () => {
+    const hoje = DateTime.local().toISODate(); // "YYYY-MM-DD" do servidor
+
+    // 1) Busca todas as sessões ativas no banco
+    let sessoes;
+    try {
+      const [rows] = await pool.query(
+        `SELECT numero
+           FROM sessoes`
+      );
+      sessoes = rows.map(r => r.numero);
+    } catch (err) {
+      console.error('❌ Erro ao listar sessões no banco:', err);
+      return;
+    }
+
+    // 2) Para cada sessionName vindo do banco
+    for (const sessionName of sessoes) {
+      // a) encontra o objeto de sessão em memória
+      const session = SESSIONS.get(sessionName);
+      if (!session) continue; 
+
+      // b) converte "+55 (11) 9 9429-7562" → "5511994297562@c.us"
+      const cleanNum = sessionName.replace(/\D/g, ''); 
+      const jid      = `${cleanNum}@c.us`;
+
+      // c) extrai fuso do usuário a partir do JID
+      const { timezone } = extractPhoneNumberInfo(jid);
+      if (!timezone) continue;
+
+      // d) busca lembretes marcados para hoje
+      let lembretes;
+      try {
+        const [rows] = await pool.query(
+          `SELECT titulo, data, hora, local
+             FROM lembretes
+            WHERE numero = ?
+              AND data   = ?`,
+          [jid, hoje]
+        );
+        lembretes = rows;
+      } catch (err) {
+        console.error(`❌ Erro ao buscar lembretes para ${jid}:`, err);
+        continue;
+      }
+
+      // e) para cada lembrete, calcula quantos minutos faltam
+      const agora = DateTime.now().setZone(timezone);
+      for (const ev of lembretes) {
+        const dtEv = parseHorario(ev.data, ev.hora, timezone);
+        const diff = Math.round(dtEv.diff(agora, 'minutes').minutes);
+
+        let label;
+        if (diff === 10)   label = 'Faltam 10 minutos';
+        else if (diff === 5)   label = 'Faltam 5 minutos';
+        else if (diff === 0)   label = 'É hora do evento!';
+        else continue;  // só nos pontos 10, 5 e 0
+
+        const msg = `⏰ *${label}* para "${ev.titulo}" em ${ev.local} às ${ev.hora}`;
+        try {
+          await session.client.sendText(jid, msg);
+          console.log(`✔️ Notificação "${label}" enviada para ${jid}`);
+        } catch (err) {
+          console.error(`❌ Falha ao enviar notificação para ${jid}:`, err);
+        }
+      }
+    }
+  };
+
+  check();                       // primeira verificação imediata
+  setInterval(check, 60_000);    // depois, a cada 60s
+}
+
+// … logo antes do server.listen:
 restoreSessions().then(() => {
-    const port = process.env.PORT;
-    server.listen(port, () => {
-        console.log(`🚀 Servidor rodando na porta ${port}`);
-    });
+  const port = process.env.PORT;
+  server.listen(port, () => {
+    console.log(`🚀 Servidor rodando na porta ${port}`);
+    // Inicia o loop de checagem de lembretes
+    startReminderChecks();
+  });
 });
