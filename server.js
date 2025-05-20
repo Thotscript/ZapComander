@@ -202,6 +202,62 @@ function getTimezoneFromNumber(number) {
 
 // ===== Rotas e lógica de sessão =====
 
+
+
+let reminderInterval; // para evitar duplo agendamento
+
+async function startReminderChecks() {
+  // Impede múltiplas chamadas
+  if (reminderInterval) return;
+
+  const check = async () => {
+    const hoje = DateTime.local().toISODate();
+
+    // 1️⃣ Busca todos os lembretes de hoje (independente de sessão em memória)
+    const [rows] = await pool.query(
+      `SELECT numero, titulo, data, hora, local
+         FROM lembretes
+        WHERE data = ?`,
+      [hoje]
+    );
+
+    // 2️⃣ Recupera o client do bot principal
+    const botSession = SESSIONS.get(MAIN_BOT_NUMBER);
+    if (!botSession) {
+      console.error(`❌ Não achei SESSIONS.get(${MAIN_BOT_NUMBER}) — lembrete pausado.`);
+      return;
+    }
+
+    // 3️⃣ Para cada lembrete, calcula diff e envia em 10, 5 ou 0 minutos
+    for (const ev of rows) {
+      const { timezone } = extractPhoneNumberInfo(ev.numero);
+      if (!timezone) continue;
+
+      const agora = DateTime.now().setZone(timezone);
+      const dtEv  = parseHorario(ev.data, ev.hora, timezone);
+      const diff  = Math.round(dtEv.diff(agora, 'minutes').minutes);
+
+      let label;
+      if (diff === 10)      label = 'Faltam 10 minutos';
+      else if (diff === 5)   label = 'Faltam 5 minutos';
+      else if (diff === 0)   label = 'É hora do evento!';
+      else continue;
+
+      const msg = `⏰ *${label}* para "${ev.titulo}" em ${ev.local} às ${ev.hora}`;
+      try {
+        await botSession.client.sendText(ev.numero, msg);
+        console.log(`✔️ [${label}] enviado para ${ev.numero}`);
+      } catch (err) {
+        console.error(`❌ Falha ao enviar para ${ev.numero}:`, err);
+      }
+    }
+  };
+
+  // primeira execução e depois a cada 60s
+  await check();
+  reminderInterval = setInterval(check, 60_000);
+}
+
 app.get('/auth/preference-numbers', async (req, res) => {
   
   const email = req.query.email;
@@ -520,27 +576,35 @@ app.post('/auth/login', async (req, res) => {
 
     let myNumber = null;
 
-    try {
-      await client.isConnected(); // força status válido
-
-      // ✅ Gera e salva o token manualmente
       try {
-        const tokenData = await client.getToken();
-        if (tokenData) {
-          await myTokenStore.saveToken(sessionName, tokenData);
-          console.log(`🔐 Token salvo com sucesso para sessão ${sessionName}`);
-        }
-      } catch (tokenErr) {
-        console.warn(`⚠️ Erro ao gerar/salvar token para sessão ${sessionName}:`, tokenErr.message);
-      }
+        await client.isConnected(); // força status válido
 
-      myNumber = await client.getWid();
-      console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
-      await criarOuIgnorarSessao(sessionName, email);
-      console.log(`✅ Sessão ${sessionName} garantida no banco.`);
-    } catch (err) {
-      console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
-    }
+        // ✅ Gera e salva o token manualmente
+        try {
+          const tokenData = await client.getToken();
+          if (tokenData) {
+            await myTokenStore.saveToken(sessionName, tokenData);
+            console.log(`🔐 Token salvo com sucesso para sessão ${sessionName}`);
+          }
+        } catch (tokenErr) {
+          console.warn(`⚠️ Erro ao gerar/salvar token para sessão ${sessionName}:`, tokenErr.message);
+        }
+
+        // Recupera o número real desta sessão
+        myNumber = await client.getWid();
+        console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+
+        // Se este número for o do bot principal, disparar checagem de lembretes
+        if (myNumber === MAIN_BOT_NUMBER) {
+          console.log('▶️ Bot principal conectado — agendando checagem de lembretes...');
+          startReminderChecks();
+        }
+
+        await criarOuIgnorarSessao(sessionName, email);
+        console.log(`✅ Sessão ${sessionName} garantida no banco.`);
+      } catch (err) {
+        console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
+      }
 
 
     if (!SESSIONS.has(sessionName)) {
@@ -1912,11 +1976,18 @@ const restoreSessions = async () => {
       await client.isConnected();
       myNumber = await client.getWid();
       console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+
+       if (myNumber === MAIN_BOT_NUMBER) {
+         console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
+         startReminderChecks();
+      }
+
       await criarOuIgnorarSessao(sessionName, email);
       console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
     } catch (err) {
       console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
     }
+
 
     if (!SESSIONS.has(sessionName)) {
       SESSIONS.set(sessionName, { client, myNumber, email });
@@ -2029,80 +2100,10 @@ const restoreSessions = async () => {
 };
 
 
-/**
- * A cada minuto, verifica lembretes para cada sessão ativa
- */
-/**
- * A cada minuto, verifica lembretes para cada sessão cadastrada no banco
- */
-/**
- * A cada minuto, verifica todos os lembretes de hoje
- * e envia as notificações via MAIN_BOT_NUMBER.
- */
-async function startReminderChecks() {
-  const check = async () => {
-    const hoje = DateTime.local().toISODate(); // "YYYY-MM-DD" do servidor
-
-    // 1️⃣ Recupera a sessão do bot principal
-    const botSession = SESSIONS.get(MAIN_BOT_NUMBER);
-    if (!botSession) {
-      console.error(`❌ Sessão do bot (${MAIN_BOT_NUMBER}) não disponível.`);
-      return;
-    }
-
-    // 2️⃣ Busca todos os lembretes agendados para hoje
-    let lembretes;
-    try {
-      const [rows] = await pool.query(
-        `SELECT numero, titulo, data, hora, local
-           FROM lembretes
-          WHERE data = ?`,
-        [hoje]
-      );
-      lembretes = rows;
-    } catch (err) {
-      console.error('❌ Erro ao buscar lembretes:', err);
-      return;
-    }
-
-    // 3️⃣ Para cada lembrete, calcula o diff e dispara se for 10, 5 ou 0
-    for (const ev of lembretes) {
-      // extrai fuso do usuário a partir do JID salvo em base
-      const { timezone } = extractPhoneNumberInfo(ev.numero);
-      if (!timezone) continue;
-
-      const agora = DateTime.now().setZone(timezone);
-      const dtEv  = parseHorario(ev.data, ev.hora, timezone);
-      const diff  = Math.round(dtEv.diff(agora, 'minutes').minutes);
-
-      let label;
-      if (diff === 10)       label = 'Faltam 10 minutos';
-      else if (diff === 5)   label = 'Faltam 5 minutos';
-      else if (diff === 0)   label = 'É hora do evento!';
-      else continue;
-
-      const msg = `⏰ *${label}* para "${ev.titulo}" em ${ev.local} às ${ev.hora}`;
-      try {
-        // envia usando sempre o bot principal
-        await botSession.client.sendText(ev.numero, msg);
-        console.log(`✔️ [${label}] enviado para ${ev.numero}`);
-      } catch (err) {
-        console.error(`❌ Falha ao enviar notificação para ${ev.numero}:`, err);
-      }
-    }
-  };
-
-  // 1ª execução e depois a cada minuto
-  await check();
-  setInterval(check, 60 * 1000);
-}
-
 // … no final do seu arquivo:
 restoreSessions().then(() => {
   const port = process.env.PORT;
   server.listen(port, () => {
     console.log(`🚀 Servidor rodando na porta ${port}`);
-    // dispara o loop de lembretes
-    startReminderChecks();
   });
 });
