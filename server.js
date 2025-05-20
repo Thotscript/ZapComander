@@ -1375,8 +1375,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
           observacoes: sanitizeUTF8(eventoInfo.observacoes || '')
         });
 
-        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
-
         reply = [
           `📋 *Evento agendado com sucesso!*`,
           `1. *Título:* ${eventoInfo.titulo || 'Não informado'}`,
@@ -1387,7 +1385,12 @@ async function handleTBVEventosConversation(session, message, userInput, session
         ].join('\n');
 
         await client.sendText(sender, reply);
+
+        CONVERSATIONS.delete(convoKey);
+
         return;
+
+        
       }
     } catch (err) {
       console.warn('⚠️ Falha ao interpretar JSON do GPT:', err.message);
@@ -1772,20 +1775,20 @@ async function processText(sessionName, message, email) {
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
-        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: null });
+        // limpa o histórico
+        CONVERSATIONS.delete(convoKey);
       } else {
         await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
       }
       return;
     }
 
-    // ❌ Impede qualquer resposta se não houver trigger ativa e a última foi finalizada
-    if (stored && stored.activeTrigger === null) return;
+    // — removido o bloco que impedia respostas quando activeTrigger === null —
 
     // ✅ Continuação de trigger ativa
     if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
       if (stored.activeTrigger === 'tbvevents') {
-        await TRIGGERS['tbvevents'](session, message, text, sessionName, email);
+        await TRIGGERS.tbvevents(session, message, text, sessionName, email);
       } else {
         await TRIGGERS[stored.activeTrigger](session, message, text);
       }
@@ -1801,7 +1804,7 @@ async function processText(sessionName, message, email) {
 
     // 💬 Fallback: só se contiver @broker ou tiver histórico
     const containsTrigger = lowerText.includes('@broker');
-    const hasHistory = stored?.history?.length > 0;
+    const hasHistory     = stored?.history?.length > 0;
 
     if (!containsTrigger && !hasHistory) return;
 
@@ -1830,6 +1833,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
