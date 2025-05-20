@@ -221,13 +221,6 @@ async function startReminderChecks() {
       [hoje]
     );
 
-    // 2️⃣ Recupera o client do bot principal
-    const botSession = SESSIONS.get(MAIN_BOT_NUMBER);
-    if (!botSession) {
-      console.error(`❌ Não achei SESSIONS.get(${MAIN_BOT_NUMBER}) — lembrete pausado.`);
-      return;
-    }
-
     // 3️⃣ Para cada lembrete, calcula diff e envia em 10, 5 ou 0 minutos
     for (const ev of rows) {
       const { timezone } = extractPhoneNumberInfo(ev.numero);
