@@ -204,24 +204,33 @@ function getTimezoneFromNumber(number) {
 
 
 
-let reminderInterval; // para evitar duplo agendamento
+// no escopo global
+let reminderInterval;
 
-async function startReminderChecks() {
-  // Impede múltiplas chamadas
+/**
+ * @param {import('@wppconnect-team/wppconnect').Client} botClient
+ */
+function startReminderChecks(botClient) {
+  // evita múltiplos setInterval
   if (reminderInterval) return;
 
   const check = async () => {
     const hoje = DateTime.local().toISODate();
 
-    // 1️⃣ Busca todos os lembretes de hoje (independente de sessão em memória)
-    const [rows] = await pool.query(
-      `SELECT numero, titulo, data, hora, local
-         FROM lembretes
-        WHERE data = ?`,
-      [hoje]
-    );
+    // pega todos os lembretes de hoje
+    let rows;
+    try {
+      [rows] = await pool.query(
+        `SELECT numero, titulo, data, hora, local
+           FROM lembretes
+          WHERE data = ?`,
+        [hoje]
+      );
+    } catch (err) {
+      console.error('❌ Erro ao buscar lembretes:', err);
+      return;
+    }
 
-    // 3️⃣ Para cada lembrete, calcula diff e envia em 10, 5 ou 0 minutos
     for (const ev of rows) {
       const { timezone } = extractPhoneNumberInfo(ev.numero);
       if (!timezone) continue;
@@ -238,7 +247,7 @@ async function startReminderChecks() {
 
       const msg = `⏰ *${label}* para "${ev.titulo}" em ${ev.local} às ${ev.hora}`;
       try {
-        await botSession.client.sendText(ev.numero, msg);
+        await botClient.sendText(ev.numero, msg);
         console.log(`✔️ [${label}] enviado para ${ev.numero}`);
       } catch (err) {
         console.error(`❌ Falha ao enviar para ${ev.numero}:`, err);
@@ -247,9 +256,10 @@ async function startReminderChecks() {
   };
 
   // primeira execução e depois a cada 60s
-  await check();
+  check();
   reminderInterval = setInterval(check, 60_000);
 }
+
 
 app.get('/auth/preference-numbers', async (req, res) => {
   
@@ -590,7 +600,7 @@ app.post('/auth/login', async (req, res) => {
         // Se este número for o do bot principal, disparar checagem de lembretes
         if (myNumber === MAIN_BOT_NUMBER) {
           console.log('▶️ Bot principal conectado — agendando checagem de lembretes...');
-          startReminderChecks();
+          startReminderChecks(client);
         }
 
         await criarOuIgnorarSessao(sessionName, email);
@@ -1972,7 +1982,7 @@ const restoreSessions = async () => {
 
        if (myNumber === MAIN_BOT_NUMBER) {
          console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
-         startReminderChecks();
+         startReminderChecks(client);
       }
 
       await criarOuIgnorarSessao(sessionName, email);
