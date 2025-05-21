@@ -1856,14 +1856,14 @@ async function processText(sessionName, message, email) {
     if (message.from === myNumber) return;
     if (message.to !== MAIN_BOT_NUMBER) return;
 
-    const text    = message.body?.trim();
+    const text      = message.body?.trim();
     if (!text) return;
+    const lowerText = text.toLowerCase();
+    const convoKey  = `${session.myNumber}:${message.from}`;
+    const stored    = CONVERSATIONS.get(convoKey);
 
-    const convoKey = `${session.myNumber}:${message.from}`;
-    const stored   = CONVERSATIONS.get(convoKey);
-
-    // 1) Comando explícito para desligar
-    if (text.toLowerCase() === 'tbvoff') {
+    // 1) Comando tbvoff (manter como está)
+    if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
         CONVERSATIONS.delete(convoKey);
@@ -1873,36 +1873,70 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 2) Se já há um fluxo ativo, delega direto
+    // 2) Se já há fluxo ativo, delega diretamente
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      const fn = TRIGGERS[stored.activeTrigger];
-      // tbvevents precisa dos args extra
-      if (stored.activeTrigger === 'tbvevents') {
-        return fn(session, message, text, sessionName, email);
-      }
-      return fn(session, message, text, sessionName, email);
+      return TRIGGERS[stored.activeTrigger](session, message, text, sessionName, email);
     }
 
-    // 3) Descobre o trigger via GPT
-    const raw   = (await checkTriggerInText(text)).trim();
-    const clean = raw
+    // 3) Tratamento de menu direto (antes do GPT)
+    const menuMap = {
+      '1': 'tbvevents',
+      '2': 'tbvmortgage',
+      '3': 'tbvrentabilidade',
+      '4': 'tbvprequalificacao',
+      '5': 'tbvconstruction'
+    };
+    if (menuMap[lowerText]) {
+      const trig = menuMap[lowerText];
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+    // também pega nomes escritos pelo usuário
+    if (/tbv\s*events?/i.test(text)) {
+      const trig = 'tbvevents';
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+    if (/tbv\s*mortgage/i.test(text)) {
+      const trig = 'tbvmortgage';
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+    if (/tbv\s*rentabilidade/i.test(text)) {
+      const trig = 'tbvrentabilidade';
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+    if (/tbv\s*pre\s*qualificacao/i.test(text)) {
+      const trig = 'tbvprequalificacao';
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+    if (/tbv\s*constru/i.test(text)) {
+      const trig = 'tbvconstruction';
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
+      return TRIGGERS[trig](session, message, text, sessionName, email);
+    }
+
+    // 4) Se não for menu, aí sim chama o GPT para classificar
+    const raw = (await checkTriggerInText(text)).trim();
+    const cleaned = raw
       .replace(/```/g, '')
       .replace(/`/g, '')
       .replace(/(^["']|["']$)/g, '')
       .trim();
-    const norm  = clean
+    const norm = cleaned
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    // 4) Se for o menu de fallback, apenas reenvia para o usuário
+    // 5) Se for fallback de menu vindo do GPT, reenvia o menu
     if (norm.startsWith('nenhum bot ativado')) {
-      // mantém acentos e formatação da mensagem original do bot
-      await client.sendText(message.from, clean);
+      await client.sendText(message.from, cleaned);
       return;
     }
 
-    // 5) Se for um identificador válido, dispara o handler
+    // 6) Se for um trigger válido puro, dispara
     const valid = [
       'tbvevents',
       'tbvmortgage',
@@ -1911,19 +1945,11 @@ async function processText(sessionName, message, email) {
       'tbvconstruction'
     ];
     if (valid.includes(norm)) {
-      // grava qual trigger está ativa
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: norm });
-
-      // chama o handler correto
-      const fn = TRIGGERS[norm];
-      // tbvevents passa sessionName e email
-      if (norm === 'tbvevents') {
-        return fn(session, message, text, sessionName, email);
-      }
-      return fn(session, message, text, sessionName, email);
+      return TRIGGERS[norm](session, message, text, sessionName, email);
     }
 
-    // 6) Se não for nada disso, ignora
+    // 7) Senão, ignora.
   }
   catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
