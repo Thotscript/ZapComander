@@ -1821,14 +1821,17 @@ app.post('/api/agentes', async (req, res) => {
 
 
 async function checkTriggerInText(text) {
-  const rawPrompt = loadPrompt('TBV-Router'); // sem extensão .md
-  const finalPrompt = `${rawPrompt}\n\nMensagem:\n"""${text}"""`;
+  // carrega apenas as instruções de sistema
+  const rawPrompt = loadPrompt('TBV-Router');
+
+  // aqui só enviamos a mensagem do usuário
+  const userContent = `Mensagem:\n"""${text}"""`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
     model: 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
-      { role: 'user', content: finalPrompt }
+      { role: 'system', content: rawPrompt },
+      { role: 'user', content: userContent }
     ]
   }, {
     headers: {
@@ -1843,6 +1846,7 @@ async function checkTriggerInText(text) {
 }
 
 
+
 async function processText(sessionName, message, email) {
   try {
     const session = SESSIONS.get(sessionName);
@@ -1852,7 +1856,7 @@ async function processText(sessionName, message, email) {
     if (message.from === myNumber) return;
     if (message.to !== MAIN_BOT_NUMBER) return;
 
-    const text     = message.body?.trim();
+    const text = message.body?.trim();
     if (!text) return;
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored   = CONVERSATIONS.get(convoKey);
@@ -1871,7 +1875,7 @@ async function processText(sessionName, message, email) {
     // 🛑 2) Triggers de encerramento por desinteresse
     const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
     if (stored?.activeTrigger && endRegex.test(text)) {
-      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
+      await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
       CONVERSATIONS.delete(convoKey);
       return;
     }
@@ -1898,12 +1902,6 @@ async function processText(sessionName, message, email) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]/g, '');
 
-    // debug
-    console.log(`[processText] raw:     '${raw}'`);
-    console.log(`[processText] cleaned: '${cleaned}'`);
-    console.log(`[processText] norm:    '${norm}'`);
-
-    // sinônimo para typo (caso precise)
     const synonyms = { tbvmortage: 'tbvmortgage' };
     if (synonyms[norm]) {
       console.log(`[processText] applying synonym: ${norm} → ${synonyms[norm]}`);
@@ -1916,13 +1914,6 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🔔 token de finalização
-    if (norm === 'finalizandoatendimento' || norm === 'finalizando-atendimento') {
-      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
-      CONVERSATIONS.delete(convoKey);
-      return;
-    }
-
     // 🚀 dispara um dos 5 triggers válidos
     const valid = {
       tbvevents:          'tbvevents',
@@ -1931,7 +1922,6 @@ async function processText(sessionName, message, email) {
       tbvprequalificacao: 'tbvprequalificacao',
       tbvconstrucao:      'tbvconstruction'
     };
-    console.log(`[processText] valid keys: ${Object.keys(valid).join(', ')}`);
 
     if (valid[norm]) {
       const trigKey = valid[norm];
