@@ -1825,15 +1825,12 @@ async function processText(sessionName, message, email) {
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
-        // limpa o histórico
         CONVERSATIONS.delete(convoKey);
       } else {
         await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
       }
       return;
     }
-
-    // — removido o bloco que impedia respostas quando activeTrigger === null —
 
     // ✅ Continuação de trigger ativa
     if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
@@ -1846,9 +1843,22 @@ async function processText(sessionName, message, email) {
     }
 
     // 🔍 Detecta novo trigger se ainda não há um definido
-    const trigger = (await checkTriggerInText(text)).trim().toLowerCase();
+    const raw = (await checkTriggerInText(text)).trim();
+    // normaliza para lowercase e remove acentos/ç
+    const norm = raw
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    // mapeia variações para a chave exata
+    const alias = {
+      tbvconstrucao:    'tbvconstruction',
+      'tbv-construcao': 'tbvconstruction'
+    };
+    const trigger = alias[norm] || norm;
+
+    console.log(`[checkTriggerInText] raw="${raw}", norm="${norm}", trigger="${trigger}"`);
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
-      await TRIGGERS[trigger](session, message, text);
+      await TRIGGERS[trigger](session, message, text, sessionName, email);
       return;
     }
 
@@ -1883,6 +1893,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
