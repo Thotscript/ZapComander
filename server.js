@@ -1820,6 +1820,29 @@ app.post('/api/agentes', async (req, res) => {
 // --------------------------------------------------------------------------------------------------------
 
 
+async function checkTriggerInText(text) {
+  const rawPrompt = loadPrompt('TBV-Router'); // sem extensão .md
+  const finalPrompt = `${rawPrompt}\n\nMensagem:\n"""${text}"""`;
+
+  const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+      { role: 'user', content: finalPrompt }
+    ]
+  }, {
+    headers: {
+      'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  const resposta = result.data.choices[0].message.content.trim();
+  console.log(`[checkTriggerInText] Resposta do GPT: ${resposta}`);
+  return resposta;
+}
+
+
 async function processText(sessionName, message, email) {
   try {
     const session = SESSIONS.get(sessionName);
