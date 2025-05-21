@@ -81,9 +81,9 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 
 ### `TBVConstruction`
 **Ative apenas se:**
-- A mensagem trata de **construção de imóveis (não reforma)**  
+- A mensagem trata de **construção de imóveis nos estados unidos (não reforma)**  
   **E**  
-- A intenção é entender **custos, etapas, viabilidade ou rentabilidade da construção**.
+- A intenção é entender **custos, etapas, viabilidade ou rentabilidade da construção, funcionamento**.
 
 **Palavras-chave:** construir, obra, projeto, quanto custa construir, viabilidade, retorno com construção, modelo construtivo
 
