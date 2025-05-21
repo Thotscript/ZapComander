@@ -1843,9 +1843,6 @@ async function checkTriggerInText(text) {
 }
 
 
-
-const EVENT_CREATION_SESSIONS = new Map();
-
 async function processText(sessionName, message, email) {
   try {
     const session = SESSIONS.get(sessionName);
@@ -1898,9 +1895,9 @@ async function processText(sessionName, message, email) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/\s+/g, '');
 
-    // Ajuste de typo comum
+    // ——— CORREÇÃO AQUI: sinônimo para o typo "tbvmortage"
     const synonyms = {
-      tbvmortgage: 'tbvmortgage'
+      tbvmortage: 'tbvmortgage'
     };
     if (synonyms[norm]) {
       norm = synonyms[norm];
@@ -1924,11 +1921,11 @@ async function processText(sessionName, message, email) {
 
     // 🚀 7) Se for um dos cinco triggers válidos, dispara o handler
     const valid = {
-      tbvevents:           'tbvevents',
-      tbvmortgage:         'tbvmortgage',
-      tbvrentabilidade:    'tbvrentabilidade',
-      tbvprequalificacao:  'tbvprequalificacao',
-      tbvconstrucao:       'tbvconstruction'
+      tbvevents:          'tbvevents',
+      tbvmortgage:        'tbvmortgage',
+      tbvrentabilidade:   'tbvrentabilidade',
+      tbvprequalificacao: 'tbvprequalificacao',
+      tbvconstrucao:      'tbvconstruction'
     };
     if (valid[norm]) {
       const trigKey = valid[norm];
