@@ -1321,6 +1321,12 @@ async function handleTBVEventosConversation(session, message, userInput, session
   if (jsonMatch) {
     try {
       eventoInfo = JSON.parse(jsonMatch[1]);
+
+      if (!eventoInfo.data || !eventoInfo.data.trim()) {
+      eventoInfo.data = 'hoje';
+      }
+
+
       const camposObrigatorios = ['titulo', 'data', 'hora'];
       const completo = camposObrigatorios.every(k => eventoInfo[k] && eventoInfo[k].trim() !== '');
 
