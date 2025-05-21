@@ -1861,7 +1861,7 @@ async function processText(sessionName, message, email) {
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored   = CONVERSATIONS.get(convoKey);
 
-    // 🛑 Comando explícito para desligar o bot
+    // 🛑 1) Comando explícito para desligar o bot
     if (lower === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
@@ -1872,7 +1872,7 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🛑 Triggers de encerramento de fluxo por desinteresse
+    // 🛑 2) Triggers de encerramento por desinteresse
     const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
     if (stored?.activeTrigger && endRegex.test(text)) {
       await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
@@ -1880,16 +1880,14 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // — Se já há um fluxo ativo, delega direto ao handler —
+    // ✅ 3) Se já há um fluxo ativo, delega direto ao handler
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      const fn = TRIGGERS[stored.activeTrigger];
-      // alguns handlers recebem sessionName/email extras
-      return (stored.activeTrigger === 'tbvevents')
-        ? fn(session, message, text, sessionName, email)
-        : fn(session, message, text, sessionName, email);
+      return TRIGGERS[stored.activeTrigger](
+        session, message, text, sessionName, email
+      );
     }
 
-    // ➊ Tratamento de menu direto (1–5 ou texto)
+    // 🔢 4) Menu direto (1–5) antes de chamar o GPT
     const menuMap = {
       '1': 'tbvevents',
       '2': 'tbvmortgage',
@@ -1902,33 +1900,34 @@ async function processText(sessionName, message, email) {
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    if (/tbv\s*events?/i.test(text)) {
+    // também aceita digitação literal do nome do BOT
+    if (/^tbv\s*events?$/i.test(text)) {
       const trig = 'tbvevents';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    if (/tbv\s*mortgage/i.test(text)) {
+    if (/^tbv\s*mortgage$/i.test(text)) {
       const trig = 'tbvmortgage';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    if (/tbv\s*rentabilidade/i.test(text)) {
+    if (/^tbv\s*rentabilidade$/i.test(text)) {
       const trig = 'tbvrentabilidade';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    if (/tbv\s*pre\s*qualificacao/i.test(text)) {
+    if (/^tbv\s*pre\s*qualificacao$/i.test(text)) {
       const trig = 'tbvprequalificacao';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    if (/tbv\s*constru/i.test(text)) {
+    if (/^tbv\s*constru/i.test(text)) {
       const trig = 'tbvconstruction';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
 
-    // ➋ Classificação via GPT
+    // 🤖 5) Se não bateu nos menus, chama o GPT para classificar
     const raw = (await checkTriggerInText(text)).trim();
     const cleaned = raw
       .replace(/```/g, '')
@@ -1940,13 +1939,23 @@ async function processText(sessionName, message, email) {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    // ➌ Se for menu vindo do GPT, reenvia ele
+    // 📋 6) Se o GPT devolveu o menu de fallback, só reenvia
     if (norm.startsWith('nenhum bot ativado')) {
       await client.sendText(message.from, cleaned);
       return;
     }
 
-    // ➍ Se for identificador puro, dispara handler
+    // 🔔 7) Se for o token genérico de finalização vindo do GPT
+    if (norm === 'finalizando-atendimento') {
+      await client.sendText(
+        message.from,
+        '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.'
+      );
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+
+    // 🚀 8) Se for um trigger válido puro, dispara o handler
     const valid = [
       'tbvevents',
       'tbvmortgage',
@@ -1959,12 +1968,13 @@ async function processText(sessionName, message, email) {
       return TRIGGERS[norm](session, message, text, sessionName, email);
     }
 
-    // ➎ Senão, ignora
+    // 🛑 9) Caso contrário, ignora
   }
   catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
