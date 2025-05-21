@@ -1883,34 +1883,7 @@ async function processText(sessionName, message, email) {
 
     // 🤖 4) Classifica via GPT
     const raw = (await checkTriggerInText(text)).trim();
-    console.log(`[processText] raw response: '${raw}'`);
 
-    // Melhorar identificação dos triggers com regex mais robustos
-    const triggers = {
-      tbvevents: /\b(tbvevents|tbv\s*events)\b/i,
-      tbvmortgage: /\b(tbvmortgage|tbv\s*mortgage)\b/i,
-      tbvrentabilidade: /\b(tbvrentabilidade|tbv\s*rentabilidade)\b/i,
-      tbvprequalificacao: /\b(tbvprequalificacao|tbvpre\s*qualificacao|tbv\s*pre\s*qualificação)\b/i,
-      tbvconstrucao: /\b(tbvconstrucao|tbv\s*construcao|tbv\s*construção)\b/i
-    };
-
-    // Verificar se algum trigger está presente na resposta bruta
-    let detectedTrigger = null;
-    for (const [trigger, regex] of Object.entries(triggers)) {
-      if (regex.test(raw)) {
-        detectedTrigger = trigger;
-        break;
-      }
-    }
-
-    // Se encontrou um trigger direto da resposta bruta
-    if (detectedTrigger) {
-      console.log(`[processText] trigger detectado diretamente: ${detectedTrigger}`);
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: detectedTrigger });
-      return TRIGGERS[detectedTrigger](session, message, text, sessionName, email);
-    }
-
-    // Continuamos com a abordagem anterior como fallback
     // limpa backticks, aspas, etc.
     let cleaned = raw
       .replace(/```/g, '')
@@ -1926,28 +1899,19 @@ async function processText(sessionName, message, email) {
       .replace(/[^a-z0-9]/g, '');
 
     // debug
+    console.log(`[processText] raw:     '${raw}'`);
     console.log(`[processText] cleaned: '${cleaned}'`);
     console.log(`[processText] norm:    '${norm}'`);
 
-    // sinônimo para typo (expandir esta lista conforme necessário)
-    const synonyms = { 
-      tbvmortage: 'tbvmortgage',
-      tbvmotgage: 'tbvmortgage',
-      tbvfinance: 'tbvmortgage',      
-      tbvevent: 'tbvevents',
-      tbvrenta: 'tbvrentabilidade',
-      tbvrent: 'tbvrentabilidade',
-      tbvpre: 'tbvprequalificacao',
-      tbvconst: 'tbvconstrucao'
-    };
-    
+    // sinônimo para typo (caso precise)
+    const synonyms = { tbvmortage: 'tbvmortgage' };
     if (synonyms[norm]) {
       console.log(`[processText] applying synonym: ${norm} → ${synonyms[norm]}`);
       norm = synonyms[norm];
     }
 
     // 📋 fallback de menu padrão
-    if (norm.startsWith('nenhumbotativado') || raw.startsWith('NENHUM BOT ATIVADO')) {
+    if (norm.startsWith('nenhumbotativado')) {
       await client.sendText(message.from, cleaned);
       return;
     }
@@ -1976,28 +1940,8 @@ async function processText(sessionName, message, email) {
       return TRIGGERS[trigKey](session, message, text, sessionName, email);
     }
 
-    // Abordagem mais agressiva para detectar triggers nas respostas
-    // Procurar por padrões parciais nos nomes dos triggers
-    for (const [key, triggerKey] of Object.entries(valid)) {
-      if (norm.includes(key.toLowerCase().substring(0, 6))) {
-        console.log(`[processText] partial match found for: ${key}`);
-        const trigKey = triggerKey;
-        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
-        return TRIGGERS[trigKey](session, message, text, sessionName, email);
-      }
-    }
-
     // 🛑 caso não reconheça
     console.log(`[processText] unrecognized trigger: '${norm}'`);
-    // Enviar o menu de opções como fallback
-    await client.sendText(message.from, 
-      'NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?\n\n' +
-      '1. TBV Events – Para registrar ou ser lembrado de um evento ou compromisso.\n' +
-      '2. TBV Mortgage – Para simular um financiamento imobiliário.\n' +
-      '3. TBV Rentabilidade – Para calcular a rentabilidade de um imóvel.\n' +
-      '4. TBV Pre Qualificação – Para iniciar sua pré-aprovação de crédito imobiliário.\n' +
-      '5. TBV Construção – Para entender os custos e lucros de construir um imóvel.'
-    );
   }
   catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
