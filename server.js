@@ -1479,8 +1479,51 @@ async function handleTriggerLembrete(session, message, input) {
   return handleTriggerWithConversation('lembrete', session, message, input);
 }
 
-async function handleTriggerFinanciamento(session, message, input) {
-  return handleTriggerWithConversation('financiamento', session, message, input);
+async function handleTriggerMortgage(session, message, userInput, sessionName, email) {
+  const client   = session.client;
+  const sender   = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
+
+  // Inicia ou recupera o estado da conversa
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvmortgage'
+  };
+
+  // Carrega o prompt “TBVMorgage” (arquivo prompts/TBVMorgage.txt)
+  const prompt = loadPrompt('TBVMortgage');
+
+  // Se for a primeira interação, injeta o system prompt
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+  }
+
+  // Empilha a mensagem do usuário
+  convo.history.push({ role: 'user', content: userInput });
+
+  // Chama o GPT
+  const gptResponse = await openai.chat.completions.create({
+    model:      ASSISTANT_MODEL,
+    messages:   convo.history,
+    temperature: 0.2
+  });
+
+  const assistantResponse = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: assistantResponse });
+
+  // Se o GPT devolveu o token de encerramento, finaliza aqui:
+  if (assistantResponse === 'finalizando-atendimento') {
+    await client.sendText(
+      sender,
+      '👍 Até mais! Quando quiser retomar o financiamento, é só digitar o gatilho novamente.'
+    );
+    CONVERSATIONS.delete(convoKey);
+    return;
+  }
+
+  // Caso contrário, envia a resposta normal e mantém o estado
+  await client.sendText(sender, assistantResponse);
+  CONVERSATIONS.set(convoKey, convo);
 }
 
 
@@ -1489,7 +1532,7 @@ const TRIGGERS = {
   tbvevents: handleTBVEventosConversation,
   tbvconstruction: handleTriggerTBVConstruction,
   lembrete: handleTriggerLembrete,
-  financiamento: handleTriggerFinanciamento
+  tbvmortgage: handleTriggerMortgage
 };
 
 // Detecta trigger com base no áudio bruto
@@ -1861,11 +1904,11 @@ async function processText(sessionName, message, email) {
 
     // Alias para small variations
     const alias = {
-      tbvconstrucao:       'tbvconstruction',
-      'tbv-construcao':    'tbvconstruction'
-      // você pode adicionar outros aliases aqui
-    };
-
+    tbvconstrucao:    'tbvconstruction',
+    'tbv-construcao': 'tbvconstruction',
+    tbvmortgage:      'tbvmortgage',
+    'tbv-mortgage':   'tbvmortgage'
+  };
     const trigger = alias[norm] || norm;
     console.log(
       `[checkTriggerInText] raw="${raw}", cleaned="${cleaned}", ` +
