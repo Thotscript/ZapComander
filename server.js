@@ -1850,20 +1850,19 @@ async function processText(sessionName, message, email) {
   try {
     const session = SESSIONS.get(sessionName);
     if (!session) throw new Error(`Sessão ${sessionName} não encontrada.`);
-
     const { client, myNumber } = session;
     if (!myNumber) return;
     if (message.from === myNumber) return;
     if (message.to !== MAIN_BOT_NUMBER) return;
 
-    const text      = message.body?.trim();
+    const text     = message.body?.trim();
     if (!text) return;
-    const lowerText = text.toLowerCase();
-    const convoKey  = `${session.myNumber}:${message.from}`;
-    const stored    = CONVERSATIONS.get(convoKey);
+    const lower    = text.toLowerCase();
+    const convoKey = `${session.myNumber}:${message.from}`;
+    const stored   = CONVERSATIONS.get(convoKey);
 
-    // 1) Comando tbvoff (manter como está)
-    if (lowerText === 'tbvoff') {
+    // 🛑 Comando explícito para desligar o bot
+    if (lower === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
         CONVERSATIONS.delete(convoKey);
@@ -1873,12 +1872,24 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 2) Se já há fluxo ativo, delega diretamente
-    if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      return TRIGGERS[stored.activeTrigger](session, message, text, sessionName, email);
+    // 🛑 Triggers de encerramento de fluxo por desinteresse
+    const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
+    if (stored?.activeTrigger && endRegex.test(text)) {
+      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
+      CONVERSATIONS.delete(convoKey);
+      return;
     }
 
-    // 3) Tratamento de menu direto (antes do GPT)
+    // — Se já há um fluxo ativo, delega direto ao handler —
+    if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+      const fn = TRIGGERS[stored.activeTrigger];
+      // alguns handlers recebem sessionName/email extras
+      return (stored.activeTrigger === 'tbvevents')
+        ? fn(session, message, text, sessionName, email)
+        : fn(session, message, text, sessionName, email);
+    }
+
+    // ➊ Tratamento de menu direto (1–5 ou texto)
     const menuMap = {
       '1': 'tbvevents',
       '2': 'tbvmortgage',
@@ -1886,12 +1897,11 @@ async function processText(sessionName, message, email) {
       '4': 'tbvprequalificacao',
       '5': 'tbvconstruction'
     };
-    if (menuMap[lowerText]) {
-      const trig = menuMap[lowerText];
+    if (menuMap[lower]) {
+      const trig = menuMap[lower];
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
-    // também pega nomes escritos pelo usuário
     if (/tbv\s*events?/i.test(text)) {
       const trig = 'tbvevents';
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
@@ -1918,7 +1928,7 @@ async function processText(sessionName, message, email) {
       return TRIGGERS[trig](session, message, text, sessionName, email);
     }
 
-    // 4) Se não for menu, aí sim chama o GPT para classificar
+    // ➋ Classificação via GPT
     const raw = (await checkTriggerInText(text)).trim();
     const cleaned = raw
       .replace(/```/g, '')
@@ -1930,13 +1940,13 @@ async function processText(sessionName, message, email) {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    // 5) Se for fallback de menu vindo do GPT, reenvia o menu
+    // ➌ Se for menu vindo do GPT, reenvia ele
     if (norm.startsWith('nenhum bot ativado')) {
       await client.sendText(message.from, cleaned);
       return;
     }
 
-    // 6) Se for um trigger válido puro, dispara
+    // ➍ Se for identificador puro, dispara handler
     const valid = [
       'tbvevents',
       'tbvmortgage',
@@ -1949,19 +1959,12 @@ async function processText(sessionName, message, email) {
       return TRIGGERS[norm](session, message, text, sessionName, email);
     }
 
-    // 7) Senão, ignora.
+    // ➎ Senão, ignora
   }
   catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
   }
 }
-
-
-
-
-
-
-
 
 
 
