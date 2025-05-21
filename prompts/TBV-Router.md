@@ -79,7 +79,7 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 
 ---
 
-### `TBVConstrucao`
+### `TBVConstruction`
 **Ative apenas se:**
 - A mensagem trata de **construção de imóveis (não reforma)**  
   **E**  
