@@ -1926,7 +1926,7 @@ async function processText(sessionName, message, email) {
       tbvmortgage:        'tbvmortgage',
       tbvrentabilidade:   'tbvrentabilidade',
       tbvprequalificacao: 'tbvprequalificacao',
-      tbvconstrucao:      'tbvconstruction'
+      tbvconstruction:      'tbvconstruction'
     };
 
     if (valid[norm]) {
