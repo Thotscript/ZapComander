@@ -1887,65 +1887,34 @@ async function processText(sessionName, message, email) {
       );
     }
 
-    // 🔢 4) Menu direto (1–5) antes de chamar o GPT
-    const menuMap = {
-      '1': 'tbvevents',
-      '2': 'tbvmortgage',
-      '3': 'tbvrentabilidade',
-      '4': 'tbvprequalificacao',
-      '5': 'tbvconstruction'
-    };
-    if (menuMap[lower]) {
-      const trig = menuMap[lower];
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-    // também aceita digitação literal do nome do BOT
-    if (/^tbv\s*events?$/i.test(text)) {
-      const trig = 'tbvevents';
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-    if (/^tbv\s*mortgage$/i.test(text)) {
-      const trig = 'tbvmortgage';
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-    if (/^tbv\s*rentabilidade$/i.test(text)) {
-      const trig = 'tbvrentabilidade';
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-    if (/^tbv\s*pre\s*qualificacao$/i.test(text)) {
-      const trig = 'tbvprequalificacao';
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-    if (/^tbv\s*constru/i.test(text)) {
-      const trig = 'tbvconstruction';
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trig });
-      return TRIGGERS[trig](session, message, text, sessionName, email);
-    }
-
-    // 🤖 5) Se não bateu nos menus, chama o GPT para classificar
+    // 🤖 4) Classifica via GPT
     const raw = (await checkTriggerInText(text)).trim();
     const cleaned = raw
       .replace(/```/g, '')
       .replace(/`/g, '')
       .replace(/(^["']|["']$)/g, '')
       .trim();
-    const norm = cleaned
+    let norm = cleaned
       .toLowerCase()
       .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '');
 
-    // 📋 6) Se o GPT devolveu o menu de fallback, só reenvia
-    if (norm.startsWith('nenhum bot ativado')) {
+    // Ajuste: tratar possível typo "tbvmortage"
+    const synonyms = {
+      tbvmortage: 'tbvmortgage'
+    };
+    if (synonyms[norm]) {
+      norm = synonyms[norm];
+    }
+
+    // 📋 5) Se o GPT devolveu o menu de fallback, só reenvia
+    if (norm.startsWith('nenhumbotativado')) {
       await client.sendText(message.from, cleaned);
       return;
     }
 
-    // 🔔 7) Se for o token genérico de finalização vindo do GPT
+    // 🔔 6) Se for o token genérico de finalização vindo do GPT
     if (norm === 'finalizando-atendimento') {
       await client.sendText(
         message.from,
@@ -1955,20 +1924,21 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🚀 8) Se for um trigger válido puro, dispara o handler
-    const valid = [
-      'tbvevents',
-      'tbvmortgage',
-      'tbvrentabilidade',
-      'tbvprequalificacao',
-      'tbvconstruction'
-    ];
-    if (valid.includes(norm)) {
-      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: norm });
-      return TRIGGERS[norm](session, message, text, sessionName, email);
+    // 🚀 7) Se for um trigger válido puro, dispara o handler
+    const valid = {
+      tbvevents: 'tbvevents',
+      tbvmortgage: 'tbvmortgage',
+      tbvrentabilidade: 'tbvrentabilidade',
+      tbvprequalificacao: 'tbvprequalificacao',
+      tbvconstrucao: 'tbvconstruction'
+    };
+    if (valid[norm]) {
+      const trigKey = valid[norm];
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+      return TRIGGERS[trigKey](session, message, text, sessionName, email);
     }
 
-    // 🛑 9) Caso contrário, ignora
+    // 🛑 8) Caso contrário, ignora
   }
   catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
