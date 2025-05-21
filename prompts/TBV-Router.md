@@ -79,7 +79,7 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 
 ---
 
-### `TBVConstrução`
+### `TBVConstrucao`
 **Ative apenas se:**
 - A mensagem trata de **construção de imóveis (não reforma)**  
   **E**  
@@ -133,7 +133,7 @@ Responda com **exatamente um dos seguintes valores**:
 - `TBVMortgage`  
 - `TBVRentabilidade`  
 - `TBVPreQualificação`  
-- `TBVConstrução`  
+- `TBVConstrucao`  
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
