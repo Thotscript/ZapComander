@@ -1857,22 +1857,41 @@ async function processText(sessionName, message, email) {
     const convoKey = `${session.myNumber}:${message.from}`;
     const stored   = CONVERSATIONS.get(convoKey);
 
-    // ... (manutenção dos passos 1 e 2)
+    // 🛑 1) Comando explícito para desligar o bot
+    if (text.toLowerCase() === 'tbvoff') {
+      if (stored?.activeTrigger) {
+        await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+        CONVERSATIONS.delete(convoKey);
+      } else {
+        await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
+      }
+      return;
+    }
 
-    // ✅ Se há fluxo ativo
+    // 🛑 2) Triggers de encerramento por desinteresse
+    const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
+    if (stored?.activeTrigger && endRegex.test(text)) {
+      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+
+    // ✅ 3) Se há fluxo ativo, delega direto ao handler
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
       return TRIGGERS[stored.activeTrigger](session, message, text, sessionName, email);
     }
 
-    // 🤖 Classifica via GPT
+    // 🤖 4) Classifica via GPT
     const raw = (await checkTriggerInText(text)).trim();
-    // limpa backticks e aspas
+
+    // limpa backticks, aspas, etc.
     let cleaned = raw
       .replace(/```/g, '')
       .replace(/`/g, '')
       .replace(/(^["']|["']$)/g, '')
       .trim();
-    // remove qualquer coisa que não seja letra ou número
+
+    // remove tudo que não for [a–z0–9]
     let norm = cleaned
       .toLowerCase()
       .normalize('NFD')
@@ -1880,31 +1899,31 @@ async function processText(sessionName, message, email) {
       .replace(/[^a-z0-9]/g, '');
 
     // debug
-    console.log(`[processText] raw:    '${raw}'`);
-    console.log(`[processText] cleaned:'${cleaned}'`);
-    console.log(`[processText] norm:   '${norm}'`);
+    console.log(`[processText] raw:     '${raw}'`);
+    console.log(`[processText] cleaned: '${cleaned}'`);
+    console.log(`[processText] norm:    '${norm}'`);
 
-    // sinônimo para typo
+    // sinônimo para typo (caso precise)
     const synonyms = { tbvmortage: 'tbvmortgage' };
     if (synonyms[norm]) {
-      console.log(`[processText] aplicando sinônimo: ${norm} → ${synonyms[norm]}`);
+      console.log(`[processText] applying synonym: ${norm} → ${synonyms[norm]}`);
       norm = synonyms[norm];
     }
 
-    // fallback de menu
+    // 📋 fallback de menu padrão
     if (norm.startsWith('nenhumbotativado')) {
       await client.sendText(message.from, cleaned);
       return;
     }
 
-    // finalização genérica
+    // 🔔 token de finalização
     if (norm === 'finalizandoatendimento' || norm === 'finalizando-atendimento') {
       await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho.');
       CONVERSATIONS.delete(convoKey);
       return;
     }
 
-    // mapeamento válido
+    // 🚀 dispara um dos 5 triggers válidos
     const valid = {
       tbvevents:          'tbvevents',
       tbvmortgage:        'tbvmortgage',
@@ -1916,15 +1935,15 @@ async function processText(sessionName, message, email) {
 
     if (valid[norm]) {
       const trigKey = valid[norm];
-      console.log(`[processText] disparando trigger: ${trigKey}`);
+      console.log(`[processText] dispatching trigger: ${trigKey}`);
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
       return TRIGGERS[trigKey](session, message, text, sessionName, email);
     }
 
-    // se não reconheceu, ignora
-    console.log(`[processText] trigger não reconhecido: '${norm}'`);
-
-  } catch (err) {
+    // 🛑 caso não reconheça
+    console.log(`[processText] unrecognized trigger: '${norm}'`);
+  }
+  catch (err) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
   }
 }
