@@ -1844,23 +1844,38 @@ async function processText(sessionName, message, email) {
 
     // 🔍 Detecta novo trigger se ainda não há um definido
     const raw = (await checkTriggerInText(text)).trim();
+
+    // Remove fences de Markdown (``` ou `) e possíveis aspas
+    const cleaned = raw
+      .replace(/```/g, '')      // retira ``` 
+      .replace(/`/g, '')        // retira `
+      .replace(/(^["']|["']$)/g, '') // retira aspas no início/fim
+      .trim();
+
     // normaliza para lowercase e remove acentos/ç
-    const norm = raw
+    const norm = cleaned
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
+
     // mapeia variações para a chave exata
     const alias = {
       tbvconstrucao:    'tbvconstruction',
       'tbv-construcao': 'tbvconstruction'
     };
+
     const trigger = alias[norm] || norm;
 
-    console.log(`[checkTriggerInText] raw="${raw}", norm="${norm}", trigger="${trigger}"`);
+    console.log(
+      `[checkTriggerInText] raw="${raw}", cleaned="${cleaned}", ` +
+      `norm="${norm}", trigger="${trigger}"`
+    );
+
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text, sessionName, email);
       return;
     }
+
 
     // 💬 Fallback: só se contiver @broker ou tiver histórico
     const containsTrigger = lowerText.includes('@broker');
