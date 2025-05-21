@@ -1853,20 +1853,17 @@ async function processText(sessionName, message, email) {
 
     const { client, myNumber } = session;
     if (!myNumber) return;
-
-    // Ignora mensagens do próprio número ou que não sejam para o bot principal
     if (message.from === myNumber) return;
     if (message.to !== MAIN_BOT_NUMBER) return;
 
-    const text = message.body?.trim();
+    const text    = message.body?.trim();
     if (!text) return;
 
-    const lowerText = text.toLowerCase();
-    const convoKey   = `${session.myNumber}:${message.from}`;
-    const stored     = CONVERSATIONS.get(convoKey);
+    const convoKey = `${session.myNumber}:${message.from}`;
+    const stored   = CONVERSATIONS.get(convoKey);
 
-    // 🛑 Comando explicito para desligar o bot
-    if (lowerText === 'tbvoff') {
+    // 1) Comando explícito para desligar
+    if (text.toLowerCase() === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
         CONVERSATIONS.delete(convoKey);
@@ -1876,87 +1873,60 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // — Se já há um fluxo ativo, delega direto ao handler —
-    if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
+    // 2) Se já há um fluxo ativo, delega direto
+    if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+      const fn = TRIGGERS[stored.activeTrigger];
+      // tbvevents precisa dos args extra
       if (stored.activeTrigger === 'tbvevents') {
-        await TRIGGERS.tbvevents(session, message, text, sessionName, email);
-      } else {
-        await TRIGGERS[stored.activeTrigger](session, message, text);
+        return fn(session, message, text, sessionName, email);
       }
-      return;
+      return fn(session, message, text, sessionName, email);
     }
 
-    // 🔍 Detecta novo trigger
-    const raw = (await checkTriggerInText(text)).trim();
-
-    // Limpa fences de markdown e aspas
-    const cleaned = raw
+    // 3) Descobre o trigger via GPT
+    const raw   = (await checkTriggerInText(text)).trim();
+    const clean = raw
       .replace(/```/g, '')
       .replace(/`/g, '')
       .replace(/(^["']|["']$)/g, '')
       .trim();
-
-    // Normaliza e remove acentos/ç
-    const norm = cleaned
+    const norm  = clean
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    // Alias para small variations
-    const alias = {
-    tbvconstrucao:    'tbvconstruction',
-    'tbv-construcao': 'tbvconstruction',
-    tbvmortgage:      'tbvmortgage',
-    'tbv-mortgage':   'tbvmortgage'
-  };
-    const trigger = alias[norm] || norm;
-    console.log(
-      `[checkTriggerInText] raw="${raw}", cleaned="${cleaned}", ` +
-      `norm="${norm}", trigger="${trigger}"`
-    );
-
-    // ✅ Tratamento do token de encerramento genérico
-    if (trigger === 'finalizando-atendimento') {
-      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho apropriado.');
-      CONVERSATIONS.delete(convoKey);
+    // 4) Se for o menu de fallback, apenas reenvia para o usuário
+    if (norm.startsWith('nenhum bot ativado')) {
+      // mantém acentos e formatação da mensagem original do bot
+      await client.sendText(message.from, clean);
       return;
     }
 
-    // ✅ Dispara handler se for trigger válido
-    if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
-      await TRIGGERS[trigger](session, message, text, sessionName, email);
-      return;
+    // 5) Se for um identificador válido, dispara o handler
+    const valid = [
+      'tbvevents',
+      'tbvmortgage',
+      'tbvrentabilidade',
+      'tbvprequalificacao',
+      'tbvconstruction'
+    ];
+    if (valid.includes(norm)) {
+      // grava qual trigger está ativa
+      CONVERSATIONS.set(convoKey, { history: [], activeTrigger: norm });
+
+      // chama o handler correto
+      const fn = TRIGGERS[norm];
+      // tbvevents passa sessionName e email
+      if (norm === 'tbvevents') {
+        return fn(session, message, text, sessionName, email);
+      }
+      return fn(session, message, text, sessionName, email);
     }
 
-    // 💬 Fallback: só responde se tiver @broker ou histórico
-    const containsTrigger = lowerText.includes('@broker');
-    const hasHistory      = stored?.history?.length > 0;
-
-    if (!containsTrigger && !hasHistory) return;
-
-    if (!hasHistory) {
-      CONVERSATIONS.set(convoKey, {
-        history: [{ role: "system", content: prompt_qualification }],
-        activeTrigger: null
-      });
-    }
-
-    const updated = CONVERSATIONS.get(convoKey);
-    updated.history.push({ role: "user", content: text });
-
-    const resp = await openai.chat.completions.create({
-      model: ASSISTANT_MODEL,
-      messages: updated.history,
-      temperature: 0.3
-    });
-
-    const reply = resp.choices[0].message.content.trim();
-    updated.history.push({ role: "assistant", content: reply });
-
-    await client.sendText(message.from, reply);
-
-  } catch (err) {
-    console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
+    // 6) Se não for nada disso, ignora
+  }
+  catch (err) {
+    console.error(`❌ Erro em processText: ${err.message}`, err.stack);
   }
 }
 
