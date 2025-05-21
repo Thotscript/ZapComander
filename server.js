@@ -1882,9 +1882,7 @@ async function processText(sessionName, message, email) {
 
     // ✅ 3) Se já há um fluxo ativo, delega direto ao handler
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      return TRIGGERS[stored.activeTrigger](
-        session, message, text, sessionName, email
-      );
+      return TRIGGERS[stored.activeTrigger](session, message, text, sessionName, email);
     }
 
     // 🤖 4) Classifica via GPT
@@ -1900,9 +1898,9 @@ async function processText(sessionName, message, email) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/\s+/g, '');
 
-    // Ajuste: tratar possível typo "tbvmortage"
+    // Ajuste de typo comum
     const synonyms = {
-      tbvmortage: 'tbvmortgage'
+      tbvmortgage: 'tbvmortgage'
     };
     if (synonyms[norm]) {
       norm = synonyms[norm];
@@ -1914,7 +1912,7 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🔔 6) Se for o token genérico de finalização vindo do GPT
+    // 🔔 6) Token genérico de finalização vindo do GPT
     if (norm === 'finalizando-atendimento') {
       await client.sendText(
         message.from,
@@ -1924,13 +1922,13 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🚀 7) Se for um trigger válido puro, dispara o handler
+    // 🚀 7) Se for um dos cinco triggers válidos, dispara o handler
     const valid = {
-      tbvevents: 'tbvevents',
-      tbvmortgage: 'tbvmortgage',
-      tbvrentabilidade: 'tbvrentabilidade',
-      tbvprequalificacao: 'tbvprequalificacao',
-      tbvconstrucao: 'tbvconstruction'
+      tbvevents:           'tbvevents',
+      tbvmortgage:         'tbvmortgage',
+      tbvrentabilidade:    'tbvrentabilidade',
+      tbvprequalificacao:  'tbvprequalificacao',
+      tbvconstrucao:       'tbvconstruction'
     };
     if (valid[norm]) {
       const trigKey = valid[norm];
