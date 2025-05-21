@@ -129,11 +129,15 @@ NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções desej
 
 Responda com **exatamente um dos seguintes valores**:
 
-- `TBVEvents`  
-- `TBVMortgage`  
-- `TBVRentabilidade`  
-- `TBVPreQualificação`  
-- `TBVConstrucao`  
+**IMPORTANTE**  
+Responda **apenas** com um destes identificadores, **em minúsculas**, sem aspas ou formatação:
+
+- `tbvevents`  
+- `tbvmortgage`  
+- `tbvrentabilidade`  
+- `tbvprequalificacao`  
+- `tbvconstruction`  
+
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
