@@ -1811,6 +1811,7 @@ async function processText(sessionName, message, email) {
     const { client, myNumber } = session;
     if (!myNumber) return;
 
+    // Ignora mensagens do próprio número ou que não sejam para o bot principal
     if (message.from === myNumber) return;
     if (message.to !== MAIN_BOT_NUMBER) return;
 
@@ -1818,10 +1819,10 @@ async function processText(sessionName, message, email) {
     if (!text) return;
 
     const lowerText = text.toLowerCase();
-    const convoKey = `${session.myNumber}:${message.from}`;
-    const stored = CONVERSATIONS.get(convoKey);
+    const convoKey   = `${session.myNumber}:${message.from}`;
+    const stored     = CONVERSATIONS.get(convoKey);
 
-    // 🛑 Comando para desligar o bot
+    // 🛑 Comando explicito para desligar o bot
     if (lowerText === 'tbvoff') {
       if (stored?.activeTrigger) {
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
@@ -1832,7 +1833,7 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // ✅ Continuação de trigger ativa
+    // — Se já há um fluxo ativo, delega direto ao handler —
     if (stored?.activeTrigger && TRIGGERS.hasOwnProperty(stored.activeTrigger)) {
       if (stored.activeTrigger === 'tbvevents') {
         await TRIGGERS.tbvevents(session, message, text, sessionName, email);
@@ -1842,44 +1843,51 @@ async function processText(sessionName, message, email) {
       return;
     }
 
-    // 🔍 Detecta novo trigger se ainda não há um definido
+    // 🔍 Detecta novo trigger
     const raw = (await checkTriggerInText(text)).trim();
 
-    // Remove fences de Markdown (``` ou `) e possíveis aspas
+    // Limpa fences de markdown e aspas
     const cleaned = raw
-      .replace(/```/g, '')      // retira ``` 
-      .replace(/`/g, '')        // retira `
-      .replace(/(^["']|["']$)/g, '') // retira aspas no início/fim
+      .replace(/```/g, '')
+      .replace(/`/g, '')
+      .replace(/(^["']|["']$)/g, '')
       .trim();
 
-    // normaliza para lowercase e remove acentos/ç
+    // Normaliza e remove acentos/ç
     const norm = cleaned
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
 
-    // mapeia variações para a chave exata
+    // Alias para small variations
     const alias = {
-      tbvconstrucao:    'tbvconstruction',
-      'tbv-construcao': 'tbvconstruction'
+      tbvconstrucao:       'tbvconstruction',
+      'tbv-construcao':    'tbvconstruction'
+      // você pode adicionar outros aliases aqui
     };
 
     const trigger = alias[norm] || norm;
-
     console.log(
       `[checkTriggerInText] raw="${raw}", cleaned="${cleaned}", ` +
       `norm="${norm}", trigger="${trigger}"`
     );
 
+    // ✅ Tratamento do token de encerramento genérico
+    if (trigger === 'finalizando-atendimento') {
+      await client.sendText(message.from, '👍 Até mais! Quando quiser retomar, basta digitar o gatilho apropriado.');
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+
+    // ✅ Dispara handler se for trigger válido
     if (trigger && trigger !== 'nenhum' && TRIGGERS.hasOwnProperty(trigger)) {
       await TRIGGERS[trigger](session, message, text, sessionName, email);
       return;
     }
 
-
-    // 💬 Fallback: só se contiver @broker ou tiver histórico
+    // 💬 Fallback: só responde se tiver @broker ou histórico
     const containsTrigger = lowerText.includes('@broker');
-    const hasHistory     = stored?.history?.length > 0;
+    const hasHistory      = stored?.history?.length > 0;
 
     if (!containsTrigger && !hasHistory) return;
 
@@ -1908,6 +1916,7 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro crítico em processText: ${err.message}`, err.stack);
   }
 }
+
 
 
 
