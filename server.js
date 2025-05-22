@@ -1481,11 +1481,7 @@ async function handleTriggerTBVConstruction(session, message, userInput, session
 }
 
 
-async function handleTriggerLembrete(session, message, input) {
-  return handleTriggerWithConversation('lembrete', session, message, input);
-}
-
-async function handleTriggerMortgage(session, message, userInput, sessionName, email) {
+async function handleTriggerTBVRentabilidade(session, message, userInput, sessionName, email) {
   const client   = session.client;
   const sender   = message.from;
   const convoKey = `${session.myNumber}:${sender}`;
@@ -1493,11 +1489,11 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'tbvmortgage'
+    activeTrigger: 'tbvrentabilidade'
   };
 
-  // Carrega o prompt “TBVMorgage” (arquivo prompts/TBVMorgage.txt)
-  const prompt = loadPrompt('TBVMortgage');
+  // Carrega o prompt “TBVRentabilidade” (arquivo prompts/TBVRentabilidade.txt)
+  const prompt = loadPrompt('TBVRentabilidade');
 
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
@@ -1509,8 +1505,8 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
 
   // Chama o GPT
   const gptResponse = await openai.chat.completions.create({
-    model:      ASSISTANT_MODEL,
-    messages:   convo.history,
+    model:       ASSISTANT_MODEL,
+    messages:    convo.history,
     temperature: 0.2
   });
 
@@ -1521,7 +1517,7 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
   if (assistantResponse === 'finalizando-atendimento') {
     await client.sendText(
       sender,
-      '👍 Até mais! Quando quiser retomar o financiamento, é só digitar o gatilho novamente.'
+      '👍 Até mais! Quando quiser retomar a análise de rentabilidade, é só digitar o gatilho novamente.'
     );
     CONVERSATIONS.delete(convoKey);
     return;
@@ -1533,11 +1529,59 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
 }
 
 
+  async function handleTriggerMortgage(session, message, userInput, sessionName, email) {
+    const client   = session.client;
+    const sender   = message.from;
+    const convoKey = `${session.myNumber}:${sender}`;
+
+    // Inicia ou recupera o estado da conversa
+    let convo = CONVERSATIONS.get(convoKey) || {
+      history: [],
+      activeTrigger: 'tbvmortgage'
+    };
+
+    // Carrega o prompt “TBVMorgage” (arquivo prompts/TBVMorgage.txt)
+    const prompt = loadPrompt('TBVMortgage');
+
+    // Se for a primeira interação, injeta o system prompt
+    if (convo.history.length === 0) {
+      convo.history.push({ role: 'system', content: prompt });
+    }
+
+    // Empilha a mensagem do usuário
+    convo.history.push({ role: 'user', content: userInput });
+
+    // Chama o GPT
+    const gptResponse = await openai.chat.completions.create({
+      model:      ASSISTANT_MODEL,
+      messages:   convo.history,
+      temperature: 0.2
+    });
+
+    const assistantResponse = gptResponse.choices[0].message.content.trim();
+    convo.history.push({ role: 'assistant', content: assistantResponse });
+
+    // Se o GPT devolveu o token de encerramento, finaliza aqui:
+    if (assistantResponse === 'finalizando-atendimento') {
+      await client.sendText(
+        sender,
+        '👍 Até mais! Quando quiser retomar o financiamento, é só digitar o gatilho novamente.'
+      );
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+
+    // Caso contrário, envia a resposta normal e mantém o estado
+    await client.sendText(sender, assistantResponse);
+    CONVERSATIONS.set(convoKey, convo);
+  }
+
+
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
   tbvevents: handleTBVEventosConversation,
   tbvconstruction: handleTriggerTBVConstruction,
-  lembrete: handleTriggerLembrete,
+  tbvrentabilidade: handleTriggerTBVRentabilidade,
   tbvmortgage: handleTriggerMortgage
 };
 
