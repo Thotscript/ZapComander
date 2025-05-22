@@ -31,8 +31,11 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 ---
 
 ### `TBVMortgage`
+
+**Entenda o CONTEXTO E DEPOIS:**
+
 **Ative apenas se:**
-- A mensagem menciona **financiamento imobiliário**  
+- A mensagem menciona **financiamento imobiliário** ou sugere **simulação de financiamento, verificacao de condições, cálculo de parcelas ou custos**.
   **E**  
 - Contém **intenção de simular, calcular, saber parcelas ou condições**.
 
