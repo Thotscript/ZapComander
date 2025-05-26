@@ -423,9 +423,11 @@ app.get('/auth/statusfinder', async (req, res) => {
   }
 
   try {
-    // Busca a sessão mais recente
+    // Busca a sessão mais recente com formatação de data no mesmo fuso que foi gravado
     const [rows] = await pool.query(
-      `SELECT sessao_numero AS numero, ultimo_acesso
+      `SELECT 
+         sessao_numero AS numero,
+         DATE_FORMAT(ultimo_acesso, '%Y-%m-%d %H:%i:%s') AS ultimo_acesso
        FROM logs_sessao
        WHERE email = ?
        ORDER BY ultimo_acesso DESC
@@ -448,6 +450,7 @@ app.get('/auth/statusfinder', async (req, res) => {
     return res.status(500).json({ error: 'Erro ao acessar o banco de dados.' });
   }
 });
+
 
 
 // ----------------------------------------------------------------------------------
