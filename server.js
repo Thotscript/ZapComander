@@ -86,6 +86,11 @@ function extractPhoneNumberInfo(sender) {
   };
 }
 
+function normalizeToWhatsAppNumber(formatted) {
+  const clean = formatted.replace(/\D/g, '');
+  return `${clean}@c.us`;
+}
+
 function normalizarHorario(input, timezone) {
   const now = DateTime.now().setZone(timezone);
   const str = input.toLowerCase().trim();
@@ -142,25 +147,22 @@ server.on('clientError', (err, socket) => {
 const wss = new WebSocket.Server({ server });
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-const PORT = process.env.PORT;
 const SESSIONS = new Map();
 const TOKEN_DIR        = '/root/wpptalk_server/tokens';
 const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
-const SESSIONS_FILE    = path.join(TOKEN_DIR, 'sessions.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR    = path.join(__dirname, 'audios');
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
   path: TOKEN_DIR
 });
-const TRIGGER_KEYWORDS = ["@broker"];
+
 const CONVERSATIONS    = new Map();
 const ASSISTANT_MODEL  = "gpt-4o-mini";
 const SESSION_FILTERS = new Map();
 
 [ 
   path.dirname(FILTERS_FILE),
-  path.dirname(SESSIONS_FILE),
   SESSION_LOGS_DIR,
   QR_CODES_DIR,
   AUDIO_DIR,
@@ -1759,11 +1761,16 @@ async function processAudio(sessionName, message) {
     };
 
     try {
-      await saveSessionLog(logData);
+      const whatsappNumero = normalizeToWhatsAppNumber(sessionName);
+      await saveSessionLog({
+        email: session.email,
+        numero: whatsappNumero
+      });
       console.log('✅ Log de sessão salvo no banco.');
     } catch (err) {
       console.error('❌ Erro ao gravar log de sessão no banco:', err);
     }
+
 
     try {
       const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
