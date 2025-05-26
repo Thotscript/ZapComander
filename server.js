@@ -1762,10 +1762,13 @@ async function processAudio(sessionName, message) {
 
     try {
       const whatsappNumero = normalizeToWhatsAppNumber(sessionName);
+
       await saveSessionLog({
-        email: session.email,
-        numero: whatsappNumero
+        email:         session.email,
+        sessaoNumero:  sessionName,     // mantém o FK correto em sessoes.numero
+        whatsappNumero               // usado internamente para extrair o timezone
       });
+
       console.log('✅ Log de sessão salvo no banco.');
     } catch (err) {
       console.error('❌ Erro ao gravar log de sessão no banco:', err);

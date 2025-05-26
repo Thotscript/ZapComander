@@ -39,20 +39,16 @@ function extractPhoneNumberInfo(sender) {
   return { ddi, timezone };
 }
 
-/**
- * Salva o log usando o horário **já convertido** para o fuso do usuário.
- * Parâmetros:
- *   - email: string
- *   - numero: string (ex: "5511999999999@c.us")
- */
-export async function saveSessionLog({ email, numero }) {
-  const { timezone } = extractPhoneNumberInfo(numero);
+export async function saveSessionLog({ email, sessaoNumero, whatsappNumero }) {
+  // 1) extrai o timezone do whatsappNumero
+  const { timezone } = extractPhoneNumberInfo(whatsappNumero);
 
-  // formata "YYYY-MM-DD HH:mm:ss" no fuso local ou UTC se não identificado
+  // 2) formata o timestamp no fuso certo
   const ultimoAcessoLocal = timezone
     ? DateTime.now().setZone(timezone).toFormat('yyyy-MM-dd HH:mm:ss')
     : DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss');
 
+  // 3) grava usando SESSAO_NUMERO = sessaoNumero
   const sql = `
     INSERT INTO logs_sessao (email, sessao_numero, ultimo_acesso)
     VALUES (?, ?, ?)
@@ -60,6 +56,5 @@ export async function saveSessionLog({ email, numero }) {
       sessao_numero = VALUES(sessao_numero),
       ultimo_acesso = VALUES(ultimo_acesso)
   `;
-
-  await db.query(sql, [email, numero, ultimoAcessoLocal]);
+  await db.query(sql, [email, sessaoNumero, ultimoAcessoLocal]);
 }
