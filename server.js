@@ -19,6 +19,7 @@ import { criarOuIgnorarUsuario } from './db/usuarios.js';
 import { excluirSessaoPorEmail } from './db/sessions.js';
 import { insertDefaultFilters } from './db/default-filter.js';
 import { criarOuIgnorarSessao } from './db/sessions.js';
+import { saveFiltersToDB } from './db/saveFilters.js';
 import { saveSessionLog } from './db/logs.js';
 import { saveEventoToDB } from './db/eventos.js';
 import { constants } from 'crypto';
