@@ -1,11 +1,14 @@
 import db from './index.js';
 
 export async function saveFiltersToDB(email, sessao_numero, filters) {
-  // nothing to do if there are no filters
-  const entries = Object.entries(filters);
+  // remove blockedNumbers para não gerar tupla inválida
+  const { blockedNumbers, ...simpleFilters } = filters;
+
+  // nada a fazer se não houver outros filtros
+  const entries = Object.entries(simpleFilters);
   if (entries.length === 0) return;
 
-  // build rows: [email, sessao_numero, filtro_nome, valor]
+  // monta as linhas: [email, sessao_numero, filtro_nome, valor]
   const rows = entries.map(([filtro_nome, valor]) => {
     const valorNormalized = typeof valor === 'boolean'
       ? (valor ? 1 : 0)

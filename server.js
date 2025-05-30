@@ -209,7 +209,6 @@ function getTimezoneFromNumber(number) {
 
 // no escopo global
 let reminderInterval;
-
 /**
  * @param {import('@wppconnect-team/wppconnect').Client} botClient
  */
@@ -790,21 +789,22 @@ app.post('/auth/filtro', async (req, res) => {
   if (!sessionName) {
     return res.status(400).json({ message: 'sessionName é obrigatório.' });
   }
-
   if (!email) {
     return res.status(400).json({ message: 'Email é obrigatório para salvar no banco de dados.' });
   }
 
+  // Fluxo especial para blockedNumbers
   if (req.body.hasOwnProperty('blockedNumbers')) {
-    // Fluxo especial para blockedNumbers
-    const novos = (Array.isArray(blockedNumbers)
-      ? blockedNumbers
-      : [blockedNumbers]
-    ).map(String);
-
     try {
+      // Garante array de strings
+      const novos = (Array.isArray(blockedNumbers) ? blockedNumbers : [blockedNumbers])
+        .map(String);
+
+      // Carrega os existentes
       const existentes = await loadBlockedNumbersFromDB(email, sessionName);
+      // Filtra apenas os novos
       const soNovos = novos.filter(num => !existentes.includes(num));
+
       if (soNovos.length === 0) {
         return res.json({
           message: 'Nenhum número novo para adicionar.',
@@ -812,7 +812,14 @@ app.post('/auth/filtro', async (req, res) => {
         });
       }
 
-      const rows = soNovos.map(num => [ email, sessionName, 'blockedNumbers', num ]);
+      // Monta uma linha por número (4 colunas cada)
+      const rows = soNovos.map(num => [
+        email,
+        sessionName,
+        'blockedNumbers',
+        num
+      ]);
+
       await pool.query(
         'INSERT INTO filtros (email, sessao_numero, filtro_nome, valor) VALUES ?',
         [rows]
@@ -829,7 +836,7 @@ app.post('/auth/filtro', async (req, res) => {
     }
   }
 
-  // Se chegou aqui, é porque não era blockedNumbers
+  // Fluxo para os demais filtros
   const currentFilters = SESSION_FILTERS.get(sessionName) || {};
   const updatedFilters = {
     ...currentFilters,
@@ -840,12 +847,11 @@ app.post('/auth/filtro', async (req, res) => {
     ...(summarizeMessages !== undefined && { summarizeMessages: !!summarizeMessages }),
     ...(longmessage !== undefined && { longmessage: !!longmessage }),
   };
-
   SESSION_FILTERS.set(sessionName, updatedFilters);
 
   try {
     await saveFiltersToDB(email, sessionName, updatedFilters);
-    return res.json({ message: `Filtros atualizados com sucesso.` });
+    return res.json({ message: 'Filtros atualizados com sucesso.' });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: 'Não foi possível salvar filtros.' });
@@ -2091,7 +2097,7 @@ const restoreSessions = async () => {
       }
     };
     
-    const restoreSession = async ({ sessionName, email }) => {
+const restoreSession = async ({ sessionName, email }) => {
   try {
     console.log(`⏳ Restaurando sessão: ${sessionName}`);
     
