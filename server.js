@@ -159,7 +159,7 @@ const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
 });
 
 const CONVERSATIONS    = new Map();
-const ASSISTANT_MODEL  = "gpt-4o-mini";
+const ASSISTANT_MODEL  = "gpt-4.1";
 const SESSION_FILTERS = new Map();
 
 [ 
@@ -1260,7 +1260,7 @@ function loadPrompt(promptName) {
 
 async function sendPromptToGPT(promptSystemInstructions, userText) {
   const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1',
     messages: [
       { role: 'system', content: promptSystemInstructions },
       { role: 'user', content: userText }
@@ -1625,7 +1625,7 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
 
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1',
     messages: [
       { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
       { role: 'user', content: checkPrompt }
@@ -1733,7 +1733,7 @@ async function processAudio(sessionName, message) {
     const response_gpt = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: "gpt-4o-mini",
+        model: "gpt-4.1",
         messages: [
           { role: "system", content: prompt_base },
           { role: "user", content: transcript }
@@ -1847,7 +1847,7 @@ app.get('/api/agentes/:id', async (req, res) => {
 
 app.post('/api/agentes', async (req, res) => {
   try {
-    const { id, nome, trigger, prompt, modelo = 'gpt-4o-mini', ativo = 1 } = req.body;
+    const { id, nome, trigger, prompt, modelo = 'gpt-4.1', ativo = 1 } = req.body;
 
     if (!nome || !trigger || !prompt) {
       return res.status(400).json({ erro: 'Campos obrigatórios: nome, trigger e prompt' });
@@ -1898,7 +1898,7 @@ async function checkTriggerInText(text) {
   const userContent = `Mensagem:\n"""${text}"""`;
 
   const result = await axios.post('https://api.openai.com/v1/chat/completions', {
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1',
     messages: [
       { role: 'system', content: rawPrompt },
       { role: 'user', content: userContent }
