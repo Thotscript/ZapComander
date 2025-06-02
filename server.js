@@ -1705,39 +1705,57 @@ async function processAudio(sessionName, message) {
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
+    // Lógica aprimorada para tradução/transcrição
     let languagePrompt = '';
     if (filtros.translation_enabled) {
       switch (filtros.language) {
-        case 'pt-br': languagePrompt = 'traduzir qualquer mensagem para português'; break;
-        case 'en-us': languagePrompt = 'traduzir qualquer mensagem para inglês'; break;
-        case 'es-es': languagePrompt = 'traduzir qualquer mensagem para espanhol'; break;
-        default: console.warn('Idioma não reconhecido para tradução:', filtros.language);
+        case 'pt-br': 
+          languagePrompt = 'OBRIGATORIAMENTE traduzir TODO o conteúdo para português brasileiro. Se o áudio já estiver em português, apenas corrija a gramática mantendo o idioma português'; 
+          break;
+        case 'en-us': 
+          languagePrompt = 'OBRIGATORIAMENTE traduzir TODO o conteúdo para inglês americano. Se o áudio já estiver em inglês, apenas corrija a gramática mantendo o idioma inglês'; 
+          break;
+        case 'es-es': 
+          languagePrompt = 'OBRIGATORIAMENTE traduzir TODO o conteúdo para espanhol. Se o áudio já estiver em espanhol, apenas corrija a gramática mantendo o idioma espanhol'; 
+          break;
+        default: 
+          console.warn('Idioma não reconhecido para tradução:', filtros.language);
       }
     }
 
+    // Construção dos prompts com maior especificidade
     let prompt_base = '';
     if (filtros.summarizeMessages && filtros.longmessage) {
-      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio, devolver o texto corrigido e então listar os tópicos do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática, mantenha o conteúdo original e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else if (filtros.summarizeMessages) {
-      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática de mensagens transcritas de áudio e listar os tópicos. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else if (filtros.longmessage) {
-      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática mantendo o texto original o máximo possível. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática mantendo o texto original o máximo possível. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else {
-      prompt_base = `Você é um assistente de IA que deve ${languagePrompt ? languagePrompt + ' e ' : ''}corrigir a gramática do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija apenas a gramática do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     }
 
     const recipient = (filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1)
       ? myNumber
       : message.from;
 
+    // Usar modelo válido da OpenAI
     const response_gpt = await axios.post(
       'https://api.openai.com/v1/chat/completions',
       {
-        model: "gpt-4.1",
+        model: "gpt-4.1", // Voltando ao modelo original
         messages: [
-          { role: "system", content: prompt_base },
-          { role: "user", content: transcript }
-        ]
+          { 
+            role: "system", 
+            content: prompt_base 
+          },
+          { 
+            role: "user", 
+            content: `Transcrição do áudio: ${transcript}` // Contexto mais claro
+          }
+        ],
+        temperature: 0.3, // Controle de criatividade para mais consistência
+        max_tokens: 2000 // Limite de tokens para evitar respostas muito longas
       },
       {
         headers: {
@@ -1775,15 +1793,14 @@ async function processAudio(sessionName, message) {
 
       await saveSessionLog({
         email:         session.email,
-        sessaoNumero:  sessionName,     // mantém o FK correto em sessoes.numero
-        whatsappNumero               // usado internamente para extrair o timezone
+        sessaoNumero:  sessionName,
+        whatsappNumero
       });
 
       console.log('✅ Log de sessão salvo no banco.');
     } catch (err) {
       console.error('❌ Erro ao gravar log de sessão no banco:', err);
     }
-
 
     try {
       const logFilePath = path.join(SESSION_LOGS_DIR, `${sessionName}.json`);
