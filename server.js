@@ -1745,14 +1745,8 @@ async function processAudio(sessionName, message) {
       {
         model: "gpt-4.1", // Voltando ao modelo original
         messages: [
-          { 
-            role: "system", 
-            content: prompt_base 
-          },
-          { 
-            role: "user", 
-            content: `Transcrição do áudio: ${transcript}` // Contexto mais claro
-          }
+          { role: "system", content: prompt_base },
+          { role: "user", content: transcript }
         ],
         temperature: 0.3, // Controle de criatividade para mais consistência
         max_tokens: 2000 // Limite de tokens para evitar respostas muito longas
