@@ -552,7 +552,24 @@ app.post('/auth/login', async (req, res) => {
       autoClose: 45000,
       puppeteerOptions: {
         userDataDir: sessionPath,
-
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-background-networking',
+          '--disable-background-timer-throttling',
+          '--disable-client-side-phishing-detection',
+          '--disable-default-apps',
+          '--disable-extensions',
+          '--disable-hang-monitor',
+          '--disable-popup-blocking',
+          '--disable-sync',
+          '--disable-translate',
+          '--metrics-recording-only',
+          '--no-first-run',
+          '--safebrowsing-disable-auto-update',
+          '--mute-audio'
+        ]
       }
     });
 
