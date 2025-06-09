@@ -552,24 +552,7 @@ app.post('/auth/login', async (req, res) => {
       autoClose: 45000,
       puppeteerOptions: {
         userDataDir: sessionPath,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-background-networking',
-          '--disable-background-timer-throttling',
-          '--disable-client-side-phishing-detection',
-          '--disable-default-apps',
-          '--disable-extensions',
-          '--disable-hang-monitor',
-          '--disable-popup-blocking',
-          '--disable-sync',
-          '--disable-translate',
-          '--metrics-recording-only',
-          '--no-first-run',
-          '--safebrowsing-disable-auto-update',
-          '--mute-audio'
-        ]
+
       }
     });
 
@@ -1621,32 +1604,52 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   }
 
   const rawPrompt = loadPrompt('TBV-Router');
+  
+  // CORREÇÃO: Garantir que checkPrompt seja uma string válida
   const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
-
-
-  const result = await axios.post('https://api.openai.com/v1/chat/completions', {
-    model: 'gpt-4.1',
-    messages: [
-      { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
-      { role: 'user', content: checkPrompt }
-    ]
-  }, {
-    headers: {
-      'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  try {
-    fs.unlinkSync(tempFile);
-  } catch (err) {
-    console.warn(`⚠️ Arquivo já deletado ou inexistente: ${tempFile}`);
+  
+  // CORREÇÃO: Verificar se os valores são strings válidas antes de enviar
+  if (!transcript || typeof transcript !== 'string') {
+    console.error('❌ Transcript inválido:', transcript);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript: '' };
   }
 
-  const trigger = result.data.choices[0].message.content.trim().toLowerCase();
-  return { trigger, transcript };
-}
+  if (!checkPrompt || typeof checkPrompt !== 'string') {
+    console.error('❌ CheckPrompt inválido:', checkPrompt);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript };
+  }
 
+  try {
+    const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4.1', // Mantendo o modelo original conforme especificado
+      messages: [
+        { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+        { role: 'user', content: checkPrompt }
+      ]
+    }, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    try {
+      fs.unlinkSync(tempFile);
+    } catch (err) {
+      console.warn(`⚠️ Arquivo já deletado ou inexistente: ${tempFile}`);
+    }
+
+    const trigger = result.data.choices[0].message.content.trim().toLowerCase();
+    return { trigger, transcript };
+    
+  } catch (apiError) {
+    console.error('❌ Erro na API OpenAI:', apiError?.response?.data || apiError.message);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript };
+  }
+}
 
 // =======================================================================================================================================================
 
@@ -1705,6 +1708,12 @@ async function processAudio(sessionName, message) {
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
+    // CORREÇÃO: Verificar se transcript é válido antes de usar
+    if (!transcript || typeof transcript !== 'string') {
+      console.error('❌ Transcript inválido para processamento:', transcript);
+      return;
+    }
+
     // Lógica aprimorada para tradução/transcrição
     let languagePrompt = '';
     if (filtros.translation_enabled) {
@@ -1739,31 +1748,46 @@ async function processAudio(sessionName, message) {
       ? myNumber
       : message.from;
 
-    // Usar modelo válido da OpenAI
-    const response_gpt = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        model: "gpt-4.1", // Voltando ao modelo original
-        messages: [
-          { role: "system", content: prompt_base },
-          { role: "user", content: transcript }
-        ],
-        temperature: 0.3, // Controle de criatividade para mais consistência
-        max_tokens: 2000 // Limite de tokens para evitar respostas muito longas
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
+    // CORREÇÃO: Validar dados antes de enviar para a API
+    if (!prompt_base || typeof prompt_base !== 'string') {
+      console.error('❌ Prompt base inválido:', prompt_base);
+      return;
+    }
+
+    try {
+      // CORREÇÃO: Usar modelo válido da OpenAI
+      const response_gpt = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: "gpt-4.1", // Mantendo o modelo original conforme especificado
+          messages: [
+            { role: "system", content: prompt_base },
+            { role: "user", content: transcript }
+          ],
+          temperature: 0.3,
+          max_tokens: 2000
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
         }
-      }
-    );
+      );
 
-    const resumo = response_gpt.data.choices[0].message.content;
+      const resumo = response_gpt.data.choices[0].message.content;
 
-    await new Promise(resolve => setTimeout(resolve, 10));
-    await client.sendText(recipient, resumo, { quotedMsg: message.id });
+      await new Promise(resolve => setTimeout(resolve, 10));
+      await client.sendText(recipient, resumo, { quotedMsg: message.id });
 
+    } catch (apiError) {
+      console.error('❌ Erro na API OpenAI durante processamento:', apiError?.response?.data || apiError.message);
+      
+      // Fallback: enviar transcript original se API falhar
+      await client.sendText(recipient, `Transcrição (sem processamento): ${transcript}`, { quotedMsg: message.id });
+    }
+
+    // Limpeza de arquivos
     const inputPathFinal = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
     const denoisedPathFinal = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
 
@@ -1775,6 +1799,7 @@ async function processAudio(sessionName, message) {
       }
     }
 
+    // Logging
     const now = new Date();
     const logData = {
       email: session.email,
@@ -1808,7 +1833,6 @@ async function processAudio(sessionName, message) {
     console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
-
 
 
 
