@@ -1643,21 +1643,34 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
     console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
     console.log('🔍 Debug - checkPrompt length:', checkPrompt.length);
 
-    const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+    // CORREÇÃO: Garantir que checkPrompt seja string pura
+    const cleanCheckPrompt = String(checkPrompt);
+    
+    // Debug adicional
+    console.log('🔍 Debug - cleanCheckPrompt tipo:', typeof cleanCheckPrompt);
+    console.log('🔍 Debug - cleanCheckPrompt é string?', typeof cleanCheckPrompt === 'string');
+
+    const requestPayload = {
       model: 'gpt-4.1', // Mantendo o modelo original conforme especificado
       messages: [
         { 
           role: 'system', 
-          content: 'Você é um classificador de intenções baseado em texto.' 
+          content: String('Você é um classificador de intenções baseado em texto.') 
         },
         { 
           role: 'user', 
-          content: checkPrompt // Garantido que é string
+          content: cleanCheckPrompt
         }
       ],
       temperature: 0.3,
       max_tokens: 100
-    }, {
+    };
+
+    // Debug do payload final
+    console.log('🔍 Debug - Payload messages[1].content tipo:', typeof requestPayload.messages[1].content);
+    console.log('🔍 Debug - Payload completo:', JSON.stringify(requestPayload, null, 2));
+
+    const result = await axios.post('https://api.openai.com/v1/chat/completions', requestPayload, {
       headers: {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json'
@@ -1698,6 +1711,7 @@ async function processAudio(sessionName, message) {
 
     let buffer = await client.decryptFile(message);
 
+    // CORREÇÃO PRINCIPAL: O checkTriggerInAudio já faz a transcrição
     const { trigger, transcript } = await checkTriggerInAudio(
       buffer,
       sessionName.replace(/\W/g, ''),
@@ -1705,9 +1719,45 @@ async function processAudio(sessionName, message) {
       message
     );
 
-    if (trigger !== 'nenhum' && TRIGGERS[trigger]) {
-      await TRIGGERS[trigger](session, message, buffer);
-      return;
+    // NOVA LÓGICA: Se trigger foi identificado, executar o fluxo igual ao processText
+    if (trigger !== 'nenhum') {
+      console.log(`[processAudio] Trigger identificado no áudio: ${trigger}`);
+      
+      // Verificar se é um trigger válido
+      const valid = {
+        tbvevents:          'tbvevents',
+        tbvmortgage:        'tbvmortgage',
+        tbvrentabilidade:   'tbvrentabilidade',
+        tbvprequalificacao: 'tbvprequalificacao',
+        tbvconstruction:    'tbvconstruction',
+        tbvconstrucao:      'tbvconstruction'
+      };
+
+      const normalizedTrigger = trigger.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, '');
+
+      // Aplicar sinônimos
+      const synonyms = { tbvmortage: 'tbvmortgage' };
+      let finalTrigger = synonyms[normalizedTrigger] || normalizedTrigger;
+
+      if (valid[finalTrigger]) {
+        const trigKey = valid[finalTrigger];
+        console.log(`[processAudio] Disparando trigger: ${trigKey}`);
+        
+        // Configurar conversa ativa igual ao processText
+        const convoKey = `${myNumber}:${message.from}`;
+        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+        
+        // Chamar o trigger com o transcript como texto
+        if (TRIGGERS[trigKey]) {
+          await TRIGGERS[trigKey](session, message, transcript, sessionName, email);
+          return;
+        }
+      } else {
+        console.log(`[processAudio] Trigger não reconhecido: '${finalTrigger}'`);
+      }
     }
 
     const filtros = await loadFiltersFromDB(email, sessionName);
@@ -1721,6 +1771,7 @@ async function processAudio(sessionName, message) {
     const inputPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
     const denoisedPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
 
+    // Salvar arquivo para processamento de áudio (duração, etc.)
     await new Promise((resolve, reject) => {
       const stream = fs.createWriteStream(inputPath);
       stream.write(buffer, (err) => err ? reject(err) : resolve());
@@ -1737,11 +1788,13 @@ async function processAudio(sessionName, message) {
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
-    // CORREÇÃO: Verificar se transcript é válido antes de usar
+    // CORREÇÃO: Usar o transcript já obtido do checkTriggerInAudio
     if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
       console.error('❌ Transcript inválido para processamento:', transcript);
-      // Tentar fazer nova transcrição como fallback
+      
+      // Se o transcript do checkTrigger está vazio, fazer nova transcrição apenas como fallback
       try {
+        console.log('🔄 Fazendo nova transcrição como fallback...');
         const formData = new FormData();
         formData.append('file', fs.createReadStream(denoisedPath));
         formData.append('model', 'whisper-1');
@@ -1760,11 +1813,14 @@ async function processAudio(sessionName, message) {
         
         // Usar o fallback transcript
         transcript = fallbackTranscript.trim();
+        console.log('✅ Fallback transcript obtido:', transcript.substring(0, 50) + '...');
       } catch (fallbackError) {
         console.error('❌ Erro no fallback transcript:', fallbackError.message);
         await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
         return;
       }
+    } else {
+      console.log('✅ Usando transcript do checkTrigger:', transcript.substring(0, 50) + '...');
     }
 
     // Lógica aprimorada para tradução/transcrição
@@ -1788,52 +1844,59 @@ async function processAudio(sessionName, message) {
     // Construção dos prompts com maior especificidade
     let prompt_base = '';
     if (filtros.summarizeMessages && filtros.longmessage) {
-      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática, mantenha o conteúdo original e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em processamento de transcrições de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática, mantenha o conteúdo original e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else if (filtros.summarizeMessages) {
-      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em processamento de transcrições de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else if (filtros.longmessage) {
-      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática mantendo o texto original o máximo possível. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em processamento de transcrições de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática mantendo o texto original o máximo possível. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     } else {
-      prompt_base = `Você é um assistente de IA especializado em transcrição de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija apenas a gramática do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
+      prompt_base = `Você é um assistente de IA especializado em processamento de transcrições de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija apenas a gramática do texto. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
     }
 
     const recipient = (filtros.sendForward === true || filtros.sendForward === '1' || filtros.sendForward === 1)
       ? myNumber
       : message.from;
 
-    // CORREÇÃO: Validar dados antes de enviar para a API
-    if (!prompt_base || typeof prompt_base !== 'string' || prompt_base.trim().length === 0) {
-      console.error('❌ Prompt base inválido:', prompt_base);
-      prompt_base = 'Você é um assistente de IA especializado em transcrição de áudio. Corrija apenas a gramática do texto.';
-    }
-
-    // CORREÇÃO: Garantir que transcript seja string válida
-    const finalTranscript = String(transcript).trim();
-    if (finalTranscript.length === 0) {
+    // CORREÇÃO: Garantir que transcript seja string limpa
+    let cleanTranscript = String(transcript).trim();
+    if (cleanTranscript.length === 0) {
       console.error('❌ Transcript final vazio');
       await client.sendText(recipient, 'Erro: Não foi possível transcrever o áudio.', { quotedMsg: message.id });
       return;
     }
 
+    // CORREÇÃO: Garantir que prompt_base seja string limpa
+    let cleanPromptBase = String(prompt_base).trim();
+    if (cleanPromptBase.length === 0) {
+      console.error('❌ Prompt base inválido:', prompt_base);
+      cleanPromptBase = 'Você é um assistente de IA especializado em processamento de transcrições de áudio. Corrija apenas a gramática do texto.';
+    }
+
     try {
-      // CORREÇÃO: Usar modelo válido da OpenAI e garantir tipos corretos
+      // CORREÇÃO: Construir payload com garantias de tipo
+      const requestPayload = {
+        model: "gpt-4.1", // Mantendo o modelo original conforme especificado
+        messages: [
+          { 
+            role: "system", 
+            content: cleanPromptBase
+          },
+          { 
+            role: "user", 
+            content: cleanTranscript
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000
+      };
+
+      // Debug adicional para este payload
+      console.log('🔍 Debug - processAudio payload messages[0].content tipo:', typeof requestPayload.messages[0].content);
+      console.log('🔍 Debug - processAudio payload messages[1].content tipo:', typeof requestPayload.messages[1].content);
+
       const response_gpt = await axios.post(
         'https://api.openai.com/v1/chat/completions',
-        {
-          model: "gpt-4.1", // Mantendo o modelo original conforme especificado
-          messages: [
-            { 
-              role: "system", 
-              content: prompt_base // Garantido que é string válida
-            },
-            { 
-              role: "user", 
-              content: finalTranscript // Garantido que é string válida
-            }
-          ],
-          temperature: 0.3,
-          max_tokens: 2000
-        },
+        requestPayload,
         {
           headers: {
             'Authorization': `Bearer ${OPENAI_API_KEY}`,
@@ -1856,7 +1919,7 @@ async function processAudio(sessionName, message) {
       }
       
       // Fallback: enviar transcript original se API falhar
-      await client.sendText(recipient, `Transcrição (sem processamento): ${finalTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
+      await client.sendText(recipient, `Transcrição (sem processamento): ${cleanTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
     }
 
     // Limpeza de arquivos
