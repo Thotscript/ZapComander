@@ -1589,44 +1589,52 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   formData.append('file', fs.createReadStream(tempFile));
   formData.append('model', 'whisper-1');
 
-  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-    headers: {
-      ...formData.getHeaders(),
-      'Authorization': `Bearer ${OPENAI_API_KEY}`
+  try {
+    const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+      headers: {
+        ...formData.getHeaders(),
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      }
+    });
+
+    // CORREÇÃO: Validar o transcript primeiro
+    let transcript = response.data.text;
+    
+    // Garantir que transcript seja uma string válida
+    if (!transcript || typeof transcript !== 'string') {
+      console.error('❌ Transcript inválido da API Whisper:', transcript);
+      try { fs.unlinkSync(tempFile); } catch (err) {}
+      return { trigger: 'nenhum', transcript: '' };
     }
-  });
 
-  // CORREÇÃO: Validar o transcript primeiro
-  let transcript = response.data.text;
-  
-  // Garantir que transcript seja uma string válida
-  if (!transcript || typeof transcript !== 'string') {
-    console.error('❌ Transcript inválido da API Whisper:', transcript);
-    try { fs.unlinkSync(tempFile); } catch (err) {}
-    return { trigger: 'nenhum', transcript: '' };
-  }
+    // Limpar o transcript de caracteres problemáticos
+    transcript = transcript.trim();
 
-  // Limpar o transcript de caracteres problemáticos
-  transcript = transcript.trim();
+    // Verifica se a mensagem não foi enviada ao número do bot
+    if (message.to !== MAIN_BOT_NUMBER) {
+      try { fs.unlinkSync(tempFile); } catch (err) {}
+      return { trigger: 'nenhum', transcript };
+    }
 
-  // Verifica se a mensagem não foi enviada ao número do bot
-  if (message.to !== MAIN_BOT_NUMBER) {
-    try { fs.unlinkSync(tempFile); } catch (err) {}
-    return { trigger: 'nenhum', transcript };
-  }
-
-  // CORREÇÃO: Validar rawPrompt antes de usar
-  const rawPrompt = loadPrompt('TBV-Router');
-  
-  if (!rawPrompt || typeof rawPrompt !== 'string') {
-    console.error('❌ RawPrompt inválido:', rawPrompt);
-    try { fs.unlinkSync(tempFile); } catch (err) {}
-    return { trigger: 'nenhum', transcript };
-  }
-  
-  // CORREÇÃO: Construir checkPrompt com validação
-  const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
-  
+    // CORREÇÃO: Validar rawPrompt antes de usar
+    const rawPrompt = loadPrompt('TBV-Router');
+    
+    if (!rawPrompt || typeof rawPrompt !== 'string') {
+      console.error('❌ RawPrompt inválido:', rawPrompt);
+      try { fs.unlinkSync(tempFile); } catch (err) {}
+      return { trigger: 'nenhum', transcript };
+    }
+    
+    // CORREÇÃO: Construir checkPrompt com validação e garantir que seja string
+    const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
+    
+    // Validar se checkPrompt é uma string válida
+    if (typeof checkPrompt !== 'string' || checkPrompt.length === 0) {
+      console.error('❌ CheckPrompt inválido:', typeof checkPrompt, checkPrompt?.length);
+      try { fs.unlinkSync(tempFile); } catch (err) {}
+      return { trigger: 'nenhum', transcript };
+    }
+    
     console.log('🔍 Debug - transcript tipo:', typeof transcript);
     console.log('🔍 Debug - transcript length:', transcript.length);
     console.log('🔍 Debug - transcript preview:', transcript.substring(0, 50) + '...');
@@ -1635,13 +1643,20 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
     console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
     console.log('🔍 Debug - checkPrompt length:', checkPrompt.length);
 
-  try {
     const result = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: 'gpt-4.1', // Mantendo o modelo original conforme especificado
       messages: [
-        { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
-        { role: 'user', content: checkPrompt }
-      ]
+        { 
+          role: 'system', 
+          content: 'Você é um classificador de intenções baseado em texto.' 
+        },
+        { 
+          role: 'user', 
+          content: checkPrompt // Garantido que é string
+        }
+      ],
+      temperature: 0.3,
+      max_tokens: 100
     }, {
       headers: {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
@@ -1661,7 +1676,7 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   } catch (apiError) {
     console.error('❌ Erro na API OpenAI:', apiError?.response?.data || apiError.message);
     try { fs.unlinkSync(tempFile); } catch (err) {}
-    return { trigger: 'nenhum', transcript };
+    return { trigger: 'nenhum', transcript: '' };
   }
 }
 
@@ -1723,9 +1738,33 @@ async function processAudio(sessionName, message) {
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
     // CORREÇÃO: Verificar se transcript é válido antes de usar
-    if (!transcript || typeof transcript !== 'string') {
+    if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
       console.error('❌ Transcript inválido para processamento:', transcript);
-      return;
+      // Tentar fazer nova transcrição como fallback
+      try {
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(denoisedPath));
+        formData.append('model', 'whisper-1');
+
+        const fallbackResponse = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+          headers: {
+            ...formData.getHeaders(),
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          }
+        });
+
+        const fallbackTranscript = fallbackResponse.data.text;
+        if (!fallbackTranscript || typeof fallbackTranscript !== 'string') {
+          throw new Error('Fallback transcript também inválido');
+        }
+        
+        // Usar o fallback transcript
+        transcript = fallbackTranscript.trim();
+      } catch (fallbackError) {
+        console.error('❌ Erro no fallback transcript:', fallbackError.message);
+        await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
+        return;
+      }
     }
 
     // Lógica aprimorada para tradução/transcrição
@@ -1763,20 +1802,34 @@ async function processAudio(sessionName, message) {
       : message.from;
 
     // CORREÇÃO: Validar dados antes de enviar para a API
-    if (!prompt_base || typeof prompt_base !== 'string') {
+    if (!prompt_base || typeof prompt_base !== 'string' || prompt_base.trim().length === 0) {
       console.error('❌ Prompt base inválido:', prompt_base);
+      prompt_base = 'Você é um assistente de IA especializado em transcrição de áudio. Corrija apenas a gramática do texto.';
+    }
+
+    // CORREÇÃO: Garantir que transcript seja string válida
+    const finalTranscript = String(transcript).trim();
+    if (finalTranscript.length === 0) {
+      console.error('❌ Transcript final vazio');
+      await client.sendText(recipient, 'Erro: Não foi possível transcrever o áudio.', { quotedMsg: message.id });
       return;
     }
 
     try {
-      // CORREÇÃO: Usar modelo válido da OpenAI
+      // CORREÇÃO: Usar modelo válido da OpenAI e garantir tipos corretos
       const response_gpt = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         {
           model: "gpt-4.1", // Mantendo o modelo original conforme especificado
           messages: [
-            { role: "system", content: prompt_base },
-            { role: "user", content: transcript }
+            { 
+              role: "system", 
+              content: prompt_base // Garantido que é string válida
+            },
+            { 
+              role: "user", 
+              content: finalTranscript // Garantido que é string válida
+            }
           ],
           temperature: 0.3,
           max_tokens: 2000
@@ -1797,8 +1850,13 @@ async function processAudio(sessionName, message) {
     } catch (apiError) {
       console.error('❌ Erro na API OpenAI durante processamento:', apiError?.response?.data || apiError.message);
       
+      // Log detalhado do erro para debug
+      if (apiError?.response?.data) {
+        console.error('📋 Detalhes do erro da API:', JSON.stringify(apiError.response.data, null, 2));
+      }
+      
       // Fallback: enviar transcript original se API falhar
-      await client.sendText(recipient, `Transcrição (sem processamento): ${transcript}`, { quotedMsg: message.id });
+      await client.sendText(recipient, `Transcrição (sem processamento): ${finalTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
     }
 
     // Limpeza de arquivos
