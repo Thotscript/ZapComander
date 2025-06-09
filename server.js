@@ -1653,6 +1653,89 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
 
 // =======================================================================================================================================================
 
+async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
+  const formData = new FormData();
+  const tempFile = path.join(AUDIO_DIR, `temp_trigger_${sessionName}_${messageId}.ogg`);
+  fs.writeFileSync(tempFile, buffer);
+  formData.append('file', fs.createReadStream(tempFile));
+  formData.append('model', 'whisper-1');
+
+  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+    headers: {
+      ...formData.getHeaders(),
+      'Authorization': `Bearer ${OPENAI_API_KEY}`
+    }
+  });
+
+  // CORREÇÃO: Validar o transcript primeiro
+  let transcript = response.data.text;
+  
+  // Garantir que transcript seja uma string válida
+  if (!transcript || typeof transcript !== 'string') {
+    console.error('❌ Transcript inválido da API Whisper:', transcript);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript: '' };
+  }
+
+  // Limpar o transcript de caracteres problemáticos
+  transcript = transcript.trim();
+
+  // Verifica se a mensagem não foi enviada ao número do bot
+  if (message.to !== MAIN_BOT_NUMBER) {
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript };
+  }
+
+  // CORREÇÃO: Validar rawPrompt antes de usar
+  const rawPrompt = loadPrompt('TBV-Router');
+  
+  if (!rawPrompt || typeof rawPrompt !== 'string') {
+    console.error('❌ RawPrompt inválido:', rawPrompt);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript };
+  }
+  
+  // CORREÇÃO: Construir checkPrompt com validação
+  const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
+  
+  // Debug logs para identificar problemas
+  console.log('🔍 Debug - transcript tipo:', typeof transcript);
+  console.log('🔍 Debug - transcript length:', transcript.length);
+  console.log('🔍 Debug - rawPrompt tipo:', typeof rawPrompt);
+  console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
+
+  try {
+    const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4.1', // Mantendo o modelo original conforme especificado
+      messages: [
+        { role: 'system', content: 'Você é um classificador de intenções baseado em texto.' },
+        { role: 'user', content: checkPrompt }
+      ]
+    }, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    try {
+      fs.unlinkSync(tempFile);
+    } catch (err) {
+      console.warn(`⚠️ Arquivo já deletado ou inexistente: ${tempFile}`);
+    }
+
+    const trigger = result.data.choices[0].message.content.trim().toLowerCase();
+    return { trigger, transcript };
+    
+  } catch (apiError) {
+    console.error('❌ Erro na API OpenAI:', apiError?.response?.data || apiError.message);
+    try { fs.unlinkSync(tempFile); } catch (err) {}
+    return { trigger: 'nenhum', transcript };
+  }
+}
+
+// =======================================================================================================================================================
+
 async function processAudio(sessionName, message) {
   try {
     if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
