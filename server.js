@@ -1627,11 +1627,13 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   // CORREÇÃO: Construir checkPrompt com validação
   const checkPrompt = `${rawPrompt}\n\nMensagem:\n"""${transcript}"""`;
   
-  // Debug logs para identificar problemas
-  console.log('🔍 Debug - transcript tipo:', typeof transcript);
-  console.log('🔍 Debug - transcript length:', transcript.length);
-  console.log('🔍 Debug - rawPrompt tipo:', typeof rawPrompt);
-  console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
+    console.log('🔍 Debug - transcript tipo:', typeof transcript);
+    console.log('🔍 Debug - transcript length:', transcript.length);
+    console.log('🔍 Debug - transcript preview:', transcript.substring(0, 50) + '...');
+    console.log('🔍 Debug - rawPrompt tipo:', typeof rawPrompt);
+    console.log('🔍 Debug - rawPrompt length:', rawPrompt.length);
+    console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
+    console.log('🔍 Debug - checkPrompt length:', checkPrompt.length);
 
   try {
     const result = await axios.post('https://api.openai.com/v1/chat/completions', {
