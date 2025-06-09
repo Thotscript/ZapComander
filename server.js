@@ -1635,20 +1635,8 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
       return { trigger: 'nenhum', transcript };
     }
     
-    console.log('🔍 Debug - transcript tipo:', typeof transcript);
-    console.log('🔍 Debug - transcript length:', transcript.length);
-    console.log('🔍 Debug - transcript preview:', transcript.substring(0, 50) + '...');
-    console.log('🔍 Debug - rawPrompt tipo:', typeof rawPrompt);
-    console.log('🔍 Debug - rawPrompt length:', rawPrompt.length);
-    console.log('🔍 Debug - checkPrompt tipo:', typeof checkPrompt);
-    console.log('🔍 Debug - checkPrompt length:', checkPrompt.length);
-
     // CORREÇÃO: Garantir que checkPrompt seja string pura
     const cleanCheckPrompt = String(checkPrompt);
-    
-    // Debug adicional
-    console.log('🔍 Debug - cleanCheckPrompt tipo:', typeof cleanCheckPrompt);
-    console.log('🔍 Debug - cleanCheckPrompt é string?', typeof cleanCheckPrompt === 'string');
 
     const requestPayload = {
       model: 'gpt-4.1', // Mantendo o modelo original conforme especificado
@@ -1665,10 +1653,6 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
       temperature: 0.3,
       max_tokens: 100
     };
-
-    // Debug do payload final
-    console.log('🔍 Debug - Payload messages[1].content tipo:', typeof requestPayload.messages[1].content);
-    console.log('🔍 Debug - Payload completo:', JSON.stringify(requestPayload, null, 2));
 
     const result = await axios.post('https://api.openai.com/v1/chat/completions', requestPayload, {
       headers: {
@@ -1719,10 +1703,39 @@ async function processAudio(sessionName, message) {
       message
     );
 
+    const convoKey = `${myNumber}:${message.from}`;
+    const stored = CONVERSATIONS.get(convoKey);
+
+    // 🛑 1) Comando explícito para desligar o bot (via áudio)
+    if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
+      if (stored?.activeTrigger) {
+        await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+        CONVERSATIONS.delete(convoKey);
+      } else {
+        await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
+      }
+      return;
+    }
+
+    // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
+    const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
+    if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
+      await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+
+    // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
+    if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+      console.log(`[processAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
+      await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
+      return;
+    }
+
     // NOVA LÓGICA: Se trigger foi identificado, executar o fluxo igual ao processText
     if (trigger !== 'nenhum') {
       console.log(`[processAudio] Trigger identificado no áudio: ${trigger}`);
-      
+
       // Verificar se é um trigger válido
       const valid = {
         tbvevents:          'tbvevents',
@@ -1747,7 +1760,6 @@ async function processAudio(sessionName, message) {
         console.log(`[processAudio] Disparando trigger: ${trigKey}`);
         
         // Configurar conversa ativa igual ao processText
-        const convoKey = `${myNumber}:${message.from}`;
         CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
         
         // Chamar o trigger com o transcript como texto
@@ -1891,9 +1903,6 @@ async function processAudio(sessionName, message) {
       };
 
       // Debug adicional para este payload
-      console.log('🔍 Debug - processAudio payload messages[0].content tipo:', typeof requestPayload.messages[0].content);
-      console.log('🔍 Debug - processAudio payload messages[1].content tipo:', typeof requestPayload.messages[1].content);
-
       const response_gpt = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         requestPayload,
@@ -1968,7 +1977,6 @@ async function processAudio(sessionName, message) {
     console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
   }
 }
-
 
 
 app.get('/api/agentes', async (req, res) => {
