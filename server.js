@@ -1884,6 +1884,7 @@ async function processAudio(sessionName, message) {
               ...formData.getHeaders(),
               'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
+            timeout: 30000 // 30 segundos de timeout
           }
         );
 
@@ -1894,6 +1895,7 @@ async function processAudio(sessionName, message) {
         }
         
         transcript = transcript.trim();
+        console.log('✅ Transcrição obtida:', transcript.substring(0, 50) + '...');
         
       } catch (transcriptionError) {
         console.error('❌ Erro na transcrição:', transcriptionError.message);
@@ -1916,9 +1918,23 @@ async function processAudio(sessionName, message) {
           );
 
           transcript = fallbackResponse.data.text?.trim() || '';
+          console.log('✅ Transcrição obtida (fallback):', transcript.substring(0, 50) + '...');
           
         } catch (fallbackError) {
           console.error('❌ Erro na transcrição fallback:', fallbackError.message);
+          await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
+          
+          // ✅ LIMPEZA DE ARQUIVOS EM CASO DE ERRO DE TRANSCRIÇÃO
+          const filesToClean = [inputPath, denoisedPath];
+          for (const filePath of filesToClean) {
+            try {
+              if (fs.existsSync(filePath)) {
+                await fs.promises.unlink(filePath);
+              }
+            } catch (err) {
+              console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
+            }
+          }
           return;
         }
       }
@@ -1929,6 +1945,19 @@ async function processAudio(sessionName, message) {
     // Verificar se temos transcript válido
     if (!transcript || transcript.trim().length === 0) {
       console.error('❌ Transcript final vazio após todas as tentativas');
+      await client.sendText(message.from, 'Não foi possível transcrever o áudio.', { quotedMsg: message.id });
+      
+      // ✅ LIMPEZA DE ARQUIVOS EM CASO DE TRANSCRIPT VAZIO
+      const filesToClean = [inputPath, denoisedPath];
+      for (const filePath of filesToClean) {
+        try {
+          if (fs.existsSync(filePath)) {
+            await fs.promises.unlink(filePath);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
+        }
+      }
       return;
     }
 
@@ -1970,44 +1999,91 @@ async function processAudio(sessionName, message) {
     const cleanTranscript = String(transcript).trim();
     const cleanPromptBase = String(prompt_base).trim() || 'Você é um assistente de IA especializado em processamento de transcrições de áudio. Corrija apenas a gramática do texto.';
 
-    try {
-      const requestPayload = {
-        model: "gpt-4.1", // Modelo mais rápido e eficiente
-        messages: [
-          { 
-            role: "system", 
-            content: cleanPromptBase
-          },
-          { 
-            role: "user", 
-            content: cleanTranscript
-          }
-        ],
-        temperature: 0.1,
-      };
-
-      const response_gpt = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        requestPayload,
-        {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-        }
-      );
-
-      const resumo = response_gpt.data.choices[0].message.content;
-      await client.sendText(recipient, resumo, { quotedMsg: message.id });
-
-    } catch (apiError) {
-      console.error('❌ Erro na API OpenAI durante processamento:', apiError?.response?.data || apiError.message);
+    // ✅ PROCESSAMENTO COM GPT - COM RETRY E FALLBACKS
+    let finalMessage = '';
+    let processingSuccess = false;
+    
+    // Tentar com gpt-4.1 primeiro (mantendo o modelo original)
+    const modelsToTry = ['gpt-4.1', 'gpt-4o-mini'];
+    
+    for (let modelIndex = 0; modelIndex < modelsToTry.length && !processingSuccess; modelIndex++) {
+      const currentModel = modelsToTry[modelIndex];
       
-      // Fallback: enviar transcript original se API falhar
-      await client.sendText(recipient, `Transcrição: ${cleanTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
+      for (let attempt = 1; attempt <= 3 && !processingSuccess; attempt++) {
+        try {
+          console.log(`🔄 Tentativa ${attempt}/3 com modelo ${currentModel}...`);
+          
+          const requestPayload = {
+            model: currentModel,
+            messages: [
+              { 
+                role: "system", 
+                content: cleanPromptBase
+              },
+              { 
+                role: "user", 
+                content: cleanTranscript
+              }
+            ],
+            temperature: 0.1,
+          };
+
+          const response_gpt = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            requestPayload,
+            {
+              headers: {
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                'Content-Type': 'application/json'
+              },
+            }
+          );
+
+          finalMessage = response_gpt.data.choices[0].message.content;
+          processingSuccess = true;
+          console.log(`✅ Processamento bem-sucedido com ${currentModel} na tentativa ${attempt}`);
+          
+        } catch (apiError) {
+          console.error(`❌ Erro na tentativa ${attempt} com ${currentModel}:`, apiError?.response?.data || apiError.message);
+          
+          // Se for erro 500 ou de rate limit, aguardar antes de tentar novamente
+          if (apiError?.response?.status === 500 || 
+              apiError?.response?.status === 429 || 
+              apiError?.response?.data?.error?.type === 'server_error') {
+            
+            const waitTime = attempt * 2000; // 2s, 4s, 6s
+            console.log(`⏳ Aguardando ${waitTime}ms antes da próxima tentativa...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+          
+          // Se for a última tentativa com o último modelo, usar fallback
+          if (modelIndex === modelsToTry.length - 1 && attempt === 3) {
+            console.log('🔄 Todas as tentativas falharam, usando processamento simples...');
+            
+            // Fallback simples: apenas corrigir gramática básica
+            try {
+              finalMessage = await simpleTextProcessing(cleanTranscript, filtros);
+              processingSuccess = true;
+            } catch (fallbackError) {
+              console.error('❌ Erro no fallback simples:', fallbackError.message);
+              // Último recurso: enviar transcript original
+              finalMessage = `Transcrição: ${cleanTranscript}\n\nTranscribed by Thebroker.vip`;
+              processingSuccess = true;
+            }
+          }
+        }
+      }
+    }
+    
+    // Enviar resultado final
+    try {
+      await client.sendText(recipient, finalMessage, { quotedMsg: message.id });
+      console.log('✅ Mensagem enviada com sucesso');
+    } catch (sendError) {
+      console.error('❌ Erro ao enviar mensagem:', sendError.message);
     }
 
-    // ✅ LIMPEZA DE ARQUIVOS
+    // ✅ LIMPEZA DE ARQUIVOS APENAS APÓS SUCESSO COMPLETO
     const filesToClean = [inputPath, denoisedPath];
     for (const filePath of filesToClean) {
       try {
@@ -2049,6 +2125,26 @@ async function processAudio(sessionName, message) {
   } catch (error) {
     console.error('❌ Erro ao processar áudio:', error?.response?.data || error.message);
     
+    // ✅ LIMPEZA DE ARQUIVOS EM CASO DE ERRO GERAL
+    try {
+      const sessionSafe = sessionName.replace(/\W/g, '');
+      const inputPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
+      const denoisedPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
+      
+      const filesToClean = [inputPath, denoisedPath];
+      for (const filePath of filesToClean) {
+        try {
+          if (fs.existsSync(filePath)) {
+            await fs.promises.unlink(filePath);
+          }
+        } catch (err) {
+          console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
+        }
+      }
+    } catch (cleanupError) {
+      console.error('❌ Erro durante limpeza:', cleanupError.message);
+    }
+    
     // Tentar enviar mensagem de erro para o usuário
     try {
       if (SESSIONS.has(sessionName)) {
@@ -2061,6 +2157,56 @@ async function processAudio(sessionName, message) {
   }
 }
 
+// ✅ FUNÇÃO DE PROCESSAMENTO SIMPLES COMO FALLBACK
+async function simpleTextProcessing(transcript, filtros) {
+  try {
+    let processedText = transcript.trim();
+    
+    // Aplicar correções básicas de gramática
+    processedText = processedText
+      // Capitalizar primeira letra de frases
+      .replace(/^[a-z]/, match => match.toUpperCase())
+      .replace(/\. [a-z]/g, match => match.toUpperCase())
+      .replace(/\? [a-z]/g, match => match.toUpperCase())
+      .replace(/! [a-z]/g, match => match.toUpperCase())
+      // Remover espaços duplos
+      .replace(/\s+/g, ' ')
+      // Garantir pontuação no final
+      .replace(/[^\.\!\?]$/, match => match + '.');
+    
+    // Aplicar tradução básica se necessário
+    if (filtros.translation_enabled && filtros.language === 'en-us') {
+      // Fallback para tradução básica (apenas alguns casos comuns)
+      const basicTranslations = {
+        'olá': 'hello',
+        'oi': 'hi',
+        'tchau': 'bye',
+        'obrigado': 'thank you',
+        'obrigada': 'thank you',
+        'sim': 'yes',
+        'não': 'no',
+        'bom dia': 'good morning',
+        'boa tarde': 'good afternoon',
+        'boa noite': 'good evening'
+      };
+      
+      for (const [pt, en] of Object.entries(basicTranslations)) {
+        processedText = processedText.replace(new RegExp(`\\b${pt}\\b`, 'gi'), en);
+      }
+    }
+    
+    // Adicionar assinatura
+    if (!processedText.includes('Transcribed by Thebroker.vip')) {
+      processedText += '\n\nTranscribed by Thebroker.vip';
+    }
+    
+    return processedText;
+    
+  } catch (error) {
+    console.error('❌ Erro no processamento simples:', error.message);
+    return `${transcript}\n\nTranscribed by Thebroker.vip`;
+  }
+}
 
 app.get('/api/agentes', async (req, res) => {
   try {
