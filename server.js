@@ -1667,7 +1667,7 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
           content: cleanCheckPrompt
         }
       ],
-      temperature: 0.3,
+      temperature: 0.2,
       max_tokens: 100
     };
 
@@ -1884,7 +1884,6 @@ async function processAudio(sessionName, message) {
               ...formData.getHeaders(),
               'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
-            timeout: 30000 // 30 segundos de timeout
           }
         );
 
@@ -1913,7 +1912,6 @@ async function processAudio(sessionName, message) {
                 ...formDataFallback.getHeaders(),
                 'Authorization': `Bearer ${OPENAI_API_KEY}`
               },
-              timeout: 30000
             }
           );
 
@@ -1985,8 +1983,7 @@ async function processAudio(sessionName, message) {
             content: cleanTranscript
           }
         ],
-        temperature: 0.3,
-        max_tokens: 2000
+        temperature: 0.1,
       };
 
       const response_gpt = await axios.post(
@@ -1997,7 +1994,6 @@ async function processAudio(sessionName, message) {
             'Authorization': `Bearer ${OPENAI_API_KEY}`,
             'Content-Type': 'application/json'
           },
-          timeout: 30000 // 30 segundos de timeout
         }
       );
 
