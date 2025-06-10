@@ -2144,16 +2144,6 @@ async function processAudio(sessionName, message) {
     } catch (cleanupError) {
       console.error('❌ Erro durante limpeza:', cleanupError.message);
     }
-    
-    // Tentar enviar mensagem de erro para o usuário
-    try {
-      if (SESSIONS.has(sessionName)) {
-        const session = SESSIONS.get(sessionName);
-        await session.client.sendText(message.from, 'Erro interno ao processar áudio. Tente novamente.');
-      }
-    } catch (sendError) {
-      console.error('❌ Erro ao enviar mensagem de erro:', sendError.message);
-    }
   }
 }
 
