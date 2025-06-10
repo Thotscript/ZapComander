@@ -1711,86 +1711,99 @@ async function processAudio(sessionName, message) {
     }
 
     let buffer = await client.decryptFile(message);
-
-    // CORREÇÃO PRINCIPAL: O checkTriggerInAudio já faz a transcrição
-    const { trigger, transcript } = await checkTriggerInAudio(
-      buffer,
-      sessionName.replace(/\W/g, ''),
-      message.id,
-      message
-    );
+    let transcript = '';
+    let trigger = 'nenhum';
 
     const convoKey = `${myNumber}:${message.from}`;
     const stored = CONVERSATIONS.get(convoKey);
 
-    // 🛑 1) Comando explícito para desligar o bot (via áudio)
-    if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
-      if (stored?.activeTrigger) {
-        await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
-        CONVERSATIONS.delete(convoKey);
-      } else {
-        await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
-      }
-      return;
-    }
+    // ✅ NOVA LÓGICA: Só verificar triggers se a mensagem foi enviada para o bot
+    if (message.to === MAIN_BOT_NUMBER) {
+      console.log(`🤖 Mensagem para o bot detectada, verificando triggers...`);
+      
+      // Executar checkTriggerInAudio apenas para mensagens do bot
+      const triggerResult = await checkTriggerInAudio(
+        buffer,
+        sessionName.replace(/\W/g, ''),
+        message.id,
+        message
+      );
+      
+      trigger = triggerResult.trigger;
+      transcript = triggerResult.transcript;
 
-    // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
-    const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
-    if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
-      await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
-      CONVERSATIONS.delete(convoKey);
-      return;
-    }
-
-    // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
-    if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-      console.log(`[processAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
-      await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
-      return;
-    }
-
-    // NOVA LÓGICA: Se trigger foi identificado, executar o fluxo igual ao processText
-    if (trigger !== 'nenhum') {
-      console.log(`[processAudio] Trigger identificado no áudio: ${trigger}`);
-
-      // Verificar se é um trigger válido
-      const valid = {
-        tbvevents:          'tbvevents',
-        tbvmortgage:        'tbvmortgage',
-        tbvrentabilidade:   'tbvrentabilidade',
-        tbvprequalificacao: 'tbvprequalificacao',
-        tbvconstruction:    'tbvconstruction',
-        tbvconstrucao:      'tbvconstruction'
-      };
-
-      const normalizedTrigger = trigger.toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]/g, '');
-
-      // Aplicar sinônimos
-      const synonyms = { tbvmortage: 'tbvmortgage' };
-      let finalTrigger = synonyms[normalizedTrigger] || normalizedTrigger;
-
-      if (valid[finalTrigger]) {
-        const trigKey = valid[finalTrigger];
-        console.log(`[processAudio] Disparando trigger: ${trigKey}`);
-        
-        // Configurar conversa ativa igual ao processText
-        CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
-        
-        // Chamar o trigger com o transcript como texto
-        if (TRIGGERS[trigKey]) {
-          await TRIGGERS[trigKey](session, message, transcript, sessionName, email);
-          return;
+      // 🛑 1) Comando explícito para desligar o bot (via áudio)
+      if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
+        if (stored?.activeTrigger) {
+          await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+          CONVERSATIONS.delete(convoKey);
+        } else {
+          await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
         }
-      } else {
-        console.log(`[processAudio] Trigger não reconhecido: '${finalTrigger}'`);
+        return;
       }
+
+      // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
+      const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
+      if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
+        await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
+        CONVERSATIONS.delete(convoKey);
+        return;
+      }
+
+      // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
+      if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+        console.log(`[processAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
+        await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
+        return;
+      }
+
+      // ✅ 4) Se trigger foi identificado, executar o fluxo
+      if (trigger !== 'nenhum') {
+        console.log(`[processAudio] Trigger identificado no áudio: ${trigger}`);
+
+        // Verificar se é um trigger válido
+        const valid = {
+          tbvevents:          'tbvevents',
+          tbvmortgage:        'tbvmortgage',
+          tbvrentabilidade:   'tbvrentabilidade',
+          tbvprequalificacao: 'tbvprequalificacao',
+          tbvconstruction:    'tbvconstruction',
+          tbvconstrucao:      'tbvconstruction'
+        };
+
+        const normalizedTrigger = trigger.toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '');
+
+        // Aplicar sinônimos
+        const synonyms = { tbvmortage: 'tbvmortgage' };
+        let finalTrigger = synonyms[normalizedTrigger] || normalizedTrigger;
+
+        if (valid[finalTrigger]) {
+          const trigKey = valid[finalTrigger];
+          console.log(`[processAudio] Disparando trigger: ${trigKey}`);
+          
+          // Configurar conversa ativa
+          CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+          
+          // Chamar o trigger com o transcript como texto
+          if (TRIGGERS[trigKey]) {
+            await TRIGGERS[trigKey](session, message, transcript, sessionName, email);
+            return;
+          }
+        } else {
+          console.log(`[processAudio] Trigger não reconhecido: '${finalTrigger}'`);
+        }
+      }
+    } else {
+      console.log(`📱 Mensagem normal (não para o bot), processando transcrição padrão...`);
     }
 
+    // ✅ FLUXO NORMAL DE TRANSCRIÇÃO (para mensagens não direcionadas ao bot OU quando não há trigger)
+    
     const filtros = await loadFiltersFromDB(email, sessionName);
-
     const contact = await client.getContact(message.from);
     const senderName = contact.name || contact.pushname || message.from;
 
@@ -1817,42 +1830,39 @@ async function processAudio(sessionName, message) {
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
-    // CORREÇÃO: Usar o transcript já obtido do checkTriggerInAudio
+    // Se já temos transcript do checkTrigger, usar ele; senão, fazer nova transcrição
     if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
-      console.error('❌ Transcript inválido para processamento:', transcript);
+      console.log('🔄 Fazendo transcrição do áudio...');
       
-      // Se o transcript do checkTrigger está vazio, fazer nova transcrição apenas como fallback
       try {
-        console.log('🔄 Fazendo nova transcrição como fallback...');
         const formData = new FormData();
         formData.append('file', fs.createReadStream(denoisedPath));
         formData.append('model', 'whisper-1');
 
-        const fallbackResponse = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+        const transcriptionResponse = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
           headers: {
             ...formData.getHeaders(),
             'Authorization': `Bearer ${OPENAI_API_KEY}`
           }
         });
 
-        const fallbackTranscript = fallbackResponse.data.text;
-        if (!fallbackTranscript || typeof fallbackTranscript !== 'string') {
-          throw new Error('Fallback transcript também inválido');
+        transcript = transcriptionResponse.data.text;
+        if (!transcript || typeof transcript !== 'string') {
+          throw new Error('Transcript inválido da API');
         }
         
-        // Usar o fallback transcript
-        transcript = fallbackTranscript.trim();
-        console.log('✅ Fallback transcript obtido:', transcript.substring(0, 50) + '...');
-      } catch (fallbackError) {
-        console.error('❌ Erro no fallback transcript:', fallbackError.message);
+        transcript = transcript.trim();
+        console.log('✅ Transcrição obtida:', transcript.substring(0, 50) + '...');
+      } catch (transcriptionError) {
+        console.error('❌ Erro na transcrição:', transcriptionError.message);
         await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
         return;
       }
     } else {
-      console.log('✅ Usando transcript do checkTrigger:', transcript.substring(0, 50) + '...');
+      console.log('✅ Usando transcript já obtido:', transcript.substring(0, 50) + '...');
     }
 
-    // Lógica aprimorada para tradução/transcrição
+    // Lógica de tradução/transcrição baseada nos filtros
     let languagePrompt = '';
     if (filtros.translation_enabled) {
       switch (filtros.language) {
@@ -1870,7 +1880,7 @@ async function processAudio(sessionName, message) {
       }
     }
 
-    // Construção dos prompts com maior especificidade
+    // Construção dos prompts
     let prompt_base = '';
     if (filtros.summarizeMessages && filtros.longmessage) {
       prompt_base = `Você é um assistente de IA especializado em processamento de transcrições de áudio. ${languagePrompt ? languagePrompt + '. ' : ''}Após processar o idioma conforme solicitado, corrija a gramática, mantenha o conteúdo original e liste os tópicos principais. Pule 2 linhas e adicione ao final: "Transcribed by Thebroker.vip", a menos que essa frase já esteja presente.`;
@@ -1886,7 +1896,7 @@ async function processAudio(sessionName, message) {
       ? myNumber
       : message.from;
 
-    // CORREÇÃO: Garantir que transcript seja string limpa
+    // Garantir que transcript seja string limpa
     let cleanTranscript = String(transcript).trim();
     if (cleanTranscript.length === 0) {
       console.error('❌ Transcript final vazio');
@@ -1894,7 +1904,7 @@ async function processAudio(sessionName, message) {
       return;
     }
 
-    // CORREÇÃO: Garantir que prompt_base seja string limpa
+    // Garantir que prompt_base seja string limpa
     let cleanPromptBase = String(prompt_base).trim();
     if (cleanPromptBase.length === 0) {
       console.error('❌ Prompt base inválido:', prompt_base);
@@ -1902,9 +1912,8 @@ async function processAudio(sessionName, message) {
     }
 
     try {
-      // CORREÇÃO: Construir payload com garantias de tipo
       const requestPayload = {
-        model: "gpt-4.1", // Mantendo o modelo original conforme especificado
+        model: "gpt-4.1",
         messages: [
           { 
             role: "system", 
@@ -1919,7 +1928,6 @@ async function processAudio(sessionName, message) {
         max_tokens: 2000
       };
 
-      // Debug adicional para este payload
       const response_gpt = await axios.post(
         'https://api.openai.com/v1/chat/completions',
         requestPayload,
@@ -1939,7 +1947,6 @@ async function processAudio(sessionName, message) {
     } catch (apiError) {
       console.error('❌ Erro na API OpenAI durante processamento:', apiError?.response?.data || apiError.message);
       
-      // Log detalhado do erro para debug
       if (apiError?.response?.data) {
         console.error('📋 Detalhes do erro da API:', JSON.stringify(apiError.response.data, null, 2));
       }
