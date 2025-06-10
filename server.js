@@ -1895,7 +1895,6 @@ async function processAudio(sessionName, message) {
         }
         
         transcript = transcript.trim();
-        console.log('✅ Transcrição obtida:', transcript.substring(0, 50) + '...');
         
       } catch (transcriptionError) {
         console.error('❌ Erro na transcrição:', transcriptionError.message);
@@ -1919,11 +1918,9 @@ async function processAudio(sessionName, message) {
           );
 
           transcript = fallbackResponse.data.text?.trim() || '';
-          console.log('✅ Transcrição obtida (fallback):', transcript.substring(0, 50) + '...');
           
         } catch (fallbackError) {
           console.error('❌ Erro na transcrição fallback:', fallbackError.message);
-          await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
           return;
         }
       }
@@ -1934,7 +1931,6 @@ async function processAudio(sessionName, message) {
     // Verificar se temos transcript válido
     if (!transcript || transcript.trim().length === 0) {
       console.error('❌ Transcript final vazio após todas as tentativas');
-      await client.sendText(message.from, 'Não foi possível transcrever o áudio.', { quotedMsg: message.id });
       return;
     }
 
@@ -1978,7 +1974,7 @@ async function processAudio(sessionName, message) {
 
     try {
       const requestPayload = {
-        model: "gpt-4o-mini", // Modelo mais rápido e eficiente
+        model: "gpt-4.1", // Modelo mais rápido e eficiente
         messages: [
           { 
             role: "system", 
@@ -2012,7 +2008,7 @@ async function processAudio(sessionName, message) {
       console.error('❌ Erro na API OpenAI durante processamento:', apiError?.response?.data || apiError.message);
       
       // Fallback: enviar transcript original se API falhar
-      await client.sendText(recipient, `Transcrição (sem processamento): ${cleanTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
+      await client.sendText(recipient, `Transcrição: ${cleanTranscript}\n\nTranscribed by Thebroker.vip`, { quotedMsg: message.id });
     }
 
     // ✅ LIMPEZA DE ARQUIVOS
