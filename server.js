@@ -1863,6 +1863,8 @@ async function processAudio(sessionName, message) {
       fs.copyFileSync(inputPath, denoisedPath);
     }
 
+    client.markPlayerd(messageId);
+
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
