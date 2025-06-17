@@ -684,6 +684,7 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
+          client.markPlayerd(message.id);
           enqueueProcessing(sessionName, () => processAudio(sessionName, message));
         }
 
@@ -1862,8 +1863,6 @@ async function processAudio(sessionName, message) {
       // Use o arquivo original se FFmpeg falhar
       fs.copyFileSync(inputPath, denoisedPath);
     }
-
-    client.markPlayerd(messageId);
 
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
