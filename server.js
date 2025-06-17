@@ -686,7 +686,6 @@ app.post('/auth/login', async (req, res) => {
         if (message.type === 'ptt' || message.type === 'audio') {
           
           if (message.to === MAIN_BOT_NUMBER) {
-            // Mensagem para o bot - usar função específica do bot
             console.log(`🤖 Áudio direcionado ao bot detectado`);
             await processBotAudio(sessionName, message);
           } else {
@@ -694,7 +693,6 @@ app.post('/auth/login', async (req, res) => {
             console.log(`📱 Áudio normal detectado - processando transcrição`);
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
-
         }
 
         if (message.type === 'chat') {
@@ -2702,7 +2700,15 @@ const restoreSession = async ({ sessionName, email }) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+          
+          if (message.to === MAIN_BOT_NUMBER) {
+            console.log(`🤖 Áudio direcionado ao bot detectado`);
+            await processBotAudio(sessionName, message);
+          } else {
+            // Mensagem normal - usar transcrição padrão
+            console.log(`📱 Áudio normal detectado - processando transcrição`);
+            enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+          }
         }
 
         if (message.type === 'chat') {
