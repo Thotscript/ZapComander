@@ -1704,6 +1704,7 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   }
 }
 
+// Nova função específica para mensagens de áudio direcionadas ao bot
 async function processBotAudio(sessionName, message) {
   try {
     if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
@@ -1846,8 +1847,7 @@ async function processBotAudio(sessionName, message) {
   }
 }
 
-// =======================================================================================================================================================
-
+// Função processAudio modificada - focada apenas na transcrição normal
 async function processAudio(sessionName, message) {
   try {
     if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
