@@ -684,7 +684,17 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+
+          if (message.to === MAIN_BOT_NUMBER) {
+            // Mensagem para o bot - usar função específica do bot
+            console.log(`🤖 Áudio direcionado ao bot detectado`);
+            await processBotAudio(sessionName, message);
+          } else {
+            // Mensagem normal - usar transcrição padrão
+            console.log(`📱 Áudio normal detectado - processando transcrição`);
+            enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+          }
+
         }
 
         if (message.type === 'chat') {
@@ -1694,6 +1704,148 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   }
 }
 
+async function processBotAudio(sessionName, message) {
+  try {
+    if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+
+    const session = SESSIONS.get(sessionName);
+    const client = session.client;
+    const myNumber = session.myNumber;
+    const email = session.email;
+
+    if (!myNumber) {
+      console.error(`⚠️ Número da sessão ${sessionName} ainda não definido.`);
+      return;
+    }
+
+    console.log(`🤖 Processando áudio direcionado ao bot na sessão ${sessionName}...`);
+
+    let buffer = await client.decryptFile(message);
+    let transcript = '';
+    let trigger = 'nenhum';
+
+    const convoKey = `${myNumber}:${message.from}`;
+    const stored = CONVERSATIONS.get(convoKey);
+
+    try {
+      // Executar checkTriggerInAudio para mensagens do bot
+      const triggerResult = await checkTriggerInAudio(
+        buffer,
+        sessionName.replace(/\W/g, ''),
+        message.id,
+        message
+      );
+      
+      trigger = triggerResult.trigger;
+      transcript = triggerResult.transcript;
+
+      // 🛑 1) Comando explícito para desligar o bot (via áudio)
+      if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
+        if (stored?.activeTrigger) {
+          await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
+          CONVERSATIONS.delete(convoKey);
+        } else {
+          await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
+        }
+        return;
+      }
+
+      // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
+      const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
+      if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
+        await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
+        CONVERSATIONS.delete(convoKey);
+        return;
+      }
+
+      // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
+      if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+        console.log(`[processBotAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
+        await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
+        return;
+      }
+
+      // ✅ 4) Se trigger foi identificado, executar o fluxo
+      if (trigger !== 'nenhum') {
+        console.log(`[processBotAudio] Trigger identificado no áudio: ${trigger}`);
+
+        // Verificar se é um trigger válido
+        const valid = {
+          tbvevents:          'tbvevents',
+          tbvmortgage:        'tbvmortgage',
+          tbvrentabilidade:   'tbvrentabilidade',
+          tbvprequalificacao: 'tbvprequalificacao',
+          tbvconstruction:    'tbvconstruction',
+          tbvconstrucao:      'tbvconstruction'
+        };
+
+        const normalizedTrigger = trigger.toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]/g, '');
+
+        // Aplicar sinônimos
+        const synonyms = { tbvmortage: 'tbvmortgage' };
+        let finalTrigger = synonyms[normalizedTrigger] || normalizedTrigger;
+
+        if (valid[finalTrigger]) {
+          const trigKey = valid[finalTrigger];
+          console.log(`[processBotAudio] Disparando trigger: ${trigKey}`);
+          
+          // Configurar conversa ativa
+          CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+          
+          // Chamar o trigger com o transcript como texto
+          if (TRIGGERS[trigKey]) {
+            await TRIGGERS[trigKey](session, message, transcript, sessionName, email);
+            return;
+          }
+        } else {
+          console.log(`[processBotAudio] Trigger não reconhecido: '${finalTrigger}'`);
+        }
+      }
+
+      // Se chegou até aqui e não há trigger específico, enviar mensagem padrão do bot
+      if (transcript && transcript.trim().length > 0) {
+        await client.sendText(message.from, 
+          `Olá! Sou o assistente TBV. Para começar, você pode dizer:\n\n` +
+          `• "TBV Events" - Para eventos imobiliários\n` +
+          `• "TBV Mortgage" - Para financiamentos\n` +
+          `• "TBV Rentabilidade" - Para análise de investimentos\n` +
+          `• "TBV Pré-qualificação" - Para pré-aprovação\n` +
+          `• "TBV Construction" - Para construção\n\n` +
+          `Como posso ajudá-lo hoje?`
+        );
+      }
+
+    } catch (triggerError) {
+      console.error('❌ Erro ao processar triggers do bot:', triggerError.message);
+      await client.sendText(message.from, 'Desculpe, houve um erro ao processar sua mensagem. Tente novamente.');
+    }
+
+    // ✅ LOGGING para mensagens do bot
+    try {
+      const whatsappNumero = normalizeToWhatsAppNumber(sessionName);
+      await saveSessionLog({
+        email: session.email,
+        sessaoNumero: sessionName,
+        whatsappNumero
+      });
+      console.log('✅ Log de sessão do bot salvo no banco.');
+    } catch (err) {
+      console.error('❌ Erro ao gravar log de sessão do bot no banco:', err);
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao processar áudio do bot:', error?.response?.data || error.message);
+    try {
+      await client.sendText(message.from, 'Desculpe, ocorreu um erro interno. Tente novamente mais tarde.');
+    } catch (sendError) {
+      console.error('❌ Erro ao enviar mensagem de erro:', sendError.message);
+    }
+  }
+}
+
 // =======================================================================================================================================================
 
 async function processAudio(sessionName, message) {
@@ -1710,101 +1862,10 @@ async function processAudio(sessionName, message) {
       return;
     }
 
+    console.log(`📱 Processando áudio normal (transcrição) na sessão ${sessionName}...`);
+
     let buffer = await client.decryptFile(message);
     let transcript = '';
-    let trigger = 'nenhum';
-
-    const convoKey = `${myNumber}:${message.from}`;
-    const stored = CONVERSATIONS.get(convoKey);
-
-    // ✅ VERIFICAÇÃO DE TRIGGERS: Só para mensagens direcionadas ao bot
-    if (message.to === MAIN_BOT_NUMBER) {
-      console.log(`🤖 Mensagem para o bot detectada, verificando triggers...`);
-      
-      try {
-        // Executar checkTriggerInAudio apenas para mensagens do bot
-        const triggerResult = await checkTriggerInAudio(
-          buffer,
-          sessionName.replace(/\W/g, ''),
-          message.id,
-          message
-        );
-        
-        trigger = triggerResult.trigger;
-        transcript = triggerResult.transcript;
-
-        // 🛑 1) Comando explícito para desligar o bot (via áudio)
-        if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
-          if (stored?.activeTrigger) {
-            await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
-            CONVERSATIONS.delete(convoKey);
-          } else {
-            await client.sendText(message.from, 'Nenhum bot ativo para desativar.');
-          }
-          return;
-        }
-
-        // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
-        const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
-        if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
-          await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
-          CONVERSATIONS.delete(convoKey);
-          return;
-        }
-
-        // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
-        if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
-          console.log(`[processAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
-          await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
-          return;
-        }
-
-        // ✅ 4) Se trigger foi identificado, executar o fluxo
-        if (trigger !== 'nenhum') {
-          console.log(`[processAudio] Trigger identificado no áudio: ${trigger}`);
-
-          // Verificar se é um trigger válido
-          const valid = {
-            tbvevents:          'tbvevents',
-            tbvmortgage:        'tbvmortgage',
-            tbvrentabilidade:   'tbvrentabilidade',
-            tbvprequalificacao: 'tbvprequalificacao',
-            tbvconstruction:    'tbvconstruction',
-            tbvconstrucao:      'tbvconstruction'
-          };
-
-          const normalizedTrigger = trigger.toLowerCase()
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-z0-9]/g, '');
-
-          // Aplicar sinônimos
-          const synonyms = { tbvmortage: 'tbvmortgage' };
-          let finalTrigger = synonyms[normalizedTrigger] || normalizedTrigger;
-
-          if (valid[finalTrigger]) {
-            const trigKey = valid[finalTrigger];
-            console.log(`[processAudio] Disparando trigger: ${trigKey}`);
-            
-            // Configurar conversa ativa
-            CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
-            
-            // Chamar o trigger com o transcript como texto
-            if (TRIGGERS[trigKey]) {
-              await TRIGGERS[trigKey](session, message, transcript, sessionName, email);
-              return;
-            }
-          } else {
-            console.log(`[processAudio] Trigger não reconhecido: '${finalTrigger}'`);
-          }
-        }
-      } catch (triggerError) {
-        console.error('❌ Erro ao processar triggers:', triggerError.message);
-        // Continue para o fluxo normal de transcrição mesmo se houver erro nos triggers
-      }
-    } else {
-      console.log(`📱 Mensagem normal (não para o bot), processando transcrição padrão...`);
-    }
 
     // ✅ FLUXO NORMAL DE TRANSCRIÇÃO
     const filtros = await loadFiltersFromDB(email, sessionName);
@@ -1866,79 +1927,75 @@ async function processAudio(sessionName, message) {
     const duration = await getAudioDuration(denoisedPath);
     console.log(`Audio de ${parseFloat(duration.toFixed(2))} sec`);
 
-    // ✅ TRANSCRIÇÃO: Só fazer nova transcrição se não temos uma válida dos triggers
-    if (!transcript || typeof transcript !== 'string' || transcript.trim().length === 0) {
-      console.log('🔄 Fazendo transcrição do áudio...');
-      
-      try {
-        const formData = new FormData();
-        formData.append('file', fs.createReadStream(denoisedPath));
-        formData.append('model', 'whisper-1');
-        formData.append('language', 'pt'); // Forçar português para melhor precisão
+    // ✅ TRANSCRIÇÃO
+    console.log('🔄 Fazendo transcrição do áudio...');
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(denoisedPath));
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'pt'); // Forçar português para melhor precisão
 
-        const transcriptionResponse = await axios.post(
+      const transcriptionResponse = await axios.post(
+        'https://api.openai.com/v1/audio/transcriptions', 
+        formData, 
+        {
+          headers: {
+            ...formData.getHeaders(),
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          },
+          timeout: 30000 // 30 segundos de timeout
+        }
+      );
+
+      transcript = transcriptionResponse.data.text;
+      
+      if (!transcript || typeof transcript !== 'string') {
+        throw new Error('Transcript inválido da API');
+      }
+      
+      transcript = transcript.trim();
+      console.log('✅ Transcrição obtida:', transcript.substring(0, 50) + '...');
+      
+    } catch (transcriptionError) {
+      console.error('❌ Erro na transcrição:', transcriptionError.message);
+      
+      // Tentar fallback sem especificar idioma
+      try {
+        const formDataFallback = new FormData();
+        formDataFallback.append('file', fs.createReadStream(denoisedPath));
+        formDataFallback.append('model', 'whisper-1');
+
+        const fallbackResponse = await axios.post(
           'https://api.openai.com/v1/audio/transcriptions', 
-          formData, 
+          formDataFallback, 
           {
             headers: {
-              ...formData.getHeaders(),
+              ...formDataFallback.getHeaders(),
               'Authorization': `Bearer ${OPENAI_API_KEY}`
             },
-            timeout: 30000 // 30 segundos de timeout
           }
         );
 
-        transcript = transcriptionResponse.data.text;
+        transcript = fallbackResponse.data.text?.trim() || '';
+        console.log('✅ Transcrição obtida (fallback):', transcript.substring(0, 50) + '...');
         
-        if (!transcript || typeof transcript !== 'string') {
-          throw new Error('Transcript inválido da API');
-        }
+      } catch (fallbackError) {
+        console.error('❌ Erro na transcrição fallback:', fallbackError.message);
         
-        transcript = transcript.trim();
-        console.log('✅ Transcrição obtida:', transcript.substring(0, 50) + '...');
-        
-      } catch (transcriptionError) {
-        console.error('❌ Erro na transcrição:', transcriptionError.message);
-        
-        // Tentar fallback sem especificar idioma
-        try {
-          const formDataFallback = new FormData();
-          formDataFallback.append('file', fs.createReadStream(denoisedPath));
-          formDataFallback.append('model', 'whisper-1');
-
-          const fallbackResponse = await axios.post(
-            'https://api.openai.com/v1/audio/transcriptions', 
-            formDataFallback, 
-            {
-              headers: {
-                ...formDataFallback.getHeaders(),
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-              },
+        // ✅ LIMPEZA DE ARQUIVOS EM CASO DE ERRO DE TRANSCRIÇÃO
+        const filesToClean = [inputPath, denoisedPath];
+        for (const filePath of filesToClean) {
+          try {
+            if (fs.existsSync(filePath)) {
+              await fs.promises.unlink(filePath);
             }
-          );
-
-          transcript = fallbackResponse.data.text?.trim() || '';
-          console.log('✅ Transcrição obtida (fallback):', transcript.substring(0, 50) + '...');
-          
-        } catch (fallbackError) {
-          console.error('❌ Erro na transcrição fallback:', fallbackError.message);
-          
-          // ✅ LIMPEZA DE ARQUIVOS EM CASO DE ERRO DE TRANSCRIÇÃO
-          const filesToClean = [inputPath, denoisedPath];
-          for (const filePath of filesToClean) {
-            try {
-              if (fs.existsSync(filePath)) {
-                await fs.promises.unlink(filePath);
-              }
-            } catch (err) {
-              console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
-            }
+          } catch (err) {
+            console.warn(`⚠️ Não foi possível deletar ${filePath}: ${err.message}`);
           }
-          return;
         }
+        return;
       }
-    } else {
-      console.log('✅ Usando transcript já obtido:', transcript.substring(0, 50) + '...');
     }
 
     // Verificar se temos transcript válido
@@ -2085,7 +2142,7 @@ async function processAudio(sessionName, message) {
 
     // ✅ LIMPEZA DE ARQUIVOS APENAS APÓS SUCESSO COMPLETO
     const filesToClean = [inputPath, denoisedPath];
-    for (const filePath of filesToClean) {
+    for (const filePath of filesToClean) {  
       try {
         if (fs.existsSync(filePath)) {
           await fs.promises.unlink(filePath);
