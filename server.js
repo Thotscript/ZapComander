@@ -684,12 +684,6 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          // 🔍 DEBUG: Logs detalhados para investigar o problema
-          console.log('🔍 DEBUG AUDIO: sessionName="' + sessionName + '"');
-          console.log('🔍 DEBUG AUDIO: message.from="' + message.from + '"');
-          console.log('🔍 DEBUG AUDIO: message.to="' + message.to + '"');
-          console.log('🔍 DEBUG AUDIO: MAIN_BOT_NUMBER="' + MAIN_BOT_NUMBER + '"');
-          console.log('🔍 DEBUG AUDIO: message.to === MAIN_BOT_NUMBER = ' + (message.to === MAIN_BOT_NUMBER));
           
           if (message.to === MAIN_BOT_NUMBER) {
             // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
@@ -2713,12 +2707,6 @@ const restoreSession = async ({ sessionName, email }) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          // 🔍 DEBUG: Logs detalhados para investigar o problema
-          console.log('🔍 DEBUG AUDIO: sessionName="' + sessionName + '"');
-          console.log('🔍 DEBUG AUDIO: message.from="' + message.from + '"');
-          console.log('🔍 DEBUG AUDIO: message.to="' + message.to + '"');
-          console.log('🔍 DEBUG AUDIO: MAIN_BOT_NUMBER="' + MAIN_BOT_NUMBER + '"');
-          console.log('🔍 DEBUG AUDIO: message.to === MAIN_BOT_NUMBER = ' + (message.to === MAIN_BOT_NUMBER));
           
           if (message.to === MAIN_BOT_NUMBER) {
             // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
