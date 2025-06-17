@@ -684,7 +684,6 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          client.markPlayerd(message.id);
           enqueueProcessing(sessionName, () => processAudio(sessionName, message));
         }
 
@@ -1923,7 +1922,6 @@ async function processAudio(sessionName, message) {
           
         } catch (fallbackError) {
           console.error('❌ Erro na transcrição fallback:', fallbackError.message);
-          await client.sendText(message.from, 'Erro ao processar áudio. Tente novamente.', { quotedMsg: message.id });
           
           // ✅ LIMPEZA DE ARQUIVOS EM CASO DE ERRO DE TRANSCRIÇÃO
           const filesToClean = [inputPath, denoisedPath];
@@ -2078,6 +2076,7 @@ async function processAudio(sessionName, message) {
     
     // Enviar resultado final
     try {
+      await client.markPlayerd(message.id);
       await client.sendText(recipient, finalMessage, { quotedMsg: message.id });
       console.log('✅ Mensagem enviada com sucesso');
     } catch (sendError) {
