@@ -684,10 +684,7 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-
-          console.log(`🔍 DEBUG AUDIO: sessionName="${sessionName}", from="${message.from}", to="${message.to}", MAIN_BOT="${MAIN_BOT_NUMBER}"`);
-          console.log(`🔍 DEBUG COMPARISON: message.to === MAIN_BOT_NUMBER = ${message.to === MAIN_BOT_NUMBER}`);
-
+          
           if (message.to === MAIN_BOT_NUMBER) {
             // Mensagem para o bot - usar função específica do bot
             console.log(`🤖 Áudio direcionado ao bot detectado`);
