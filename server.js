@@ -684,13 +684,26 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
+          // 🔍 DEBUG: Logs detalhados para investigar o problema
+          console.log('🔍 DEBUG AUDIO: sessionName="' + sessionName + '"');
+          console.log('🔍 DEBUG AUDIO: message.from="' + message.from + '"');
+          console.log('🔍 DEBUG AUDIO: message.to="' + message.to + '"');
+          console.log('🔍 DEBUG AUDIO: MAIN_BOT_NUMBER="' + MAIN_BOT_NUMBER + '"');
+          console.log('🔍 DEBUG AUDIO: message.to === MAIN_BOT_NUMBER = ' + (message.to === MAIN_BOT_NUMBER));
           
           if (message.to === MAIN_BOT_NUMBER) {
-            console.log(`🤖 Áudio direcionado ao bot detectado`);
-            await processBotAudio(sessionName, message);
+            // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
+            // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
+            const receivingSession = SESSIONS.get(sessionName);
+            if (receivingSession && receivingSession.myNumber === message.to) {
+              console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
+              await processBotAudio(sessionName, message);
+            } else {
+              console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
+            }
           } else {
             // Mensagem normal - usar transcrição padrão
-            console.log(`📱 Áudio normal detectado - processando transcrição`);
+            console.log('📱 Áudio normal detectado - processando transcrição');
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
         }
@@ -2700,13 +2713,26 @@ const restoreSession = async ({ sessionName, email }) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
+          // 🔍 DEBUG: Logs detalhados para investigar o problema
+          console.log('🔍 DEBUG AUDIO: sessionName="' + sessionName + '"');
+          console.log('🔍 DEBUG AUDIO: message.from="' + message.from + '"');
+          console.log('🔍 DEBUG AUDIO: message.to="' + message.to + '"');
+          console.log('🔍 DEBUG AUDIO: MAIN_BOT_NUMBER="' + MAIN_BOT_NUMBER + '"');
+          console.log('🔍 DEBUG AUDIO: message.to === MAIN_BOT_NUMBER = ' + (message.to === MAIN_BOT_NUMBER));
           
           if (message.to === MAIN_BOT_NUMBER) {
-            console.log(`🤖 Áudio direcionado ao bot detectado`);
-            await processBotAudio(sessionName, message);
+            // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
+            // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
+            const receivingSession = SESSIONS.get(sessionName);
+            if (receivingSession && receivingSession.myNumber === message.to) {
+              console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
+              await processBotAudio(sessionName, message);
+            } else {
+              console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
+            }
           } else {
             // Mensagem normal - usar transcrição padrão
-            console.log(`📱 Áudio normal detectado - processando transcrição`);
+            console.log('📱 Áudio normal detectado - processando transcrição');
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
         }
