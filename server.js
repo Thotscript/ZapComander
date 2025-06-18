@@ -2060,79 +2060,52 @@ async function processAudio(sessionName, message) {
     const cleanTranscript = String(transcript).trim();
     const cleanPromptBase = String(prompt_base).trim() || 'Você é um assistente de IA especializado em processamento de transcrições de áudio. Corrija apenas a gramática do texto.';
 
-    // ✅ PROCESSAMENTO COM GPT - COM RETRY E FALLBACKS
+    // ✅ PROCESSAMENTO COM GPT-4.1
     let finalMessage = '';
-    let processingSuccess = false;
     
-    // Tentar com gpt-4.1 primeiro (mantendo o modelo original)
-    const modelsToTry = ['gpt-4.1', 'gpt-4o-mini'];
-    
-    for (let modelIndex = 0; modelIndex < modelsToTry.length && !processingSuccess; modelIndex++) {
-      const currentModel = modelsToTry[modelIndex];
+    try {
+      console.log('🔄 Processando com GPT-4.1...');
       
-      for (let attempt = 1; attempt <= 3 && !processingSuccess; attempt++) {
-        try {
-          console.log(`🔄 Tentativa ${attempt}/3 com modelo ${currentModel}...`);
-          
-          const requestPayload = {
-            model: currentModel,
-            messages: [
-              { 
-                role: "system", 
-                content: cleanPromptBase
-              },
-              { 
-                role: "user", 
-                content: cleanTranscript
-              }
-            ],
-            temperature: 0.1,
-          };
-
-          const response_gpt = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            requestPayload,
-            {
-              headers: {
-                'Authorization': `Bearer ${OPENAI_API_KEY}`,
-                'Content-Type': 'application/json'
-              },
-            }
-          );
-
-          finalMessage = response_gpt.data.choices[0].message.content;
-          processingSuccess = true;
-          console.log(`✅ Processamento bem-sucedido com ${currentModel} na tentativa ${attempt}`);
-          
-        } catch (apiError) {
-          console.error(`❌ Erro na tentativa ${attempt} com ${currentModel}:`, apiError?.response?.data || apiError.message);
-          
-          // Se for erro 500 ou de rate limit, aguardar antes de tentar novamente
-          if (apiError?.response?.status === 500 || 
-              apiError?.response?.status === 429 || 
-              apiError?.response?.data?.error?.type === 'server_error') {
-            
-            const waitTime = attempt * 2000; // 2s, 4s, 6s
-            console.log(`⏳ Aguardando ${waitTime}ms antes da próxima tentativa...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
+      const requestPayload = {
+        model: 'gpt-4.1',
+        messages: [
+          { 
+            role: "system", 
+            content: cleanPromptBase
+          },
+          { 
+            role: "user", 
+            content: cleanTranscript
           }
-          
-          // Se for a última tentativa com o último modelo, usar fallback
-          if (modelIndex === modelsToTry.length - 1 && attempt === 3) {
-            console.log('🔄 Todas as tentativas falharam, usando processamento simples...');
-            
-            // Fallback simples: apenas corrigir gramática básica
-            try {
-              finalMessage = await simpleTextProcessing(cleanTranscript, filtros);
-              processingSuccess = true;
-            } catch (fallbackError) {
-              console.error('❌ Erro no fallback simples:', fallbackError.message);
-              // Último recurso: enviar transcript original
-              finalMessage = `Transcrição: ${cleanTranscript}\n\nTranscribed by Thebroker.vip`;
-              processingSuccess = true;
-            }
-          }
+        ],
+        temperature: 0.1,
+      };
+
+      const response_gpt = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        requestPayload,
+        {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
         }
+      );
+
+      finalMessage = response_gpt.data.choices[0].message.content;
+      console.log('✅ Processamento bem-sucedido com GPT-4.1');
+      
+    } catch (apiError) {
+      console.error('❌ Erro no processamento GPT-4.1:', apiError?.response?.data || apiError.message);
+      
+      // Fallback simples: apenas corrigir gramática básica
+      try {
+        console.log('🔄 Usando processamento simples...');
+        finalMessage = await simpleTextProcessing(cleanTranscript, filtros);
+      } catch (fallbackError) {
+        console.error('❌ Erro no fallback simples:', fallbackError.message);
+        // Último recurso: enviar transcript original
+        finalMessage = `Transcrição: ${cleanTranscript}\n\nTranscribed by Thebroker.vip`;
       }
     }
     
