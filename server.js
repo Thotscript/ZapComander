@@ -2622,6 +2622,22 @@ const restoreSession = async ({ sessionName, email }) => {
       console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
     }
 
+        setInterval(async () => {
+        try {
+          const session = SESSIONS.get(sessionName);
+          if (!session) return;
+
+          // obtém o estado atual da conexão
+          const state = await session.client.getConnectionState();
+          
+          // grava no banco
+          await atualizarStatusSessao(sessionName, state);
+          console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+        } catch (err) {
+          console.error(`❌ erro ao checar status de ${sessionName}:`, err);
+        }
+      }, 30_000);
+
     if (email) {
       try {
         await criarOuIgnorarUsuario(email);
