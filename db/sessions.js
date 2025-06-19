@@ -9,6 +9,15 @@ export async function criarOuIgnorarSessao(numero, email) {
   await db.query(sql, [numero, email]);
 }
 
+export async function atualizarStatusSessao(numero, status) {
+  const sql = `
+    UPDATE sessoes
+    SET status = ?
+    WHERE numero = ?
+  `;
+  await db.query(sql, [status, numero]);
+}
+
 export async function excluirSessaoPorEmail(email, sessionName) {
   const conn = await db.getConnection();
 

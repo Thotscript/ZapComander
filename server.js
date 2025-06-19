@@ -619,6 +619,22 @@ app.post('/auth/login', async (req, res) => {
       SESSIONS.set(sessionName, { client, myNumber, email });
     }
 
+    setInterval(async () => {
+      try {
+        const session = SESSIONS.get(sessionName);
+        if (!session) return;
+
+        // obtém o estado atual da conexão
+        const state = await session.client.getConnectionState();
+        
+        // grava no banco
+        await atualizarStatusSessao(sessionName, state);
+        console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+      } catch (err) {
+        console.error(`❌ erro ao checar status de ${sessionName}:`, err);
+      }
+    }, 30_000);
+
     client.onStateChange(async (state) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
