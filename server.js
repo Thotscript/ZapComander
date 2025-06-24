@@ -2563,24 +2563,100 @@ const restoreSession = async ({ sessionName, email }) => {
     }
 
     if (!SESSIONS.has(sessionName)) {
-      SESSIONS.set(sessionName, { client, myNumber, email });
+      SESSIONS.set(sessionName, { 
+        client, 
+        myNumber, 
+        email,
+        lastStatusCheck: Date.now(),
+        consecutiveFailures: 0,
+        isHealthy: true
+      });
     } else {
       console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
     }
 
-    // Monitoramento de status da sessão
-    setInterval(async () => {
+    // Monitoramento de status da sessão MELHORADO
+    const statusCheckInterval = setInterval(async () => {
       try {
         const session = SESSIONS.get(sessionName);
-        if (!session) return;
+        if (!session) {
+          console.warn(`⚠️ Sessão ${sessionName} não encontrada no SESSIONS, removendo interval`);
+          clearInterval(statusCheckInterval);
+          return;
+        }
 
-        const state = await session.client.getConnectionState();
-        await atualizarStatusSessao(sessionName, state);
-        console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+        let currentState = 'DISCONNECTED'; // Default para desconectado
+        let checkSuccessful = false;
+
+        try {
+          // Tenta múltiplas verificações de status
+          const connectionPromises = [
+            session.client.getConnectionState(),
+            session.client.isConnected().then(connected => connected ? 'CONNECTED' : 'DISCONNECTED'),
+          ];
+
+          // Timeout de 10 segundos para verificação
+          const statusResult = await Promise.race([
+            Promise.all(connectionPromises),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Status check timeout')), 10000)
+            )
+          ]);
+
+          currentState = statusResult[0] || statusResult[1];
+          checkSuccessful = true;
+          
+          // Reset contador de falhas em caso de sucesso
+          session.consecutiveFailures = 0;
+          session.isHealthy = true;
+          session.lastStatusCheck = Date.now();
+
+        } catch (statusError) {
+          console.warn(`⚠️ Falha ao verificar status de ${sessionName}:`, statusError.message);
+          
+          // Incrementa contador de falhas consecutivas
+          session.consecutiveFailures = (session.consecutiveFailures || 0) + 1;
+          
+          // Após 3 falhas consecutivas, considera a sessão como desconectada
+          if (session.consecutiveFailures >= 3) {
+            currentState = 'DISCONNECTED';
+            session.isHealthy = false;
+            console.error(`❌ Sessão ${sessionName} com ${session.consecutiveFailures} falhas consecutivas, marcando como DISCONNECTED`);
+          }
+        }
+
+        // Sempre tenta atualizar o status no banco
+        try {
+          await atualizarStatusSessao(sessionName, currentState);
+          console.log(`🔄 [${sessionName}] status atualizado: ${currentState} (${checkSuccessful ? 'verificado' : 'assumido'})`);
+        } catch (dbError) {
+          console.error(`❌ Erro ao atualizar status no banco para ${sessionName}:`, dbError.message);
+        }
+
+        // Se a sessão está consistentemente desconectada, limpa
+        if (!session.isHealthy && session.consecutiveFailures >= 5) {
+          console.warn(`🧹 Limpando sessão ${sessionName} devido a falhas persistentes`);
+          clearInterval(statusCheckInterval);
+          await cleanupSession(sessionName);
+        }
+
       } catch (err) {
-        console.error(`❌ erro ao checar status de ${sessionName}:`, err);
+        console.error(`❌ Erro crítico no monitoramento de ${sessionName}:`, err);
+        
+        // Em caso de erro crítico, força atualização como DISCONNECTED
+        try {
+          await atualizarStatusSessao(sessionName, 'DISCONNECTED');
+          console.log(`🔄 [${sessionName}] forçado para DISCONNECTED devido a erro crítico`);
+        } catch (dbErr) {
+          console.error(`❌ Falha ao forçar status DISCONNECTED para ${sessionName}:`, dbErr);
+        }
       }
     }, 30_000);
+
+    // Salva referência do interval para limpeza posterior
+    if (SESSIONS.has(sessionName)) {
+      SESSIONS.get(sessionName).statusInterval = statusCheckInterval;
+    }
 
     if (email) {
       try {
@@ -2595,6 +2671,22 @@ const restoreSession = async ({ sessionName, email }) => {
       console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
       
       try {
+        // Atualiza status imediatamente quando há mudança de estado
+        await atualizarStatusSessao(sessionName, state);
+        console.log(`🔄 [${sessionName}] status atualizado via onStateChange: ${state}`);
+
+        // Atualiza informações da sessão
+        const session = SESSIONS.get(sessionName);
+        if (session) {
+          session.lastStateChange = Date.now();
+          if (state === 'CONNECTED') {
+            session.consecutiveFailures = 0;
+            session.isHealthy = true;
+          } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
+            session.isHealthy = false;
+          }
+        }
+        
         if (state === 'CONNECTED') {
           try {
             const myNumber = await client.getWid();
@@ -2616,6 +2708,13 @@ const restoreSession = async ({ sessionName, email }) => {
 
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
+          
+          // Limpa o interval antes de fazer cleanup
+          const session = SESSIONS.get(sessionName);
+          if (session?.statusInterval) {
+            clearInterval(session.statusInterval);
+          }
+          
           await cleanupSession(sessionName);
 
         } else if (state === 'OFFLINE') {
