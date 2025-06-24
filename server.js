@@ -2491,59 +2491,7 @@ function restartSessionIfOffline(sessionName, email) {
 }
 
 
-const restoreSessions = async () => {
-  try {
-    // 1. Consulta todas as sessões salvas no banco
-    const [rows] = await pool.query(`
-      SELECT numero AS sessionName, usuario_email AS email
-      FROM sessoes
-    `);
-
-    if (rows.length === 0) {
-      console.log('Nenhuma sessão encontrada no banco para restaurar.');
-      return;
-    }
-
-    console.log('→ Sessões encontradas:', rows.map(r => r.sessionName));
-    
-    // 2. Criar fila de sessões para restauração
-    const sessionQueue = rows.filter(({ sessionName }) => !SESSIONS.has(sessionName));
-    
-    if (sessionQueue.length === 0) {
-      console.log('⚠️ Todas as sessões já estão ativas. Nada para restaurar.');
-      return;
-    }
-    
-    console.log(`📋 Fila de restauração criada com ${sessionQueue.length} sessões`);
-    
-    // 3. Definir função para processar lotes da fila
-    const MAX_CONCURRENT_RESTORATIONS = 3;
-    let activeRestorations = 0;
-    let queueIndex = 0;
-    
-    const processNextBatch = async () => {
-      while (queueIndex < sessionQueue.length && activeRestorations < MAX_CONCURRENT_RESTORATIONS) {
-        const session = sessionQueue[queueIndex++];
-        activeRestorations++;
-        
-        // Iniciar restauração de forma assíncrona
-        console.log(`🔄 Iniciando restauração de ${session.sessionName} (${activeRestorations}/${MAX_CONCURRENT_RESTORATIONS} ativos)`);
-        
-        restoreSession(session)
-          .finally(() => {
-            activeRestorations--;
-            console.log(`✅ Restauração de sessão concluída. Restaurações ativas: ${activeRestorations}`);
-            
-            // Continuar processando a fila se ainda houver sessões
-            if (queueIndex < sessionQueue.length) {
-              processNextBatch();
-            } else if (activeRestorations === 0) {
-              console.log('🎉 Todas as sessões foram processadas com sucesso!');
-            }
-          });
-      }
-    };
-    
+// ✅ FUNÇÃO restoreSession DEVE ESTAR FORA E ANTES de restoreSessions
 const restoreSession = async ({ sessionName, email }) => {
   try {
     console.log(`⏳ Restaurando sessão: ${sessionName}`);
@@ -2603,9 +2551,9 @@ const restoreSession = async ({ sessionName, email }) => {
       myNumber = await client.getWid();
       console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
 
-       if (myNumber === MAIN_BOT_NUMBER) {
-         console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
-         startReminderChecks(client);
+      if (myNumber === MAIN_BOT_NUMBER) {
+        console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
+        startReminderChecks(client);
       }
 
       await criarOuIgnorarSessao(sessionName, email);
@@ -2614,28 +2562,25 @@ const restoreSession = async ({ sessionName, email }) => {
       console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
     }
 
-
     if (!SESSIONS.has(sessionName)) {
       SESSIONS.set(sessionName, { client, myNumber, email });
     } else {
       console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
     }
 
-        setInterval(async () => {
-        try {
-          const session = SESSIONS.get(sessionName);
-          if (!session) return;
+    // Monitoramento de status da sessão
+    setInterval(async () => {
+      try {
+        const session = SESSIONS.get(sessionName);
+        if (!session) return;
 
-          // obtém o estado atual da conexão
-          const state = await session.client.getConnectionState();
-          
-          // grava no banco
-          await atualizarStatusSessao(sessionName, state);
-          console.log(`🔄 [${sessionName}] status salvo: ${state}`);
-        } catch (err) {
-          console.error(`❌ erro ao checar status de ${sessionName}:`, err);
-        }
-      }, 30_000);
+        const state = await session.client.getConnectionState();
+        await atualizarStatusSessao(sessionName, state);
+        console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+      } catch (err) {
+        console.error(`❌ erro ao checar status de ${sessionName}:`, err);
+      }
+    }, 30_000);
 
     if (email) {
       try {
@@ -2691,7 +2636,6 @@ const restoreSession = async ({ sessionName, email }) => {
         if (filters.ignoreGroups && message.isGroupMsg) return;
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
-        // Backup: tenta recuperar myNumber dinamicamente
         const session = SESSIONS.get(sessionName);
         if (!session.myNumber) {
           try {
@@ -2711,10 +2655,7 @@ const restoreSession = async ({ sessionName, email }) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          
           if (message.to === MAIN_BOT_NUMBER) {
-            // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
-            // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
             const receivingSession = SESSIONS.get(sessionName);
             if (receivingSession && receivingSession.myNumber === message.to) {
               console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
@@ -2723,7 +2664,6 @@ const restoreSession = async ({ sessionName, email }) => {
               console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
             }
           } else {
-            // Mensagem normal - usar transcrição padrão
             console.log('📱 Áudio normal detectado - processando transcrição');
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
@@ -2747,8 +2687,61 @@ const restoreSession = async ({ sessionName, email }) => {
   }
 };
 
+// ✅ AGORA restoreSessions pode chamar restoreSession normalmente
+const restoreSessions = async () => {
+  try {
+    // 1. Consulta todas as sessões salvas no banco
+    const [rows] = await pool.query(`
+      SELECT numero AS sessionName, usuario_email AS email
+      FROM sessoes
+    `);
+
+    if (rows.length === 0) {
+      console.log('Nenhuma sessão encontrada no banco para restaurar.');
+      return;
+    }
+
+    console.log('→ Sessões encontradas:', rows.map(r => r.sessionName));
     
-    // 5. Iniciar o processamento do primeiro lote
+    // 2. Criar fila de sessões para restauração
+    const sessionQueue = rows.filter(({ sessionName }) => !SESSIONS.has(sessionName));
+    
+    if (sessionQueue.length === 0) {
+      console.log('⚠️ Todas as sessões já estão ativas. Nada para restaurar.');
+      return;
+    }
+    
+    console.log(`📋 Fila de restauração criada com ${sessionQueue.length} sessões`);
+    
+    // 3. Definir função para processar lotes da fila
+    const MAX_CONCURRENT_RESTORATIONS = 3;
+    let activeRestorations = 0;
+    let queueIndex = 0;
+    
+    const processNextBatch = async () => {
+      while (queueIndex < sessionQueue.length && activeRestorations < MAX_CONCURRENT_RESTORATIONS) {
+        const session = sessionQueue[queueIndex++];
+        activeRestorations++;
+        
+        // Iniciar restauração de forma assíncrona
+        console.log(`🔄 Iniciando restauração de ${session.sessionName} (${activeRestorations}/${MAX_CONCURRENT_RESTORATIONS} ativos)`);
+        
+        restoreSession(session)
+          .finally(() => {
+            activeRestorations--;
+            console.log(`✅ Restauração de sessão concluída. Restaurações ativas: ${activeRestorations}`);
+            
+            // Continuar processando a fila se ainda houver sessões
+            if (queueIndex < sessionQueue.length) {
+              processNextBatch();
+            } else if (activeRestorations === 0) {
+              console.log('🎉 Todas as sessões foram processadas com sucesso!');
+            }
+          });
+      }
+    };
+    
+    // 4. Iniciar o processamento do primeiro lote
     await processNextBatch();
     
   } catch (err) {
@@ -2756,8 +2749,7 @@ const restoreSession = async ({ sessionName, email }) => {
   }
 };
 
-
-// … no final do seu arquivo:
+// ✅ Inicialização do servidor
 restoreSessions().then(() => {
   const port = process.env.PORT;
   server.listen(port, () => {
