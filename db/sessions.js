@@ -9,13 +9,19 @@ export async function criarOuIgnorarSessao(numero, email) {
   await db.query(sql, [numero, email]);
 }
 
-export async function atualizarStatusSessao(numero, status) {
+export async function atualizarStatusSessao(sessionName, status) {
   const sql = `
     UPDATE sessoes
-    SET status = ?
+    SET status = ?, updated_at = NOW()
     WHERE numero = ?
   `;
-  await db.query(sql, [status, numero]);
+  try {
+    await db.query(sql, [status, sessionName]);
+    console.log(`📊 Status ${status} salvo no banco para sessão ${sessionName}`);
+  } catch (error) {
+    console.error(`❌ Erro ao atualizar status no banco para ${sessionName}:`, error);
+    throw error;
+  }
 }
 
 export async function excluirSessaoPorEmail(email, sessionName) {

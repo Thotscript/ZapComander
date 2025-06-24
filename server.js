@@ -618,25 +618,15 @@ app.post('/auth/login', async (req, res) => {
       SESSIONS.set(sessionName, { client, myNumber, email });
     }
 
-    setInterval(async () => {
-      try {
-        const session = SESSIONS.get(sessionName);
-        if (!session) return;
-
-        // obtém o estado atual da conexão
-        const state = await session.client.getConnectionState();
-        
-        // grava no banco
-        await atualizarStatusSessao(sessionName, state);
-        console.log(`🔄 [${sessionName}] status salvo: ${state}`);
-      } catch (err) {
-        console.error(`❌ erro ao checar status de ${sessionName}:`, err);
-      }
-    }, 30_000);
+    // ✅ SUBSTITUÍDO: setInterval por createStatusInterval
+    createStatusInterval(sessionName);
 
     client.onStateChange(async (state) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
+
+        // ✅ ADICIONADO: Atualiza status imediatamente no banco
+        await atualizarStatusSessao(sessionName, state);
 
         if (state === 'CONNECTED') {
           try {
@@ -659,16 +649,32 @@ app.post('/auth/login', async (req, res) => {
           }
 
           broadcastSessionAuthenticated(sessionName);
+          
+          // ✅ ADICIONADO: Recria o intervalo quando conecta
+          createStatusInterval(sessionName);
+          
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
           await cleanupSession(sessionName);
+          
         } else if (state === 'OFFLINE') {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+          // ✅ ADICIONADO: Para o intervalo antes de reiniciar
+          if (SESSION_INTERVALS.has(sessionName)) {
+            clearInterval(SESSION_INTERVALS.get(sessionName));
+            SESSION_INTERVALS.delete(sessionName);
+          }
           restartSessionIfOffline(sessionName, email);
         }
 
       } catch (error) {
         console.error(`⚠️ Erro no onStateChange da sessão ${sessionName}:`, error);
+        // ✅ ADICIONADO: Em caso de erro, marca como disconnected
+        try {
+          await atualizarStatusSessao(sessionName, 'DISCONNECTED');
+        } catch (dbErr) {
+          console.error(`❌ Erro ao marcar sessão como DISCONNECTED:`, dbErr);
+        }
       }
     });
 
@@ -728,6 +734,14 @@ app.post('/auth/login', async (req, res) => {
 
   } catch (err) {
     console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
+    
+    // ✅ ADICIONADO: Garante que status é marcado como erro no banco
+    try {
+      await atualizarStatusSessao(sessionName, 'DISCONNECTED');
+    } catch (dbErr) {
+      console.error(`❌ Erro ao marcar sessão como DISCONNECTED após falha:`, dbErr);
+    }
+    
     if (!res.headersSent) {
       res.status(500).json({ error: 'Erro ao iniciar sessão.' });
     }
@@ -1056,6 +1070,61 @@ async function cleanupSession(sessionName) {
   }
 }
 
+
+function createStatusInterval(sessionName) {
+  // Remove intervalo existente se houver
+  if (SESSION_INTERVALS.has(sessionName)) {
+    clearInterval(SESSION_INTERVALS.get(sessionName));
+  }
+
+  const intervalId = setInterval(async () => {
+    try {
+      const session = SESSIONS.get(sessionName);
+      if (!session || !session.client) {
+        console.log(`⚠️ [${sessionName}] Sessão não encontrada, parando intervalo de status`);
+        clearInterval(intervalId);
+        SESSION_INTERVALS.delete(sessionName);
+        return;
+      }
+
+      let state;
+      try {
+        // Verifica se o cliente ainda está válido
+        state = await session.client.getConnectionState();
+      } catch (clientError) {
+        console.warn(`⚠️ [${sessionName}] Cliente inacessível, marcando como DISCONNECTED:`, clientError.message);
+        state = 'DISCONNECTED';
+        
+        // Se o cliente não responde, limpa a sessão
+        await cleanupSession(sessionName);
+        return;
+      }
+      
+      // Atualiza no banco usando sessionName
+      await atualizarStatusSessao(sessionName, state);
+      console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+      
+      // Se desconectado, para o intervalo
+      if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
+        console.log(`🛑 [${sessionName}] Estado ${state} detectado, parando monitoramento`);
+        clearInterval(intervalId);
+        SESSION_INTERVALS.delete(sessionName);
+      }
+      
+    } catch (err) {
+      console.error(`❌ Erro ao checar status de ${sessionName}:`, err);
+      // Em caso de erro persistente, marca como disconnected
+      try {
+        await atualizarStatusSessao(sessionName, 'DISCONNECTED');
+      } catch (dbErr) {
+        console.error(`❌ Erro ao marcar sessão ${sessionName} como DISCONNECTED:`, dbErr);
+      }
+    }
+  }, 30_000);
+
+  SESSION_INTERVALS.set(sessionName, intervalId);
+  console.log(`✅ Intervalo de status criado para sessão ${sessionName}`);
+}
 
 
 // --------------------------------------------------------------------------------------------------------
@@ -2614,28 +2683,14 @@ const restoreSession = async ({ sessionName, email }) => {
       console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
     }
 
-
     if (!SESSIONS.has(sessionName)) {
       SESSIONS.set(sessionName, { client, myNumber, email });
     } else {
       console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
     }
 
-        setInterval(async () => {
-        try {
-          const session = SESSIONS.get(sessionName);
-          if (!session) return;
-
-          // obtém o estado atual da conexão
-          const state = await session.client.getConnectionState();
-          
-          // grava no banco
-          await atualizarStatusSessao(sessionName, state);
-          console.log(`🔄 [${sessionName}] status salvo: ${state}`);
-        } catch (err) {
-          console.error(`❌ erro ao checar status de ${sessionName}:`, err);
-        }
-      }, 30_000);
+    // ✅ SUBSTITUÍDO: setInterval por createStatusInterval
+    createStatusInterval(sessionName);
 
     if (email) {
       try {
@@ -2650,6 +2705,9 @@ const restoreSession = async ({ sessionName, email }) => {
       console.log(`Estado restaurado da sessão ${sessionName}: ${state}`);
       
       try {
+        // ✅ ADICIONADO: Atualiza status imediatamente no banco
+        await atualizarStatusSessao(sessionName, state);
+        
         if (state === 'CONNECTED') {
           try {
             const myNumber = await client.getWid();
@@ -2668,6 +2726,9 @@ const restoreSession = async ({ sessionName, email }) => {
           } catch (dbErr) {
             console.error(`❌ Erro ao registrar sessão (restauração):`, dbErr);
           }
+          
+          // ✅ ADICIONADO: Recria o intervalo quando conecta
+          createStatusInterval(sessionName);
 
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado crítico (${state}) durante restauração. Iniciando limpeza...`);
@@ -2675,11 +2736,22 @@ const restoreSession = async ({ sessionName, email }) => {
 
         } else if (state === 'OFFLINE') {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+          // ✅ ADICIONADO: Para o intervalo antes de reiniciar
+          if (SESSION_INTERVALS.has(sessionName)) {
+            clearInterval(SESSION_INTERVALS.get(sessionName));
+            SESSION_INTERVALS.delete(sessionName);
+          }
           restartSessionIfOffline(sessionName, email);
         }
 
       } catch (error) {
         console.error(`⚠️ Erro no onStateChange (restauração) da sessão ${sessionName}:`, error);
+        // ✅ ADICIONADO: Em caso de erro, marca como disconnected
+        try {
+          await atualizarStatusSessao(sessionName, 'DISCONNECTED');
+        } catch (dbErr) {
+          console.error(`❌ Erro ao marcar sessão como DISCONNECTED:`, dbErr);
+        }
       }
     });
 
