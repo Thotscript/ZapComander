@@ -160,6 +160,7 @@ const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
 const CONVERSATIONS    = new Map();
 const ASSISTANT_MODEL  = "gpt-4.1";
 const SESSION_FILTERS = new Map();
+const SESSION_INTERVALS = new Map();
 
 [ 
   path.dirname(FILTERS_FILE),
