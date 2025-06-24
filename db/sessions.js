@@ -12,7 +12,7 @@ export async function criarOuIgnorarSessao(numero, email) {
 export async function atualizarStatusSessao(sessionName, status) {
   const sql = `
     UPDATE sessoes
-    SET status = ?, updated_at = NOW()
+    SET status = ?
     WHERE numero = ?
   `;
   try {
