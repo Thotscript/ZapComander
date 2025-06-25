@@ -498,7 +498,7 @@ function enqueueProcessing(sessionName, fn) {
 app.post('/auth/login', async (req, res) => {
   const {
     sessionName = null,
-    email       = null
+    email = null
   } = req.body;
 
   if (!sessionName || !email) {
@@ -534,15 +534,46 @@ app.post('/auth/login', async (req, res) => {
         broadcastQR(sessionName);
       },
       statusFind: (statusSession) => {
+        console.log(`📊 Status Find para ${sessionName}: ${statusSession}`);
+        
         if (statusSession === 'autocloseCalled') {
           cleanupSession(sessionName);
         }
+        
         if (statusSession === 'qrReadSuccess') {
+          // ✅ CORREÇÃO: Salvar token imediatamente após QR ser lido
+          setTimeout(async () => {
+            try {
+              const tokenData = await client.getToken();
+              if (tokenData) {
+                await myTokenStore.saveToken(sessionName, tokenData);
+                console.log(`🔐 Token salvo após QR lido para sessão ${sessionName}`);
+              }
+            } catch (tokenErr) {
+              console.error(`❌ Erro ao salvar token após QR para ${sessionName}:`, tokenErr);
+            }
+          }, 2000); // Aguarda 2s para estabilizar
+          
           sendToSession(sessionName, {
             type: 'qrReadSuccess',
             session: sessionName,
             success: true
           });
+        }
+        
+        // ✅ NOVO: Salvar token também quando sessão é autenticada
+        if (statusSession === 'isLogged' || statusSession === 'deviceNotConnected') {
+          setTimeout(async () => {
+            try {
+              const tokenData = await client.getToken();
+              if (tokenData) {
+                await myTokenStore.saveToken(sessionName, tokenData);
+                console.log(`🔐 Token salvo no status ${statusSession} para sessão ${sessionName}`);
+              }
+            } catch (tokenErr) {
+              console.error(`❌ Erro ao salvar token no status ${statusSession} para ${sessionName}:`, tokenErr);
+            }
+          }, 1000);
         }
       },
       debug: true,
@@ -583,23 +614,54 @@ app.post('/auth/login', async (req, res) => {
 
     let myNumber = null;
 
-      try {
-        await client.isConnected(); // força status válido
-
-        // ✅ Gera e salva o token manualmente
+    try {
+      // ✅ CORREÇÃO: Aguardar conexão completa antes de tentar obter token
+      const maxRetries = 10;
+      let retryCount = 0;
+      let isConnected = false;
+      
+      while (!isConnected && retryCount < maxRetries) {
         try {
-          const tokenData = await client.getToken();
-          if (tokenData) {
-            await myTokenStore.saveToken(sessionName, tokenData);
-            console.log(`🔐 Token salvo com sucesso para sessão ${sessionName}`);
+          isConnected = await client.isConnected();
+          if (!isConnected) {
+            console.log(`⏳ Aguardando conexão da sessão ${sessionName} (tentativa ${retryCount + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            retryCount++;
           }
-        } catch (tokenErr) {
-          console.warn(`⚠️ Erro ao gerar/salvar token para sessão ${sessionName}:`, tokenErr.message);
+        } catch (err) {
+          console.warn(`⚠️ Erro ao verificar conexão da sessão ${sessionName}:`, err.message);
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
+      if (isConnected) {
+        // ✅ CORREÇÃO: Múltiplas tentativas para salvar o token
+        let tokenSaved = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const tokenData = await client.getToken();
+            if (tokenData) {
+              await myTokenStore.saveToken(sessionName, tokenData);
+              console.log(`🔐 Token salvo com sucesso para sessão ${sessionName} (tentativa ${attempt})`);
+              tokenSaved = true;
+              break;
+            }
+          } catch (tokenErr) {
+            console.warn(`⚠️ Tentativa ${attempt} falhou ao salvar token para ${sessionName}:`, tokenErr.message);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+        
+        if (!tokenSaved) {
+          console.error(`❌ FALHA: Não foi possível salvar token para ${sessionName} após 3 tentativas`);
         }
 
         // Recupera o número real desta sessão
         myNumber = await client.getWid();
-        console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
+        console.log(`📱 Número recuperado: ${myNumber}`);
 
         // Se este número for o do bot principal, disparar checagem de lembretes
         if (myNumber === MAIN_BOT_NUMBER) {
@@ -609,36 +671,85 @@ app.post('/auth/login', async (req, res) => {
 
         await criarOuIgnorarSessao(sessionName, email);
         console.log(`✅ Sessão ${sessionName} garantida no banco.`);
-      } catch (err) {
-        console.warn(`⚠️ Falha ao recuperar myNumber após criação da sessão ${sessionName}:`, err.message);
+      } else {
+        console.warn(`⚠️ Sessão ${sessionName} não conseguiu se conectar após ${maxRetries} tentativas`);
       }
-
-
-    if (!SESSIONS.has(sessionName)) {
-      SESSIONS.set(sessionName, { client, myNumber, email });
+      
+    } catch (err) {
+      console.warn(`⚠️ Falha ao recuperar dados após criação da sessão ${sessionName}:`, err.message);
     }
 
-    setInterval(async () => {
+    if (!SESSIONS.has(sessionName)) {
+      SESSIONS.set(sessionName, { 
+        client, 
+        myNumber, 
+        email,
+        tokenSaveRetries: 0 // ✅ NOVO: Contador de tentativas de salvamento
+      });
+    }
+
+    // ✅ CORREÇÃO: Melhorar monitoramento de status
+    const statusInterval = setInterval(async () => {
       try {
         const session = SESSIONS.get(sessionName);
-        if (!session) return;
+        if (!session) {
+          clearInterval(statusInterval);
+          return;
+        }
 
-        // obtém o estado atual da conexão
-        const state = await session.client.getConnectionState();
+        let state = 'DISCONNECTED';
+        try {
+          state = await session.client.getConnectionState();
+          
+          // ✅ NOVO: Tentar salvar token periodicamente se ainda não foi salvo
+          if (state === 'CONNECTED' && session.tokenSaveRetries < 5) {
+            try {
+              const tokenData = await session.client.getToken();
+              if (tokenData) {
+                await myTokenStore.saveToken(sessionName, tokenData);
+                console.log(`🔐 Token salvo no monitoramento para ${sessionName}`);
+                session.tokenSaveRetries = 5; // Marca como salvo
+              }
+            } catch (tokenErr) {
+              session.tokenSaveRetries++;
+              console.warn(`⚠️ Tentativa ${session.tokenSaveRetries} de salvar token no monitoramento falhou para ${sessionName}`);
+            }
+          }
+          
+        } catch (err) {
+          console.warn(`⚠️ Erro ao verificar estado de ${sessionName}:`, err.message);
+        }
         
-        // grava no banco
         await atualizarStatusSessao(sessionName, state);
-        console.log(`🔄 [${sessionName}] status salvo: ${state}`);
+        console.log(`🔄 [${sessionName}] status: ${state}`);
       } catch (err) {
-        console.error(`❌ erro ao checar status de ${sessionName}:`, err);
+        console.error(`❌ Erro no monitoramento de ${sessionName}:`, err);
       }
     }, 30_000);
+
+    // Salvar referência do interval
+    if (SESSIONS.has(sessionName)) {
+      SESSIONS.get(sessionName).statusInterval = statusInterval;
+    }
 
     client.onStateChange(async (state) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
 
         if (state === 'CONNECTED') {
+          // ✅ CORREÇÃO: Salvar token sempre que conectar
+          setTimeout(async () => {
+            try {
+              const tokenData = await client.getToken();
+              if (tokenData) {
+                await myTokenStore.saveToken(sessionName, tokenData);
+                console.log(`🔐 Token salvo no onStateChange CONNECTED para ${sessionName}`);
+              }
+            } catch (tokenErr) {
+              console.error(`❌ Erro ao salvar token no CONNECTED para ${sessionName}:`, tokenErr);
+            }
+          }, 1000);
+
           try {
             const myNumber = await client.getWid();
             const session = SESSIONS.get(sessionName);
@@ -661,6 +772,13 @@ app.post('/auth/login', async (req, res) => {
           broadcastSessionAuthenticated(sessionName);
         } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado: ${state}. Iniciando limpeza...`);
+          
+          // Limpar interval antes do cleanup
+          const session = SESSIONS.get(sessionName);
+          if (session?.statusInterval) {
+            clearInterval(session.statusInterval);
+          }
+          
           await cleanupSession(sessionName);
         } else if (state === 'OFFLINE') {
           console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
@@ -672,6 +790,7 @@ app.post('/auth/login', async (req, res) => {
       }
     });
 
+    // Manter o onAnyMessage como estava...
     client.onAnyMessage(async (message) => {
       try {
         const filters = await loadFiltersFromDB(email, sessionName);
@@ -699,10 +818,7 @@ app.post('/auth/login', async (req, res) => {
         }
 
         if (message.type === 'ptt' || message.type === 'audio') {
-          
           if (message.to === MAIN_BOT_NUMBER) {
-            // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
-            // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
             const receivingSession = SESSIONS.get(sessionName);
             if (receivingSession && receivingSession.myNumber === message.to) {
               console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
@@ -711,7 +827,6 @@ app.post('/auth/login', async (req, res) => {
               console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
             }
           } else {
-            // Mensagem normal - usar transcrição padrão
             console.log('📱 Áudio normal detectado - processando transcrição');
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
@@ -2503,9 +2618,17 @@ const restoreSession = async ({ sessionName, email }) => {
       console.log(`🔓 Removido arquivo SingletonLock de ${sessionName}`);
     }
 
-    const tokenData = await myTokenStore.getToken(sessionName);
-    if (!tokenData) {
-      console.warn(`⚠️ Token não encontrado para sessão ${sessionName}, pulando.`);
+    // ✅ CORREÇÃO: Verificar se token existe antes de tentar restaurar
+    let tokenData;
+    try {
+      tokenData = await myTokenStore.getToken(sessionName);
+      if (!tokenData) {
+        console.warn(`⚠️ Token não encontrado para sessão ${sessionName}, pulando restauração.`);
+        return;
+      }
+      console.log(`🔑 Token encontrado para ${sessionName}, procedendo com restauração...`);
+    } catch (tokenError) {
+      console.error(`❌ Erro ao verificar token para ${sessionName}:`, tokenError.message);
       return;
     }
 
@@ -2514,8 +2637,25 @@ const restoreSession = async ({ sessionName, email }) => {
       tokenStore: myTokenStore,
       deviceName: 'The Broker VIP',
       statusFind: (statusSession) => {
+        console.log(`📊 Status Find para restauração ${sessionName}: ${statusSession}`);
+        
         if (statusSession === 'autocloseCalled') {
           cleanupSession(sessionName);
+        }
+        
+        // ✅ NOVO: Salvar token em diferentes estados durante restauração
+        if (['isLogged', 'deviceNotConnected', 'qrReadSuccess'].includes(statusSession)) {
+          setTimeout(async () => {
+            try {
+              const newTokenData = await client.getToken();
+              if (newTokenData) {
+                await myTokenStore.saveToken(sessionName, newTokenData);
+                console.log(`🔐 Token atualizado durante restauração para ${sessionName} no status ${statusSession}`);
+              }
+            } catch (tokenErr) {
+              console.warn(`⚠️ Erro ao atualizar token durante restauração de ${sessionName}:`, tokenErr);
+            }
+          }, 1000);
         }
       },
       debug: true,
@@ -2547,19 +2687,68 @@ const restoreSession = async ({ sessionName, email }) => {
     let myNumber = null;
 
     try {
-      await client.isConnected();
-      myNumber = await client.getWid();
-      console.log(`📱 Número recuperado imediatamente após criação: ${myNumber}`);
-
-      if (myNumber === MAIN_BOT_NUMBER) {
-        console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
-        startReminderChecks(client);
+      // ✅ CORREÇÃO: Aguardar conexão completa durante restauração
+      const maxRetries = 15; // Mais tentativas para restauração
+      let retryCount = 0;
+      let isConnected = false;
+      
+      while (!isConnected && retryCount < maxRetries) {
+        try {
+          isConnected = await client.isConnected();
+          if (!isConnected) {
+            console.log(`⏳ Aguardando restauração da sessão ${sessionName} (tentativa ${retryCount + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Mais tempo entre tentativas
+            retryCount++;
+          }
+        } catch (err) {
+          console.warn(`⚠️ Erro ao verificar conexão durante restauração ${sessionName}:`, err.message);
+          retryCount++;
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
       }
 
-      await criarOuIgnorarSessao(sessionName, email);
-      console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
+      if (isConnected) {
+        myNumber = await client.getWid();
+        console.log(`📱 Número recuperado durante restauração: ${myNumber}`);
+
+        // ✅ CORREÇÃO: Salvar token atualizado após restauração bem-sucedida
+        let tokenSaved = false;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const updatedTokenData = await client.getToken();
+            if (updatedTokenData) {
+              await myTokenStore.saveToken(sessionName, updatedTokenData);
+              console.log(`🔐 Token atualizado após restauração bem-sucedida de ${sessionName} (tentativa ${attempt})`);
+              tokenSaved = true;
+              break;
+            }
+          } catch (tokenErr) {
+            console.warn(`⚠️ Tentativa ${attempt} falhou ao atualizar token após restauração de ${sessionName}:`, tokenErr.message);
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+        
+        if (!tokenSaved) {
+          console.error(`❌ FALHA: Não foi possível atualizar token para ${sessionName} após restauração`);
+        }
+
+        if (myNumber === MAIN_BOT_NUMBER) {
+          console.log('▶️ Bot principal restaurado — agendando checagem de lembretes...');
+          startReminderChecks(client);
+        }
+
+        await criarOuIgnorarSessao(sessionName, email);
+        console.log(`✅ Sessão '${sessionName}' registrada no banco (restauração).`);
+      } else {
+        console.error(`❌ Sessão ${sessionName} não conseguiu se conectar durante restauração após ${maxRetries} tentativas`);
+        throw new Error(`Falha na conexão durante restauração de ${sessionName}`);
+      }
+      
     } catch (err) {
-      console.warn(`⚠️ Falha ao recuperar myNumber logo após criação da sessão ${sessionName}:`, err.message);
+      console.error(`❌ Falha durante processo de restauração da sessão ${sessionName}:`, err.message);
+      throw err;
     }
 
     if (!SESSIONS.has(sessionName)) {
@@ -2569,13 +2758,38 @@ const restoreSession = async ({ sessionName, email }) => {
         email,
         lastStatusCheck: Date.now(),
         consecutiveFailures: 0,
-        isHealthy: true
+        isHealthy: true,
+        tokenSaveRetries: 0,
+        statusInterval: null // ✅ NOVO: Referência para o interval
       });
     } else {
-      console.warn(`⚠️ SESSIONS já possui ${sessionName}. Evitando sobrescrever.`);
+      console.warn(`⚠️ SESSIONS já possui ${sessionName}. Atualizando dados existentes.`);
+      const existingSession = SESSIONS.get(sessionName);
+      
+      // Limpar interval anterior se existir
+      if (existingSession.statusInterval) {
+        clearInterval(existingSession.statusInterval);
+      }
+      
+      existingSession.client = client;
+      existingSession.myNumber = myNumber;
+      existingSession.email = email;
+      existingSession.isHealthy = true;
+      existingSession.consecutiveFailures = 0;
+      existingSession.tokenSaveRetries = 0;
+      existingSession.statusInterval = null;
     }
 
-    // Monitoramento de status da sessão MELHORADO
+    if (email) {
+      try {
+        await criarOuIgnorarUsuario(email);
+        console.log(`✅ Usuário '${email}' garantido no banco (restauração).`);
+      } catch (dbErr) {
+        console.error(`❌ Erro ao garantir usuário (restauração):`, dbErr);
+      }
+    }
+    
+    // ✅ CORREÇÃO: Melhorar monitoramento de status com referência salva
     const statusCheckInterval = setInterval(async () => {
       try {
         const session = SESSIONS.get(sessionName);
@@ -2610,6 +2824,21 @@ const restoreSession = async ({ sessionName, email }) => {
           session.consecutiveFailures = 0;
           session.isHealthy = true;
           session.lastStatusCheck = Date.now();
+
+          // ✅ NOVO: Tentar salvar token periodicamente se CONNECTED
+          if (currentState === 'CONNECTED' && session.tokenSaveRetries < 5) {
+            try {
+              const tokenData = await session.client.getToken();
+              if (tokenData) {
+                await myTokenStore.saveToken(sessionName, tokenData);
+                console.log(`🔐 Token salvo no monitoramento para ${sessionName}`);
+                session.tokenSaveRetries = 5; // Marca como salvo
+              }
+            } catch (tokenErr) {
+              session.tokenSaveRetries++;
+              console.warn(`⚠️ Tentativa ${session.tokenSaveRetries} de salvar token no monitoramento falhou para ${sessionName}`);
+            }
+          }
 
         } catch (statusError) {
           console.warn(`⚠️ Falha ao verificar status de ${sessionName}:`, statusError.message);
@@ -2653,18 +2882,10 @@ const restoreSession = async ({ sessionName, email }) => {
       }
     }, 30_000);
 
-    // Salva referência do interval para limpeza posterior
-    if (SESSIONS.has(sessionName)) {
-      SESSIONS.get(sessionName).statusInterval = statusCheckInterval;
-    }
-
-    if (email) {
-      try {
-        await criarOuIgnorarUsuario(email);
-        console.log(`✅ Usuário '${email}' garantido no banco (restauração).`);
-      } catch (dbErr) {
-        console.error(`❌ Erro ao garantir usuário (restauração):`, dbErr);
-      }
+    // ✅ CORREÇÃO: Salva referência do interval para limpeza posterior
+    const session = SESSIONS.get(sessionName);
+    if (session) {
+      session.statusInterval = statusCheckInterval;
     }
 
     client.onStateChange(async (state) => {
@@ -2682,6 +2903,20 @@ const restoreSession = async ({ sessionName, email }) => {
           if (state === 'CONNECTED') {
             session.consecutiveFailures = 0;
             session.isHealthy = true;
+            
+            // ✅ CORREÇÃO: Salvar token sempre que conectar durante restauração
+            setTimeout(async () => {
+              try {
+                const tokenData = await client.getToken();
+                if (tokenData) {
+                  await myTokenStore.saveToken(sessionName, tokenData);
+                  console.log(`🔐 Token salvo no onStateChange CONNECTED para ${sessionName} (restauração)`);
+                }
+              } catch (tokenErr) {
+                console.error(`❌ Erro ao salvar token no CONNECTED para ${sessionName} (restauração):`, tokenErr);
+              }
+            }, 1000);
+            
           } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
             session.isHealthy = false;
           }
@@ -2713,12 +2948,13 @@ const restoreSession = async ({ sessionName, email }) => {
           const session = SESSIONS.get(sessionName);
           if (session?.statusInterval) {
             clearInterval(session.statusInterval);
+            session.statusInterval = null;
           }
           
           await cleanupSession(sessionName);
 
         } else if (state === 'OFFLINE') {
-          console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE. Reiniciando...`);
+          console.warn(`⚠️ Sessão ${sessionName} entrou em estado OFFLINE durante restauração. Reiniciando...`);
           restartSessionIfOffline(sessionName, email);
         }
 
@@ -2736,10 +2972,10 @@ const restoreSession = async ({ sessionName, email }) => {
         if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
         const session = SESSIONS.get(sessionName);
-        if (!session.myNumber) {
+        if (!session?.myNumber) {
           try {
             const wid = await client.getWid();
-            if (wid) {
+            if (wid && session) {
               session.myNumber = wid;
               console.log(`🔁 Número definido dinamicamente via onAnyMessage para ${sessionName}: ${wid}`);
             }
@@ -2757,13 +2993,13 @@ const restoreSession = async ({ sessionName, email }) => {
           if (message.to === MAIN_BOT_NUMBER) {
             const receivingSession = SESSIONS.get(sessionName);
             if (receivingSession && receivingSession.myNumber === message.to) {
-              console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
+              console.log('🤖 Áudio direcionado ao bot detectado (sessão correta - restauração)');
               await processBotAudio(sessionName, message);
             } else {
-              console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
+              console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata (restauração)');
             }
           } else {
-            console.log('📱 Áudio normal detectado - processando transcrição');
+            console.log('📱 Áudio normal detectado - processando transcrição (restauração)');
             enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
         }
@@ -2773,7 +3009,7 @@ const restoreSession = async ({ sessionName, email }) => {
         }
 
       } catch (error) {
-        console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
+        console.error(`Erro ao processar mensagem na sessão ${sessionName} (restauração):`, error);
       }
     });
 
@@ -2782,6 +3018,18 @@ const restoreSession = async ({ sessionName, email }) => {
 
   } catch (error) {
     console.error(`⚠️ Erro ao restaurar sessão ${sessionName}:`, error);
+    
+    // ✅ CORREÇÃO: Limpeza em caso de erro
+    try {
+      const session = SESSIONS.get(sessionName);
+      if (session?.statusInterval) {
+        clearInterval(session.statusInterval);
+      }
+      SESSIONS.delete(sessionName);
+    } catch (cleanupError) {
+      console.error(`❌ Erro durante limpeza de sessão falha ${sessionName}:`, cleanupError);
+    }
+    
     throw error;
   }
 };
