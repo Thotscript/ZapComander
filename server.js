@@ -730,7 +730,7 @@ app.post('/auth/login', async (req, res) => {
       try {
         console.log(`Estado da sessão ${sessionName}: ${state}`);
 
-        if (state === 'CONNECTED') {
+        if (state === 'CONNECTED' || state === 'MAIN') {
           try {
             const myNumber = await client.getWid();
             const session = SESSIONS.get(sessionName);
