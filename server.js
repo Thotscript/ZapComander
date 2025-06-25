@@ -668,6 +668,7 @@ app.post('/auth/login', async (req, res) => {
       try {
         await criarOuIgnorarUsuario(email);
         console.log(`✅ Usuário '${email}' garantido no banco.`);
+
       } catch (dbErr) {
         console.error(`❌ Erro ao garantir usuário:`, dbErr);
       }
@@ -678,6 +679,11 @@ app.post('/auth/login', async (req, res) => {
       try {
         await client.isConnected(); // força status válido
 
+        setTimeout(async () => {
+          console.log(`🔄 Forçando salvamento do token para sessão ${sessionName}...`);
+          await forceTokenSave(client, sessionName);
+        }, 5000); // Aguarda 5 segundos para total estabilidade
+        
         // // Gera e salva o token manualmente
         // try {
         //   const tokenData = await client.getToken();
@@ -741,11 +747,6 @@ app.post('/auth/login', async (req, res) => {
           } catch (err) {
             console.error(`❌ Erro ao obter myNumber no onStateChange para sessão ${sessionName}:`, err.message);
           }
-
-          setTimeout(async () => {
-            console.log(`🔄 Forçando salvamento do token para sessão ${sessionName}...`);
-            await forceTokenSave(client, sessionName);
-          }, 5000); // Aguarda 5 segundos para total estabilidade
 
           try {
             await criarOuIgnorarSessao(sessionName, email);
