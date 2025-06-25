@@ -153,6 +153,7 @@ const FILTERS_FILE     = path.join(TOKEN_DIR, 'filters', 'filters.json');
 const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
 const QR_CODES_DIR = path.join(__dirname, 'public', 'qrcodes');
 const AUDIO_DIR    = path.join(__dirname, 'audios');
+
 const myTokenStore = new wppconnect.tokenStore.FileTokenStore({
   path: TOKEN_DIR
 });
@@ -452,6 +453,97 @@ app.get('/auth/statusfinder', async (req, res) => {
 
 
 
+// 1. FUNÇÃO PARA EXTRAIR E SALVAR TOKEN MANUALMENTE
+const forceTokenSave = async (client, sessionName) => {
+  try {
+    console.log(`💾 Forçando salvamento de token para ${sessionName}...`);
+    
+    // Método 1: Usar getSessionTokenBrowser (mais confiável)
+    let sessionToken = null;
+    
+    try {
+      sessionToken = await client.getSessionTokenBrowser();
+      console.log(`✅ Token extraído via getSessionTokenBrowser para ${sessionName}`);
+    } catch (err) {
+      console.warn(`⚠️ Falha ao extrair token via getSessionTokenBrowser:`, err.message);
+    }
+    
+    // Método 2: Fallback usando página diretamente
+    if (!sessionToken) {
+      try {
+        sessionToken = await client.page.evaluate(() => {
+          // Extrai tokens do localStorage do WhatsApp Web
+          const keys = Object.keys(localStorage);
+          const tokenData = {};
+          
+          for (const key of keys) {
+            if (key.startsWith('WA') || key.includes('token') || key.includes('session')) {
+              try {
+                const value = localStorage.getItem(key);
+                if (value) {
+                  tokenData[key] = JSON.parse(value);
+                }
+              } catch (e) {
+                tokenData[key] = localStorage.getItem(key);
+              }
+            }
+          }
+          
+          return Object.keys(tokenData).length > 0 ? tokenData : null;
+        });
+        
+        if (sessionToken) {
+          console.log(`✅ Token extraído via localStorage para ${sessionName}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Falha ao extrair token via localStorage:`, err.message);
+      }
+    }
+    
+    // Método 3: Usar getSession interno
+    if (!sessionToken) {
+      try {
+        const session = await client.getSession();
+        if (session) {
+          sessionToken = session;
+          console.log(`✅ Token extraído via getSession para ${sessionName}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Falha ao extrair token via getSession:`, err.message);
+      }
+    }
+    
+    if (!sessionToken) {
+      throw new Error('Não foi possível extrair o token da sessão');
+    }
+    
+    // Salvar token usando o TokenStore
+    const saveResult = await myTokenStore.setToken(sessionName, sessionToken);
+    
+    if (saveResult) {
+      console.log(`🎉 Token salvo com sucesso para ${sessionName}`);
+      
+      // Verificar se o arquivo foi criado
+      const savedToken = await myTokenStore.getToken(sessionName);
+      if (savedToken) {
+        console.log(`✅ Verificação: Token recuperado com sucesso`);
+        console.log(`📊 Campos salvos:`, Object.keys(savedToken));
+      } else {
+        console.warn(`⚠️ Verificação falhou: Token não foi encontrado após salvamento`);
+      }
+    } else {
+      throw new Error('TokenStore retornou false ao salvar');
+    }
+    
+    return true;
+    
+  } catch (error) {
+    console.error(`❌ Erro ao forçar salvamento de token para ${sessionName}:`, error);
+    return false;
+  }
+};
+
+
 // ----------------------------------------------------------------------------------
 app.get('/auth/logout', async (req, res) => {
   const sessionName = req.query.sessionName;
@@ -649,6 +741,11 @@ app.post('/auth/login', async (req, res) => {
           } catch (err) {
             console.error(`❌ Erro ao obter myNumber no onStateChange para sessão ${sessionName}:`, err.message);
           }
+
+          setTimeout(async () => {
+            console.log(`🔄 Forçando salvamento do token para sessão ${sessionName}...`);
+            await forceTokenSave(client, sessionName);
+          }, 5000); // Aguarda 5 segundos para total estabilidade
 
           try {
             await criarOuIgnorarSessao(sessionName, email);
