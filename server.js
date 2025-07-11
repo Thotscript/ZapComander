@@ -25,7 +25,116 @@ import { constants } from 'crypto';
 import { spawn } from 'child_process';
 import { DateTime } from 'luxon';
 import { createRequire } from 'module';
+import { google } from 'googleapis';
 
+
+
+// ===== SISTEMA DE TIMEOUT AUTOMÁTICO PARA BOTS =====
+
+// Mapa para armazenar os timeouts ativos
+const CONVERSATION_TIMEOUTS = new Map();
+const BOT_TIMEOUT_DURATION = 15 * 60 * 1000; // 15 minutos em millisegundos
+
+/**
+ * Define ou atualiza o timeout para uma conversa específica
+ * @param {string} convoKey - Chave da conversa (formato: "myNumber:senderNumber")
+ * @param {object} session - Objeto da sessão com client
+ * @param {string} senderNumber - Número do remetente
+ */
+function setConversationTimeout(convoKey, session, senderNumber) {
+  // Limpar timeout existente se houver
+  clearConversationTimeout(convoKey);
+  
+  console.log(`⏰ Definindo timeout de 15min para conversa: ${convoKey}`);
+  
+  const timeoutId = setTimeout(async () => {
+    try {
+      console.log(`⏰ Timeout atingido para conversa: ${convoKey}`);
+      
+      const conversation = CONVERSATIONS.get(convoKey);
+      if (conversation?.activeTrigger) {
+        console.log(`🔕 Desativando bot automático para ${convoKey} - trigger: ${conversation.activeTrigger}`);
+        
+        // Remover a conversa da memória
+        CONVERSATIONS.delete(convoKey);
+        
+        // Remover o timeout da lista
+        CONVERSATION_TIMEOUTS.delete(convoKey);
+        
+        // Enviar mensagem de notificação ao usuário
+        await session.client.sendText(
+          senderNumber,
+          '⏰ *Fluxo desativado por falta de interação*\n\n' +
+          'Por favor, reenvie sua pergunta caso precise de mais ajuda!\n\n' +
+          '_Timeout: 15 minutos de inatividade_'
+        );
+        
+        console.log(`✅ Notificação de timeout enviada para: ${senderNumber}`);
+      } else {
+        console.log(`ℹ️ Conversa ${convoKey} já estava inativa quando o timeout foi executado`);
+      }
+    } catch (error) {
+      console.error(`❌ Erro ao processar timeout para ${convoKey}:`, error);
+    }
+  }, BOT_TIMEOUT_DURATION);
+  
+  // Armazenar o timeout para possível cancelamento
+  CONVERSATION_TIMEOUTS.set(convoKey, {
+    timeoutId,
+    startTime: Date.now(),
+    senderNumber,
+    session
+  });
+}
+
+/**
+ * Limpa o timeout de uma conversa específica
+ * @param {string} convoKey - Chave da conversa
+ */
+function clearConversationTimeout(convoKey) {
+  const timeoutInfo = CONVERSATION_TIMEOUTS.get(convoKey);
+  if (timeoutInfo) {
+    clearTimeout(timeoutInfo.timeoutId);
+    CONVERSATION_TIMEOUTS.delete(convoKey);
+    console.log(`🔄 Timeout cancelado para conversa: ${convoKey}`);
+  }
+}
+
+/**
+ * Atualiza o timeout de uma conversa (reseta o timer)
+ * @param {string} convoKey - Chave da conversa
+ * @param {object} session - Objeto da sessão
+ * @param {string} senderNumber - Número do remetente
+ */
+function refreshConversationTimeout(convoKey, session, senderNumber) {
+  const conversation = CONVERSATIONS.get(convoKey);
+  
+  // Só renovar timeout se a conversa tem um trigger ativo
+  if (conversation?.activeTrigger) {
+    console.log(`🔄 Renovando timeout para conversa ativa: ${convoKey}`);
+    setConversationTimeout(convoKey, session, senderNumber);
+  }
+}
+
+/**
+ * Função auxiliar para obter informações de timeout (debug)
+ * @param {string} convoKey - Chave da conversa
+ * @returns {object|null} Informações do timeout ou null se não existir
+ */
+function getTimeoutInfo(convoKey) {
+  const timeoutInfo = CONVERSATION_TIMEOUTS.get(convoKey);
+  if (!timeoutInfo) return null;
+  
+  const elapsed = Date.now() - timeoutInfo.startTime;
+  const remaining = BOT_TIMEOUT_DURATION - elapsed;
+  
+  return {
+    elapsed: Math.floor(elapsed / 1000), // segundos
+    remaining: Math.floor(remaining / 1000), // segundos
+    startTime: new Date(timeoutInfo.startTime).toISOString(),
+    senderNumber: timeoutInfo.senderNumber
+  };
+}
 
 
 const DDI_TO_TIMEZONE = {
@@ -833,6 +942,11 @@ app.post('/auth/login', async (req, res) => {
 });
 
 
+app.post('/add-group', async (req, res) => {
+
+})
+
+
 
 
 // -------------------------------------------------------------------------------------
@@ -1416,6 +1530,7 @@ function sanitizeUTF8(str) {
 }
 
 
+// FUNÇÃO handleTBVEventosConversation ORIGINAL + TIMEOUT
 async function handleTBVEventosConversation(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
@@ -1430,6 +1545,11 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
   if (convo.history.length === 0) {
     convo.history.push({ role: 'system', content: prompt });
+    // ✅ NOVO: Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    // ✅ NOVO: Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
   }
 
   convo.history.push({ role: 'user', content: userInput });
@@ -1532,6 +1652,8 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
         await client.sendText(sender, reply);
 
+        // ✅ NOVO: Limpar timeout quando conversa termina
+        clearConversationTimeout(convoKey);
         CONVERSATIONS.delete(convoKey);
 
         return;
@@ -1566,7 +1688,6 @@ async function handleTBVEventosConversation(session, message, userInput, session
 
 
 
-
 async function handleTriggerTBVConstruction(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
@@ -1578,12 +1699,17 @@ async function handleTriggerTBVConstruction(session, message, userInput, session
     activeTrigger: 'tbvconstruction'
   };
 
-  // Carrega o prompt “TBVConstruction” com as Instruções Revisadas
+  // Carrega o prompt "TBVConstruction" com as Instruções Revisadas
   const prompt = loadPrompt('TBVConstruction');
 
   // Na primeira vez, injetamos o sistema
   if (convo.history.length === 0) {
     convo.history.push({ role: 'system', content: prompt });
+    // ✅ NOVO: Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    // ✅ NOVO: Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
   }
 
   // Empilha a mensagem do usuário
@@ -1609,9 +1735,11 @@ async function handleTriggerTBVConstruction(session, message, userInput, session
     return;
   }
 
-  // Se o usuário respondeu “não” depois da pergunta de fechamento, encerramos
+  // Se o usuário respondeu "não" depois da pergunta de fechamento, encerramos
   if (/^(não|nao)\b/i.test(userInput) && convo.activeTrigger === 'tbvconstruction') {
     await client.sendText(sender, '👍 Entendido! Encerrando este atendimento. Se precisar, é só chamar outro serviço.');
+    // ✅ NOVO: Limpar timeout quando conversa termina
+    clearConversationTimeout(convoKey);
     CONVERSATIONS.delete(convoKey);
     return;
   }
@@ -1632,12 +1760,17 @@ async function handleTriggerTBVRentabilidade(session, message, userInput, sessio
     activeTrigger: 'tbvrentabilidade'
   };
 
-  // Carrega o prompt “TBVRentabilidade” (arquivo prompts/TBVRentabilidade.txt)
+  // Carrega o prompt "TBVRentabilidade" (arquivo prompts/TBVRentabilidade.txt)
   const prompt = loadPrompt('TBVRentabilidade');
 
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
     convo.history.push({ role: 'system', content: prompt });
+    // ✅ NOVO: Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    // ✅ NOVO: Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
   }
 
   // Empilha a mensagem do usuário
@@ -1659,6 +1792,8 @@ async function handleTriggerTBVRentabilidade(session, message, userInput, sessio
       sender,
       '👍 Até mais! Quando quiser retomar a análise de rentabilidade, é só digitar o gatilho novamente.'
     );
+    // ✅ NOVO: Limpar timeout quando conversa termina automaticamente
+    clearConversationTimeout(convoKey);
     CONVERSATIONS.delete(convoKey);
     return;
   }
@@ -1669,52 +1804,59 @@ async function handleTriggerTBVRentabilidade(session, message, userInput, sessio
 }
 
 
-  async function handleTriggerMortgage(session, message, userInput, sessionName, email) {
-    const client   = session.client;
-    const sender   = message.from;
-    const convoKey = `${session.myNumber}:${sender}`;
+async function handleTriggerMortgage(session, message, userInput, sessionName, email) {
+  const client   = session.client;
+  const sender   = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
 
-    // Inicia ou recupera o estado da conversa
-    let convo = CONVERSATIONS.get(convoKey) || {
-      history: [],
-      activeTrigger: 'tbvmortgage'
-    };
+  // Inicia ou recupera o estado da conversa
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvmortgage'
+  };
 
-    // Carrega o prompt “TBVMorgage” (arquivo prompts/TBVMorgage.txt)
-    const prompt = loadPrompt('TBVMortgage');
+  // Carrega o prompt "TBVMortgage" (arquivo prompts/TBVMortgage.txt)
+  const prompt = loadPrompt('TBVMortgage');
 
-    // Se for a primeira interação, injeta o system prompt
-    if (convo.history.length === 0) {
-      convo.history.push({ role: 'system', content: prompt });
-    }
-
-    // Empilha a mensagem do usuário
-    convo.history.push({ role: 'user', content: userInput });
-
-    // Chama o GPT
-    const gptResponse = await openai.chat.completions.create({
-      model:      ASSISTANT_MODEL,
-      messages:   convo.history,
-      temperature: 0.2
-    });
-
-    const assistantResponse = gptResponse.choices[0].message.content.trim();
-    convo.history.push({ role: 'assistant', content: assistantResponse });
-
-    // Se o GPT devolveu o token de encerramento, finaliza aqui:
-    if (assistantResponse === 'finalizando-atendimento') {
-      await client.sendText(
-        sender,
-        '👍 Até mais! Quando quiser retomar o financiamento, é só digitar o gatilho novamente.'
-      );
-      CONVERSATIONS.delete(convoKey);
-      return;
-    }
-
-    // Caso contrário, envia a resposta normal e mantém o estado
-    await client.sendText(sender, assistantResponse);
-    CONVERSATIONS.set(convoKey, convo);
+  // Se for a primeira interação, injeta o system prompt
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+    // ✅ NOVO: Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    // ✅ NOVO: Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
   }
+
+  // Empilha a mensagem do usuário
+  convo.history.push({ role: 'user', content: userInput });
+
+  // Chama o GPT
+  const gptResponse = await openai.chat.completions.create({
+    model:      ASSISTANT_MODEL,
+    messages:   convo.history,
+    temperature: 0.2
+  });
+
+  const assistantResponse = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: assistantResponse });
+
+  // Se o GPT devolveu o token de encerramento, finaliza aqui:
+  if (assistantResponse === 'finalizando-atendimento') {
+    await client.sendText(
+      sender,
+      '👍 Até mais! Quando quiser retomar o financiamento, é só digitar o gatilho novamente.'
+    );
+    // ✅ NOVO: Limpar timeout quando conversa termina automaticamente
+    clearConversationTimeout(convoKey);
+    CONVERSATIONS.delete(convoKey);
+    return;
+  }
+
+  // Caso contrário, envia a resposta normal e mantém o estado
+  await client.sendText(sender, assistantResponse);
+  CONVERSATIONS.set(convoKey, convo);
+}
 
 
 // Mapeamento de triggers e suas funções
@@ -1822,7 +1964,8 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   }
 }
 
-// Nova função específica para mensagens de áudio direcionadas ao bot
+// ATUALIZAR: processBotAudio (aplicar as mesmas modificações)
+// FUNÇÃO processBotAudio ORIGINAL + TIMEOUT
 async function processBotAudio(sessionName, message) {
   try {
     if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
@@ -1861,6 +2004,8 @@ async function processBotAudio(sessionName, message) {
       // 🛑 1) Comando explícito para desligar o bot (via áudio)
       if (transcript && transcript.toLowerCase().trim() === 'tbvoff') {
         if (stored?.activeTrigger) {
+          // ✅ NOVO: Limpar timeout quando bot é desativado via áudio
+          clearConversationTimeout(convoKey);
           await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
           CONVERSATIONS.delete(convoKey);
         } else {
@@ -1872,6 +2017,8 @@ async function processBotAudio(sessionName, message) {
       // 🛑 2) Triggers de encerramento por desinteresse (via áudio)
       const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
       if (transcript && stored?.activeTrigger && endRegex.test(transcript.trim())) {
+        // ✅ NOVO: Limpar timeout quando conversa é encerrada via áudio
+        clearConversationTimeout(convoKey);
         await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
         CONVERSATIONS.delete(convoKey);
         return;
@@ -1880,6 +2027,8 @@ async function processBotAudio(sessionName, message) {
       // ✅ 3) Se há fluxo ativo, delega direto ao handler (via áudio)
       if (transcript && stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
         console.log(`[processBotAudio] Continuando conversa ativa: ${stored.activeTrigger}`);
+        // ✅ NOVO: Renovar timeout a cada áudio no fluxo ativo
+        refreshConversationTimeout(convoKey, session, message.from);
         await TRIGGERS[stored.activeTrigger](session, message, transcript, sessionName, email);
         return;
       }
@@ -1913,6 +2062,9 @@ async function processBotAudio(sessionName, message) {
           
           // Configurar conversa ativa
           CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+          
+          // ✅ NOVO: Definir timeout quando nova conversa é iniciada via áudio
+          setConversationTimeout(convoKey, session, message.from);
           
           // Chamar o trigger com o transcript como texto
           if (TRIGGERS[trigKey]) {
@@ -1964,6 +2116,70 @@ async function processBotAudio(sessionName, message) {
     }
   }
 }
+
+// ===== FUNÇÃO DE LIMPEZA GERAL =====
+
+/**
+ * Limpa todos os timeouts ativos (útil para shutdown do servidor)
+ */
+function clearAllConversationTimeouts() {
+  console.log(`🧹 Limpando ${CONVERSATION_TIMEOUTS.size} timeouts ativos...`);
+  
+  for (const [convoKey, timeoutInfo] of CONVERSATION_TIMEOUTS.entries()) {
+    clearTimeout(timeoutInfo.timeoutId);
+    console.log(`🔄 Timeout limpo para: ${convoKey}`);
+  }
+  
+  CONVERSATION_TIMEOUTS.clear();
+  console.log('✅ Todos os timeouts foram limpos');
+}
+
+// ===== MONITORAMENTO (OPCIONAL) =====
+
+/**
+ * Função de debug para listar conversas ativas com timeouts
+ */
+function listActiveConversationsWithTimeouts() {
+  console.log('\n📊 === CONVERSAS ATIVAS COM TIMEOUTS ===');
+  
+  if (CONVERSATION_TIMEOUTS.size === 0) {
+    console.log('Nenhuma conversa com timeout ativo.');
+    return;
+  }
+  
+  for (const [convoKey, timeoutInfo] of CONVERSATION_TIMEOUTS.entries()) {
+    const info = getTimeoutInfo(convoKey);
+    const conversation = CONVERSATIONS.get(convoKey);
+    
+    console.log(`🔹 ${convoKey}`);
+    console.log(`   Trigger: ${conversation?.activeTrigger || 'N/A'}`);
+    console.log(`   Tempo restante: ${info.remaining}s`);
+    console.log(`   Número: ${info.senderNumber}`);
+    console.log('');
+  }
+  
+  console.log('=====================================\n');
+}
+
+// Executar monitoramento a cada 5 minutos (opcional)
+setInterval(() => {
+  if (CONVERSATION_TIMEOUTS.size > 0) {
+    listActiveConversationsWithTimeouts();
+  }
+}, 5 * 60 * 1000);
+
+// Limpeza na finalização do processo
+process.on('SIGINT', () => {
+  console.log('\n🛑 Recebido SIGINT, limpando timeouts...');
+  clearAllConversationTimeouts();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Recebido SIGTERM, limpando timeouts...');
+  clearAllConversationTimeouts();
+  process.exit(0);
+});
 
 // Função processAudio modificada - focada apenas na transcrição normal
 async function processAudio(sessionName, message) {
@@ -2462,6 +2678,8 @@ async function checkTriggerInText(text) {
 
 
 
+// ATUALIZAR: processText
+// FUNÇÃO processText ORIGINAL + TIMEOUT
 async function processText(sessionName, message, email) {
   try {
     const session = SESSIONS.get(sessionName);
@@ -2479,6 +2697,8 @@ async function processText(sessionName, message, email) {
     // 🛑 1) Comando explícito para desligar o bot
     if (text.toLowerCase() === 'tbvoff') {
       if (stored?.activeTrigger) {
+        // ✅ NOVO: Limpar timeout quando bot é desativado manualmente
+        clearConversationTimeout(convoKey);
         await client.sendText(message.from, '🔕 Bot desativado. Você voltou ao fluxo normal.');
         CONVERSATIONS.delete(convoKey);
       } else {
@@ -2490,6 +2710,8 @@ async function processText(sessionName, message, email) {
     // 🛑 2) Triggers de encerramento por desinteresse
     const endRegex = /^(eu desisti|não tenho mais interesse|nao tenho mais interesse|já entendi|ja entendi|até mais|ate mais|fim)$/i;
     if (stored?.activeTrigger && endRegex.test(text)) {
+      // ✅ NOVO: Limpar timeout quando conversa é encerrada
+      clearConversationTimeout(convoKey);
       await client.sendText(message.from, 'Obrigado pela conversa. Até mais!');
       CONVERSATIONS.delete(convoKey);
       return;
@@ -2497,6 +2719,8 @@ async function processText(sessionName, message, email) {
 
     // ✅ 3) Se há fluxo ativo, delega direto ao handler
     if (stored?.activeTrigger && TRIGGERS[stored.activeTrigger]) {
+      // ✅ NOVO: Renovar timeout a cada mensagem no fluxo ativo
+      refreshConversationTimeout(convoKey, session, message.from);
       return TRIGGERS[stored.activeTrigger](session, message, text, sessionName, email);
     }
 
@@ -2543,6 +2767,10 @@ async function processText(sessionName, message, email) {
       const trigKey = valid[norm];
       console.log(`[processText] dispatching trigger: ${trigKey}`);
       CONVERSATIONS.set(convoKey, { history: [], activeTrigger: trigKey });
+      
+      // ✅ NOVO: Definir timeout quando nova conversa é iniciada via texto
+      setConversationTimeout(convoKey, session, message.from);
+      
       return TRIGGERS[trigKey](session, message, text, sessionName, email);
     }
 
@@ -2553,7 +2781,6 @@ async function processText(sessionName, message, email) {
     console.error(`❌ Erro em processText: ${err.message}`, err.stack);
   }
 }
-
 
 
 
