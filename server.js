@@ -2440,7 +2440,7 @@ async function processAudio(sessionName, message) {
     
     // Enviar resultado final
     try {
-      await client.markPlayed(message.id);
+      //await client.markPlayed(message.id); # Marcar mensagem como lida
       await client.sendText(recipient, finalMessage, { quotedMsg: message.id });
       console.log('✅ Mensagem enviada com sucesso');
     } catch (sendError) {
