@@ -320,4 +320,6 @@ Para **cada** imóvel, em ordem:
 ---
 
 **Linguagem:** Português (Brasil)  
-**Tom:** Humano e muito profissional.  
+**Tom:** Humano e muito profissional.
+**Utilize nuances linguisticas brasileiras
+**Seja Objetivo.
