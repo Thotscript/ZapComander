@@ -924,8 +924,19 @@ app.post('/auth/login', async (req, res) => {
           }
         }
 
-        if (message.type === 'chat') {
-          await processText(sessionName, message, email);
+        // ===== NOVA FUNCIONALIDADE: PROCESSAMENTO DE DOCUMENTOS PDF =====
+        if (message.type === 'document') {
+          const convoKey = `${session.myNumber}:${message.from}`;
+          const stored = CONVERSATIONS.get(convoKey);
+          
+          // Só processar PDF se há conversa ativa do tbvantimalandro
+          if (stored && stored.activeTrigger === 'tbvantimalandro') {
+            console.log('📄 Documento PDF detectado em conversa tbvantimalandro ativa');
+            enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
+          } else {
+            // Para outras conversas, processar como texto normal
+            await processText(sessionName, message, email);
+          }
         }
 
       } catch (error) {
@@ -1859,12 +1870,79 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
 }
 
 
+
+async function handleTriggerAntimalandro(session, message, userInput, sessionName, email) {
+  const client = session.client;
+  const sender = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
+
+  // Inicia ou recupera o estado da conversa
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvantimalandro'
+  };
+
+  // Carrega o prompt "tbvantimalandro"
+  const prompt = loadPrompt('tbvantimalandro');
+
+  // Se for a primeira interação, injeta o system prompt
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    refreshConversationTimeout(convoKey, session, sender);
+  }
+
+  // Empilha a mensagem do usuário
+  convo.history.push({ role: 'user', content: userInput });
+
+  // Chama o GPT
+  const gptResponse = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.2
+  });
+
+  const assistantResponse = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: assistantResponse });
+
+  // Se o GPT devolveu o token de encerramento, finaliza
+  if (assistantResponse === 'finalizando-atendimento') {
+    await client.sendText(
+      sender,
+      '👍 Até mais! Quando precisar de análise de documentos, é só digitar o gatilho novamente.'
+    );
+    clearConversationTimeout(convoKey);
+    CONVERSATIONS.delete(convoKey);
+    return;
+  }
+
+  // Caso contrário, envia a resposta normal e mantém o estado
+  await client.sendText(sender, assistantResponse);
+
+  // Se a resposta indica que está esperando PDF, adicionar instrução específica
+  if (assistantResponse.toLowerCase().includes('pdf') || 
+      assistantResponse.toLowerCase().includes('documento') ||
+      assistantResponse.toLowerCase().includes('envie')) {
+    
+    setTimeout(async () => {
+      await client.sendText(sender, 
+        '📎 *Importante:* Envie apenas arquivos PDF. Outros formatos não serão processados.\n' +
+        'O documento será analisado automaticamente quando recebido.'
+      );
+    }, 1000);
+  }
+
+  CONVERSATIONS.set(convoKey, convo);
+}
+
 // Mapeamento de triggers e suas funções
 const TRIGGERS = {
   tbvevents: handleTBVEventosConversation,
   tbvconstruction: handleTriggerTBVConstruction,
   tbvrentabilidade: handleTriggerTBVRentabilidade,
-  tbvmortgage: handleTriggerMortgage
+  tbvmortgage: handleTriggerMortgage,
+  tbvantimalandro : handleTriggerAntimalandro
 };
 
 // =======================================================================================================================================================
@@ -1964,6 +2042,210 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
   }
 }
 
+async function processPdfDocument(sessionName, message, email) {
+  try {
+    if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+
+    const session = SESSIONS.get(sessionName);
+    const client = session.client;
+    const sender = message.from;
+    const convoKey = `${session.myNumber}:${sender}`;
+    const stored = CONVERSATIONS.get(convoKey);
+
+    // Verificar se há uma conversa ativa do tbvantimalandro esperando PDF
+    if (!stored || stored.activeTrigger !== 'tbvantimalandro') {
+      console.log('📄 PDF recebido, mas não há conversa ativa do tbvantimalandro');
+      return;
+    }
+
+    // Verificar se é um arquivo PDF
+    if (!message.filename || !message.filename.toLowerCase().endsWith('.pdf')) {
+      await client.sendText(sender, '⚠️ Por favor, envie apenas arquivos PDF.');
+      return;
+    }
+
+    console.log(`📄 Processando PDF: ${message.filename} na sessão ${sessionName}...`);
+
+    // Enviar mensagem de processamento
+    await client.sendText(sender, '📄 Recebendo e analisando seu PDF... Por favor, aguarde alguns instantes.');
+
+    // Renovar timeout da conversa
+    refreshConversationTimeout(convoKey, session, sender);
+
+    // Baixar o arquivo PDF
+    let buffer = await client.decryptFile(message);
+    
+    // Salvar arquivo temporário para upload
+    const tempFilePath = path.join(AUDIO_DIR, `temp_pdf_${sessionName}_${message.id}.pdf`);
+    
+    try {
+      fs.writeFileSync(tempFilePath, buffer);
+      console.log(`✅ PDF salvo temporariamente: ${tempFilePath}`);
+      
+      // 1. Upload do PDF para OpenAI Files API
+      console.log('📤 Fazendo upload do PDF para OpenAI...');
+      
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(tempFilePath));
+      formData.append('purpose', 'user_data');
+
+      const uploadResponse = await axios.post('https://api.openai.com/v1/files', formData, {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+        }
+      });
+
+      const fileId = uploadResponse.data.id;
+      console.log(`✅ Arquivo enviado com ID: ${fileId}`);
+
+      // Recuperar a conversa ativa
+      let convo = CONVERSATIONS.get(convoKey);
+      if (!convo) {
+        console.error('❌ Conversa não encontrada para processar PDF');
+        return;
+      }
+
+      // Carregar prompt do arquivo
+      const prompt = loadPrompt('tbvantimalandro');
+
+      // 2. Criar request para a nova API responses
+      console.log('🤖 Enviando para análise com GPT...');
+      
+      const requestPayload = {
+        model: 'gpt-4',
+        input: [
+          {
+            role: 'user',
+            content: [
+              { 
+                type: 'input_file', 
+                file_id: fileId 
+              },
+              { 
+                type: 'input_text', 
+                text: 'Analise este documento PDF seguindo as instruções do sistema. Forneça uma análise detalhada identificando possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis.'
+              }
+            ]
+          }
+        ]
+      };
+
+      const gptResponse = await axios.post('https://api.openai.com/v1/responses', requestPayload, {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const assistantResponse = gptResponse.data.output_text || gptResponse.data.choices[0].message.content;
+
+      // Adicionar à conversa
+      convo.history.push({ 
+        role: 'user', 
+        content: `[PDF: ${message.filename}] Documento enviado para análise.` 
+      });
+      convo.history.push({ 
+        role: 'assistant', 
+        content: assistantResponse 
+      });
+
+      // Enviar resposta da análise
+      await client.sendText(sender, assistantResponse.trim());
+
+      // Perguntar se deseja mais alguma análise
+      setTimeout(async () => {
+        await client.sendText(sender, 
+          '\n📎 Gostaria de enviar outro documento para análise ou tem alguma pergunta específica sobre este arquivo?'
+        );
+      }, 1000);
+
+      // Atualizar conversa
+      CONVERSATIONS.set(convoKey, convo);
+
+      // Log da atividade
+      console.log(`✅ PDF processado com sucesso para ${sender}`);
+
+      // Cleanup do arquivo OpenAI (opcional - os arquivos expiram automaticamente)
+      try {
+        await axios.delete(`https://api.openai.com/v1/files/${fileId}`, {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          }
+        });
+        console.log(`🗑️ Arquivo ${fileId} removido da OpenAI`);
+      } catch (deleteError) {
+        console.warn(`⚠️ Não foi possível deletar arquivo ${fileId}:`, deleteError.message);
+      }
+
+    } catch (apiError) {
+      console.error('❌ Erro na API da OpenAI:', apiError?.response?.data || apiError.message);
+      
+      // Fallback: tentar com método tradicional
+      try {
+        console.log('🔄 Tentando fallback com chat/completions...');
+        
+        // Usar método alternativo se a nova API falhar
+        const fallbackPrompt = `Analise este documento PDF e identifique possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis. O usuário enviou o arquivo: ${message.filename}`;
+        
+        const fallbackResponse = await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            { role: 'system', content: loadPrompt('tbvantimalandro') },
+            { role: 'user', content: fallbackPrompt }
+          ],
+          temperature: 0.2
+        });
+
+        const fallbackText = fallbackResponse.choices[0].message.content;
+        await client.sendText(sender, fallbackText);
+        
+      } catch (fallbackError) {
+        console.error('❌ Erro no fallback:', fallbackError.message);
+        await client.sendText(sender, 
+          '❌ Não foi possível processar este PDF no momento. Tente novamente mais tarde ou envie um arquivo diferente.'
+        );
+      }
+      
+    } finally {
+      // Limpar arquivo temporário
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+          console.log(`🗑️ Arquivo temporário removido: ${tempFilePath}`);
+        }
+      } catch (cleanupError) {
+        console.warn(`⚠️ Erro ao limpar arquivo temporário:`, cleanupError.message);
+      }
+    }
+
+    // Salvar log da sessão
+    try {
+      const whatsappNumero = normalizeToWhatsAppNumber(sessionName);
+      await saveSessionLog({
+        email: session.email,
+        sessaoNumero: sessionName,
+        whatsappNumero
+      });
+    } catch (err) {
+      console.error('❌ Erro ao gravar log de sessão:', err);
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao processar PDF:', error);
+    
+    try {
+      const session = SESSIONS.get(sessionName);
+      if (session && session.client) {
+        await session.client.sendText(message.from, 
+          '❌ Ocorreu um erro ao processar seu documento. Tente novamente ou envie um arquivo diferente.'
+        );
+      }
+    } catch (sendError) {
+      console.error('❌ Erro ao enviar mensagem de erro:', sendError);
+    }
+  }
+}
 // ATUALIZAR: processBotAudio (aplicar as mesmas modificações)
 // FUNÇÃO processBotAudio ORIGINAL + TIMEOUT
 async function processBotAudio(sessionName, message) {
@@ -2180,6 +2462,214 @@ process.on('SIGTERM', () => {
   clearAllConversationTimeouts();
   process.exit(0);
 });
+
+
+
+async function processPdfDocument(sessionName, message, email) {
+  try {
+    if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
+
+    const session = SESSIONS.get(sessionName);
+    const client = session.client;
+    const sender = message.from;
+    const convoKey = `${session.myNumber}:${sender}`;
+    const stored = CONVERSATIONS.get(convoKey);
+
+    // Verificar se há uma conversa ativa do tbvantimalandro esperando PDF
+    if (!stored || stored.activeTrigger !== 'tbvantimalandro') {
+      console.log('📄 PDF recebido, mas não há conversa ativa do tbvantimalandro');
+      return;
+    }
+
+    // Verificar se é um arquivo PDF
+    if (!message.filename || !message.filename.toLowerCase().endsWith('.pdf')) {
+      await client.sendText(sender, '⚠️ Por favor, envie apenas arquivos PDF.');
+      return;
+    }
+
+    console.log(`📄 Processando PDF: ${message.filename} na sessão ${sessionName}...`);
+
+    // Enviar mensagem de processamento
+    await client.sendText(sender, '📄 Recebendo e analisando seu PDF... Por favor, aguarde alguns instantes.');
+
+    // Renovar timeout da conversa
+    refreshConversationTimeout(convoKey, session, sender);
+
+    // Baixar o arquivo PDF
+    let buffer = await client.decryptFile(message);
+    
+    // Salvar arquivo temporário para upload
+    const tempFilePath = path.join(AUDIO_DIR, `temp_pdf_${sessionName}_${message.id}.pdf`);
+    
+    try {
+      fs.writeFileSync(tempFilePath, buffer);
+      console.log(`✅ PDF salvo temporariamente: ${tempFilePath}`);
+      
+      // 1. Upload do PDF para OpenAI Files API
+      console.log('📤 Fazendo upload do PDF para OpenAI...');
+      
+      const formData = new FormData();
+      formData.append('file', fs.createReadStream(tempFilePath));
+      formData.append('purpose', 'user_data');
+
+      const uploadResponse = await axios.post('https://api.openai.com/v1/files', formData, {
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Bearer ${OPENAI_API_KEY}`
+        }
+      });
+
+      const fileId = uploadResponse.data.id;
+      console.log(`✅ Arquivo enviado com ID: ${fileId}`);
+
+      // Recuperar a conversa ativa
+      let convo = CONVERSATIONS.get(convoKey);
+      if (!convo) {
+        console.error('❌ Conversa não encontrada para processar PDF');
+        return;
+      }
+
+      // Carregar prompt do arquivo
+      const prompt = loadPrompt('tbvantimalandro');
+
+      // 2. Criar request para a nova API responses
+      console.log('🤖 Enviando para análise com GPT...');
+      
+      const requestPayload = {
+        model: 'gpt-4',
+        input: [
+          {
+            role: 'user',
+            content: [
+              { 
+                type: 'input_file', 
+                file_id: fileId 
+              },
+              { 
+                type: 'input_text', 
+                text: 'Analise este documento PDF seguindo as instruções do sistema. Forneça uma análise detalhada identificando possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis.'
+              }
+            ]
+          }
+        ]
+      };
+
+      const gptResponse = await axios.post('https://api.openai.com/v1/responses', requestPayload, {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const assistantResponse = gptResponse.data.output_text || gptResponse.data.choices[0].message.content;
+
+      // Adicionar à conversa
+      convo.history.push({ 
+        role: 'user', 
+        content: `[PDF: ${message.filename}] Documento enviado para análise.` 
+      });
+      convo.history.push({ 
+        role: 'assistant', 
+        content: assistantResponse 
+      });
+
+      // Enviar resposta da análise
+      await client.sendText(sender, assistantResponse.trim());
+
+      // Perguntar se deseja mais alguma análise
+      setTimeout(async () => {
+        await client.sendText(sender, 
+          '\n📎 Gostaria de enviar outro documento para análise ou tem alguma pergunta específica sobre este arquivo?'
+        );
+      }, 1000);
+
+      // Atualizar conversa
+      CONVERSATIONS.set(convoKey, convo);
+
+      // Log da atividade
+      console.log(`✅ PDF processado com sucesso para ${sender}`);
+
+      // Cleanup do arquivo OpenAI (opcional - os arquivos expiram automaticamente)
+      try {
+        await axios.delete(`https://api.openai.com/v1/files/${fileId}`, {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          }
+        });
+        console.log(`🗑️ Arquivo ${fileId} removido da OpenAI`);
+      } catch (deleteError) {
+        console.warn(`⚠️ Não foi possível deletar arquivo ${fileId}:`, deleteError.message);
+      }
+
+    } catch (apiError) {
+      console.error('❌ Erro na API da OpenAI:', apiError?.response?.data || apiError.message);
+      
+      // Fallback: tentar com método tradicional
+      try {
+        console.log('🔄 Tentando fallback com chat/completions...');
+        
+        // Usar método alternativo se a nova API falhar
+        const fallbackPrompt = `Analise este documento PDF e identifique possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis. O usuário enviou o arquivo: ${message.filename}`;
+        
+        const fallbackResponse = await openai.chat.completions.create({
+          model: 'gpt-4',
+          messages: [
+            { role: 'system', content: loadPrompt('tbvantimalandro') },
+            { role: 'user', content: fallbackPrompt }
+          ],
+          temperature: 0.2
+        });
+
+        const fallbackText = fallbackResponse.choices[0].message.content;
+        await client.sendText(sender, fallbackText);
+        
+      } catch (fallbackError) {
+        console.error('❌ Erro no fallback:', fallbackError.message);
+        await client.sendText(sender, 
+          '❌ Não foi possível processar este PDF no momento. Tente novamente mais tarde ou envie um arquivo diferente.'
+        );
+      }
+      
+    } finally {
+      // Limpar arquivo temporário
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+          console.log(`🗑️ Arquivo temporário removido: ${tempFilePath}`);
+        }
+      } catch (cleanupError) {
+        console.warn(`⚠️ Erro ao limpar arquivo temporário:`, cleanupError.message);
+      }
+    }
+
+    // Salvar log da sessão
+    try {
+      const whatsappNumero = normalizeToWhatsAppNumber(sessionName);
+      await saveSessionLog({
+        email: session.email,
+        sessaoNumero: sessionName,
+        whatsappNumero
+      });
+    } catch (err) {
+      console.error('❌ Erro ao gravar log de sessão:', err);
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao processar PDF:', error);
+    
+    try {
+      const session = SESSIONS.get(sessionName);
+      if (session && session.client) {
+        await session.client.sendText(message.from, 
+          '❌ Ocorreu um erro ao processar seu documento. Tente novamente ou envie um arquivo diferente.'
+        );
+      }
+    } catch (sendError) {
+      console.error('❌ Erro ao enviar mensagem de erro:', sendError);
+    }
+  }
+}
+
 
 // Função processAudio modificada - focada apenas na transcrição normal
 async function processAudio(sessionName, message) {
@@ -2760,7 +3250,8 @@ async function processText(sessionName, message, email) {
       tbvrentabilidade:   'tbvrentabilidade',
       tbvprequalificacao: 'tbvprequalificacao',
       tbvconstruction:    'tbvconstruction',
-      tbvconstrucao:      'tbvconstruction'
+      tbvconstrucao:      'tbvconstruction',
+      tbvantimalandro:    'tbvantimalandro'
     };
 
     if (valid[norm]) {
