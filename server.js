@@ -3517,6 +3517,10 @@ const restoreSession = async ({ sessionName, email }) => {
 
     client.onAnyMessage(async (message) => {
       try {
+        // ===== DEBUG GERAL PARA TODAS AS MENSAGENS =====
+        console.log(`🔍 [MESSAGE-DEBUG] Mensagem recebida - Tipo: ${message.type}`);
+        console.log(`🔍 [MESSAGE-DEBUG] From: ${message.from}, To: ${message.to}`);
+        
         const filters = await loadFiltersFromDB(email, sessionName);
         SESSION_FILTERS.set(sessionName, filters);
 
@@ -3560,8 +3564,63 @@ const restoreSession = async ({ sessionName, email }) => {
           await processText(sessionName, message, email);
         }
 
+        // ===== PROCESSAMENTO DE DOCUMENTOS PDF =====
+        if (message.type === 'document' || message.type === 'DOCUMENT') {
+          console.log(`🔍 [MESSAGE-DEBUG] ✅ DOCUMENTO DETECTADO!`);
+          console.log(`🔍 [MESSAGE-DEBUG] Filename: ${message.filename}`);
+          console.log(`🔍 [MESSAGE-DEBUG] MimeType: ${message.mimetype}`);
+          console.log(`🔍 [MESSAGE-DEBUG] Size: ${message.size}`);
+          console.log(`🔍 [MESSAGE-DEBUG] To: ${message.to}`);
+          console.log(`🔍 [MESSAGE-DEBUG] From: ${message.from}`);
+          console.log(`🔍 [MESSAGE-DEBUG] MAIN_BOT_NUMBER: ${MAIN_BOT_NUMBER}`);
+
+          // Verificação: Se documento é direcionado ao BOT
+          if (message.to === MAIN_BOT_NUMBER) {
+            console.log(`🔍 [MESSAGE-DEBUG] 🤖 Documento É para o bot!`);
+            
+            // Documento direcionado ao bot - verificar se é a sessão correta
+            const receivingSession = SESSIONS.get(sessionName);
+            if (receivingSession && receivingSession.myNumber === message.to) {
+              console.log('🤖 [MESSAGE-DEBUG] Documento direcionado ao bot detectado (sessão correta)');
+              
+              const convoKey = `${session.myNumber}:${message.from}`;
+              const stored = CONVERSATIONS.get(convoKey);
+              
+              console.log(`🔍 [MESSAGE-DEBUG] ConvoKey: ${convoKey}`);
+              console.log(`🔍 [MESSAGE-DEBUG] Stored conversation:`, stored ? {
+                activeTrigger: stored.activeTrigger,
+                historyLength: stored.history?.length
+              } : 'null');
+              
+              // Só processar PDF se há conversa ativa do tbvantimalandro
+              if (stored && stored.activeTrigger === 'tbvantimalandro') {
+                console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvantimalandro ativa');
+                console.log('📄 [MESSAGE-DEBUG] 🚀 Chamando processPdfDocument...');
+                enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
+              } else {
+                console.log(`📄 [MESSAGE-DEBUG] ❌ Documento para bot ignorado. Motivo:`);
+                console.log(`📄 [MESSAGE-DEBUG] - Stored exists: ${!!stored}`);
+                console.log(`📄 [MESSAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
+                console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvantimalandro`);
+                
+                // Enviar mensagem explicativa se não há conversa ativa
+                await client.sendText(message.from, 
+                  '📄 Para analisar documentos, primeiro ative o assistente enviando "TBV Anti Malandro" ou uma mensagem sobre análise de contratos.'
+                );
+              }
+            } else {
+              console.log('🔄 [MESSAGE-DEBUG] Documento para bot detectado, mas processado por outra sessão - ignorando duplicata');
+            }
+          } else {
+            // Documento normal (não direcionado ao bot)
+            console.log('📱 [MESSAGE-DEBUG] Documento NÃO é para o bot - processando como texto normal');
+            await processText(sessionName, message, email);
+          }
+        }
+
       } catch (error) {
-        console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
+        console.error(`❌ [MESSAGE-DEBUG] Erro ao processar mensagem na sessão ${sessionName}:`, error);
+        console.error(`❌ [MESSAGE-DEBUG] Stack trace:`, error.stack);
       }
     });
 
