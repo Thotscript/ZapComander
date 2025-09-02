@@ -2333,18 +2333,25 @@ Recomenda-se sempre a consulta a um advogado especializado em real estate na Fl�
       // Enviar resposta da análise
       await client.sendText(sender, assistantResponse.trim());
 
-      // Perguntar se deseja mais alguma análise
+      // Mensagem de encerramento
       setTimeout(async () => {
         await client.sendText(sender, 
-          '\n📎 Gostaria de enviar outro documento para análise ou tem alguma pergunta específica sobre este arquivo?'
+          '✅ Análise concluída! A conversa foi encerrada e o bot voltou ao fluxo normal.\n\n' +
+          'Para uma nova análise, envie novamente "TBV Anti Malandro" ou uma mensagem sobre análise de contratos.'
         );
-      }, 1000);
+      }, 2000);
 
       // Atualizar conversa
       CONVERSATIONS.set(convoKey, convo);
 
       // Log da atividade
       console.log(`📄 [PDF-PROCESSOR] ✅ PDF processado com sucesso para ${sender}`);
+
+      // ✅ ENCERRAR CONVERSA APÓS ANÁLISE
+      console.log(`📄 [PDF-PROCESSOR] 🔚 Encerrando conversa tbvantimalandro...`);
+      clearConversationTimeout(convoKey);
+      CONVERSATIONS.delete(convoKey);
+      console.log(`📄 [PDF-PROCESSOR] ✅ Conversa encerrada - bot voltou ao fluxo normal`);
 
       // Cleanup do arquivo OpenAI (opcional - os arquivos expiram automaticamente)
       console.log(`📄 [PDF-PROCESSOR] 🗑️ Limpando arquivo da OpenAI...`);
