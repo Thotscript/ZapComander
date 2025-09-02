@@ -879,70 +879,110 @@ app.post('/auth/login', async (req, res) => {
       }
     });
 
-    client.onAnyMessage(async (message) => {
-      try {
-        const filters = await loadFiltersFromDB(email, sessionName);
-        SESSION_FILTERS.set(sessionName, filters);
+      client.onAnyMessage(async (message) => {
+        try {
+          const filters = await loadFiltersFromDB(email, sessionName);
+          SESSION_FILTERS.set(sessionName, filters);
 
-        if (filters.ignoreGroups && message.isGroupMsg) return;
-        if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
+          if (filters.ignoreGroups && message.isGroupMsg) return;
+          if (filters.blockedNumbers && filters.blockedNumbers.includes(message.from)) return;
 
-        const session = SESSIONS.get(sessionName);
-        if (!session.myNumber) {
-          try {
-            const wid = await client.getWid();
-            if (wid) {
-              session.myNumber = wid;
-              console.log(`🔁 Número definido dinamicamente via onAnyMessage para ${sessionName}: ${wid}`);
+          const session = SESSIONS.get(sessionName);
+          if (!session.myNumber) {
+            try {
+              const wid = await client.getWid();
+              if (wid) {
+                session.myNumber = wid;
+                console.log(`🔁 Número definido dinamicamente via onAnyMessage para ${sessionName}: ${wid}`);
+              }
+            } catch (e) {
+              console.warn(`[onAnyMessage] Falha ao obter myNumber dinâmico para ${sessionName}:`, e.message);
             }
-          } catch (e) {
-            console.warn(`[onAnyMessage] Falha ao obter myNumber dinâmico para ${sessionName}:`, e.message);
           }
-        }
 
-        if (!SESSIONS.get(sessionName)?.myNumber) {
-          console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após tentativa dinâmica.`);
-          return;
-        }
+          if (!SESSIONS.get(sessionName)?.myNumber) {
+            console.warn(`[onAnyMessage] Ainda sem myNumber para ${sessionName} após tentativa dinâmica.`);
+            return;
+          }
 
-        if (message.type === 'ptt' || message.type === 'audio') {
-          
-          if (message.to === MAIN_BOT_NUMBER) {
-            // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
-            // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
-            const receivingSession = SESSIONS.get(sessionName);
-            if (receivingSession && receivingSession.myNumber === message.to) {
-              console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
-              await processBotAudio(sessionName, message);
+          if (message.type === 'ptt' || message.type === 'audio') {
+            if (message.to === MAIN_BOT_NUMBER) {
+              // ✅ CORREÇÃO: Processar apenas na sessão que RECEBEU a mensagem
+              // Se a mensagem é PARA o bot, deve ser processada apenas pela sessão que a recebeu
+              const receivingSession = SESSIONS.get(sessionName);
+              if (receivingSession && receivingSession.myNumber === message.to) {
+                console.log('🤖 Áudio direcionado ao bot detectado (sessão correta)');
+                await processBotAudio(sessionName, message);
+              } else {
+                console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
+              }
             } else {
-              console.log('🔄 Áudio para bot detectado, mas processado por outra sessão - ignorando duplicata');
+              // Mensagem normal - usar transcrição padrão
+              console.log('📱 Áudio normal detectado - processando transcrição');
+              enqueueProcessing(sessionName, () => processAudio(sessionName, message));
             }
-          } else {
-            // Mensagem normal - usar transcrição padrão
-            console.log('📱 Áudio normal detectado - processando transcrição');
-            enqueueProcessing(sessionName, () => processAudio(sessionName, message));
           }
-        }
 
-        // ===== NOVA FUNCIONALIDADE: PROCESSAMENTO DE DOCUMENTOS PDF =====
-        if (message.type === 'document') {
-          const convoKey = `${session.myNumber}:${message.from}`;
-          const stored = CONVERSATIONS.get(convoKey);
-          
-          // Só processar PDF se há conversa ativa do tbvantimalandro
-          if (stored && stored.activeTrigger === 'tbvantimalandro') {
-            console.log('📄 Documento PDF detectado em conversa tbvantimalandro ativa');
-            enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
-          } else {
-            // Para outras conversas, processar como texto normal
+          if (message.type === 'chat') {
             await processText(sessionName, message, email);
           }
-        }
 
-      } catch (error) {
-        console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, error);
-      }
-    });
+          // ===== NOVA FUNCIONALIDADE: PROCESSAMENTO DE DOCUMENTOS PDF =====
+          if (message.type === 'document') {
+            console.log(`🔍 [MESSAGE-DEBUG] DOCUMENTO DETECTADO!`);
+            console.log(`🔍 [MESSAGE-DEBUG] Filename: ${message.filename}`);
+            console.log(`🔍 [MESSAGE-DEBUG] MimeType: ${message.mimetype}`);
+            console.log(`🔍 [MESSAGE-DEBUG] Size: ${message.size}`);
+            console.log(`🔍 [MESSAGE-DEBUG] To: ${message.to}`);
+            console.log(`🔍 [MESSAGE-DEBUG] From: ${message.from}`);
+
+            // ✅ VERIFICAÇÃO: Se documento é direcionado ao BOT
+            if (message.to === MAIN_BOT_NUMBER) {
+              // Documento direcionado ao bot - verificar se é a sessão correta
+              const receivingSession = SESSIONS.get(sessionName);
+              if (receivingSession && receivingSession.myNumber === message.to) {
+                console.log('🤖 [MESSAGE-DEBUG] Documento direcionado ao bot detectado (sessão correta)');
+                
+                const convoKey = `${session.myNumber}:${message.from}`;
+                const stored = CONVERSATIONS.get(convoKey);
+                
+                console.log(`🔍 [MESSAGE-DEBUG] ConvoKey: ${convoKey}`);
+                console.log(`🔍 [MESSAGE-DEBUG] Stored conversation:`, stored ? {
+                  activeTrigger: stored.activeTrigger,
+                  historyLength: stored.history?.length
+                } : 'null');
+                
+                // Só processar PDF se há conversa ativa do tbvantimalandro
+                if (stored && stored.activeTrigger === 'tbvantimalandro') {
+                  console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvantimalandro ativa');
+                  console.log('📄 [MESSAGE-DEBUG] 🚀 Chamando processPdfDocument...');
+                  enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
+                } else {
+                  console.log(`📄 [MESSAGE-DEBUG] ❌ Documento para bot ignorado. Motivo:`);
+                  console.log(`📄 [MESSAGE-DEBUG] - Stored exists: ${!!stored}`);
+                  console.log(`📄 [MESSAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
+                  console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvantimalandro`);
+                  
+                  // Enviar mensagem explicativa se não há conversa ativa
+                  await client.sendText(message.from, 
+                    '📄 Para analisar documentos, primeiro ative o assistente enviando "TBV Anti Malandro" ou uma mensagem sobre análise de contratos.'
+                  );
+                }
+              } else {
+                console.log('🔄 [MESSAGE-DEBUG] Documento para bot detectado, mas processado por outra sessão - ignorando duplicata');
+              }
+            } else {
+              // Documento normal (não direcionado ao bot)
+              console.log('📱 [MESSAGE-DEBUG] Documento normal detectado - processando como texto normal');
+              await processText(sessionName, message, email);
+            }
+          }
+
+        } catch (error) {
+          console.error(`❌ [MESSAGE-DEBUG] Erro ao processar mensagem na sessão ${sessionName}:`, error);
+          console.error(`❌ [MESSAGE-DEBUG] Stack trace:`, error.stack);
+        }
+      });
 
   } catch (err) {
     console.error(`❌ Erro ao criar sessão ${sessionName}:`, err);
