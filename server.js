@@ -2043,6 +2043,10 @@ async function checkTriggerInAudio(buffer, sessionName, messageId, message) {
 }
 
 async function processPdfDocument(sessionName, message, email) {
+  console.log(`📄 [PDF-PROCESSOR] Iniciando processamento de PDF para sessão ${sessionName}`);
+  console.log(`📄 [PDF-PROCESSOR] Arquivo: ${message.filename}`);
+  console.log(`📄 [PDF-PROCESSOR] Sender: ${message.from}`);
+  
   try {
     if (!SESSIONS.has(sessionName)) throw new Error(`Sessão ${sessionName} não encontrada.`);
 
@@ -2052,65 +2056,157 @@ async function processPdfDocument(sessionName, message, email) {
     const convoKey = `${session.myNumber}:${sender}`;
     const stored = CONVERSATIONS.get(convoKey);
 
+    console.log(`📄 [PDF-PROCESSOR] ConvoKey: ${convoKey}`);
+    console.log(`📄 [PDF-PROCESSOR] Stored conversation:`, stored ? `Active trigger: ${stored.activeTrigger}` : 'null');
+
     // Verificar se há uma conversa ativa do tbvantimalandro esperando PDF
     if (!stored || stored.activeTrigger !== 'tbvantimalandro') {
-      console.log('📄 PDF recebido, mas não há conversa ativa do tbvantimalandro');
+      console.log('📄 [PDF-PROCESSOR] ❌ PDF recebido, mas não há conversa ativa do tbvantimalandro');
       return;
     }
 
     // Verificar se é um arquivo PDF
     if (!message.filename || !message.filename.toLowerCase().endsWith('.pdf')) {
+      console.log(`📄 [PDF-PROCESSOR] ❌ Arquivo inválido: ${message.filename}`);
       await client.sendText(sender, '⚠️ Por favor, envie apenas arquivos PDF.');
       return;
     }
 
-    console.log(`📄 Processando PDF: ${message.filename} na sessão ${sessionName}...`);
+    console.log(`📄 [PDF-PROCESSOR] ✅ Validações passaram. Iniciando processamento...`);
 
     // Enviar mensagem de processamento
-    await client.sendText(sender, '📄 Recebendo e analisando seu PDF... Por favor, aguarde alguns instantes.');
+    await client.sendText(sender, '📄 Analisando seu PDF... Por favor, aguarde alguns instantes.');
 
     // Renovar timeout da conversa
     refreshConversationTimeout(convoKey, session, sender);
 
     // Baixar o arquivo PDF
+    console.log(`📄 [PDF-PROCESSOR] 🔽 Baixando arquivo PDF...`);
     let buffer = await client.decryptFile(message);
+    console.log(`📄 [PDF-PROCESSOR] ✅ Buffer baixado. Tamanho: ${buffer.length} bytes`);
     
     // Salvar arquivo temporário para upload
     const tempFilePath = path.join(AUDIO_DIR, `temp_pdf_${sessionName}_${message.id}.pdf`);
+    console.log(`📄 [PDF-PROCESSOR] 💾 Salvando arquivo temporário: ${tempFilePath}`);
     
     try {
       fs.writeFileSync(tempFilePath, buffer);
-      console.log(`✅ PDF salvo temporariamente: ${tempFilePath}`);
+      console.log(`📄 [PDF-PROCESSOR] ✅ Arquivo salvo temporariamente com sucesso`);
+      
+      // Verificar se o arquivo foi criado corretamente
+      const stats = fs.statSync(tempFilePath);
+      console.log(`📄 [PDF-PROCESSOR] 📊 Tamanho do arquivo salvo: ${stats.size} bytes`);
       
       // 1. Upload do PDF para OpenAI Files API
-      console.log('📤 Fazendo upload do PDF para OpenAI...');
+      console.log(`📄 [PDF-PROCESSOR] 📤 Iniciando upload para OpenAI Files API...`);
       
       const formData = new FormData();
       formData.append('file', fs.createReadStream(tempFilePath));
       formData.append('purpose', 'user_data');
 
+      console.log(`📄 [PDF-PROCESSOR] 🔄 Enviando request para OpenAI Files API...`);
+      const uploadStartTime = Date.now();
+      
       const uploadResponse = await axios.post('https://api.openai.com/v1/files', formData, {
         headers: {
           ...formData.getHeaders(),
           'Authorization': `Bearer ${OPENAI_API_KEY}`
-        }
+        },
+        timeout: 60000 // 60 segundos de timeout
       });
 
+      const uploadDuration = Date.now() - uploadStartTime;
       const fileId = uploadResponse.data.id;
-      console.log(`✅ Arquivo enviado com ID: ${fileId}`);
+      
+      console.log(`📄 [PDF-PROCESSOR] ✅ Upload concluído em ${uploadDuration}ms`);
+      console.log(`📄 [PDF-PROCESSOR] 🆔 File ID: ${fileId}`);
+      console.log(`📄 [PDF-PROCESSOR] 📋 Response status: ${uploadResponse.status}`);
+      console.log(`📄 [PDF-PROCESSOR] 📋 Response data:`, JSON.stringify(uploadResponse.data, null, 2));
+
+      // Verificar se o arquivo foi processado pela OpenAI
+      console.log(`📄 [PDF-PROCESSOR] 🔍 Verificando status do arquivo...`);
+      try {
+        const fileStatusResponse = await axios.get(`https://api.openai.com/v1/files/${fileId}`, {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+          }
+        });
+        console.log(`📄 [PDF-PROCESSOR] 📊 Status do arquivo:`, JSON.stringify(fileStatusResponse.data, null, 2));
+      } catch (statusError) {
+        console.warn(`📄 [PDF-PROCESSOR] ⚠️ Erro ao verificar status do arquivo:`, statusError.message);
+      }
 
       // Recuperar a conversa ativa
       let convo = CONVERSATIONS.get(convoKey);
       if (!convo) {
-        console.error('❌ Conversa não encontrada para processar PDF');
+        console.error('📄 [PDF-PROCESSOR] ❌ Conversa não encontrada para processar PDF');
         return;
       }
 
-      // Carregar prompt do arquivo
-      const prompt = loadPrompt('tbvantimalandro');
-
       // 2. Criar request para a nova API responses
-      console.log('🤖 Enviando para análise com GPT...');
+      console.log(`📄 [PDF-PROCESSOR] 🤖 Preparando request para análise com GPT...`);
+      
+      const contractAnalysisPrompt = `Você é um Analista de Contratos Imobiliários da Flórida especializado no contrato "AS IS Residential Contract for Sale and Purchase" aprovado pela Florida Realtors e Florida Bar Association. Sua função é proteger usuários contra fraudes, analisando contratos enviados e comparando-os com a versão padrão oficial.
+
+Processo de Análise (Obrigatório)
+
+Etapa 1: Sumário da Oferta
+
+Extraia e apresente um sumário organizado incluindo:
+
+• Partes: Vendedor e Comprador
+• Propriedade: Endereço completo e Property Tax ID
+• Preço de Compra: Valor total
+• Depósito: Valor inicial, prazo, agente de escrow, depósito adicional
+• Financiamento: Tipo e prazo para aprovação
+• Datas: Fechamento, inspeção (padrão 15 dias), data efetiva
+• Itens: Incluídos/excluídos da venda
+• Assignability: Se é designável ou não
+
+Etapa 2: Análise de Conformidade (CRÍTICA)
+
+IMPORTANTE: Distinga entre campos preenchidos legitimamente e alterações maliciosas nas cláusulas.
+
+NÃO CONSIDERE COMO ALTERAÇÕES:
+• Campos em branco preenchidos (nomes, endereços, valores, datas)
+• Campos "Other:" preenchidos nas seções apropriadas
+• Checkboxes marcados conforme escolhas das partes
+• Informações inseridas em linhas pontilhadas ou espaços designados
+
+CONSIDERE COMO ALTERAÇÕES PERIGOSAS:
+1. Texto de cláusulas modificado: Palavras, frases ou sentenças alteradas
+2. Cláusulas removidas: Parágrafos inteiros eliminados
+3. Cláusulas adicionadas: Novo texto inserido fora dos campos designados
+4. Linguagem padrão alterada: Mudanças em direitos, obrigações ou prazos
+
+Análise Contextual Obrigatória:
+• Verifique se informações estão em campos apropriados (ex: "Transaction Fee" na seção 9(b) Other é normal)
+• Compare apenas a linguagem das cláusulas, não os valores preenchidos
+• Foque em alterações que mudem direitos, obrigações ou proteções legais
+
+Se Conforme:
+"Análise de Conformidade: Confirmei que todas as cláusulas correspondem à versão padrão oficial. Os campos foram preenchidos adequadamente. Nenhuma alteração maliciosa detectada."
+
+Se Não Conforme:
+"🚨 ALERTA DE NÃO CONFORMIDADE: Detectei alterações perigosas nas cláusulas padrão. Revise com advogado antes de prosseguir:
+Cláusula [X] - MODIFICADA:
+• Padrão: '[texto original da cláusula]'
+• Enviado: '[texto alterado da cláusula]'
+• Risco: [explicar impacto na proteção legal]"
+
+Diretrizes Obrigatórias
+• Foco: Apenas resumir fatos e verificar integridade - não opinar sobre qualidade da oferta
+• Tom: Profissional, objetivo, focado em segurança
+• Linguagem: Clara e direta, evitando jargões legais
+• Precisão: Compare palavra por palavra com a versão oficial
+
+Recomendação Final
+⚖️ Disclaimer Automático
+Aviso Importante: Esta análise é apenas um resumo comparativo baseado no modelo oficial do contrato "AS IS Residential Contract for Sale and Purchase" aprovado pela Florida Bar e Florida Realtors.
+
+Não constitui aconselhamento jurídico nem substitui a orientação de um advogado.
+
+Recomenda-se sempre a consulta a um advogado especializado em real estate na Flórida antes de assinar ou aceitar qualquer contrato.`;
       
       const requestPayload = {
         model: 'gpt-4',
@@ -2124,21 +2220,42 @@ async function processPdfDocument(sessionName, message, email) {
               },
               { 
                 type: 'input_text', 
-                text: 'Analise este documento PDF seguindo as instruções do sistema. Forneça uma análise detalhada identificando possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis.'
+                text: contractAnalysisPrompt
               }
             ]
           }
         ]
       };
 
+      console.log(`📄 [PDF-PROCESSOR] 📝 Request payload:`, JSON.stringify(requestPayload, null, 2));
+      console.log(`📄 [PDF-PROCESSOR] 🚀 Enviando para OpenAI Responses API...`);
+      
+      const analysisStartTime = Date.now();
+      
       const gptResponse = await axios.post('https://api.openai.com/v1/responses', requestPayload, {
         headers: {
           'Authorization': `Bearer ${OPENAI_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        timeout: 120000 // 2 minutos de timeout para análise
       });
 
-      const assistantResponse = gptResponse.data.output_text || gptResponse.data.choices[0].message.content;
+      const analysisDuration = Date.now() - analysisStartTime;
+      console.log(`📄 [PDF-PROCESSOR] ✅ Análise concluída em ${analysisDuration}ms`);
+      console.log(`📄 [PDF-PROCESSOR] 📋 GPT Response status: ${gptResponse.status}`);
+      console.log(`📄 [PDF-PROCESSOR] 📋 GPT Response headers:`, JSON.stringify(gptResponse.headers, null, 2));
+      
+      const assistantResponse = gptResponse.data.output_text || gptResponse.data.choices?.[0]?.message?.content;
+      
+      console.log(`📄 [PDF-PROCESSOR] 📄 Response type: ${gptResponse.data.output_text ? 'output_text' : 'choices[0].message.content'}`);
+      console.log(`📄 [PDF-PROCESSOR] 📄 Response length: ${assistantResponse?.length || 0} characters`);
+      console.log(`📄 [PDF-PROCESSOR] 📄 Response preview: ${assistantResponse?.substring(0, 200) || 'null'}...`);
+
+      if (!assistantResponse) {
+        console.error(`📄 [PDF-PROCESSOR] ❌ Resposta vazia da OpenAI`);
+        console.error(`📄 [PDF-PROCESSOR] 🔍 Full response data:`, JSON.stringify(gptResponse.data, null, 2));
+        throw new Error('Resposta vazia da OpenAI');
+      }
 
       // Adicionar à conversa
       convo.history.push({ 
@@ -2150,6 +2267,7 @@ async function processPdfDocument(sessionName, message, email) {
         content: assistantResponse 
       });
 
+      console.log(`📄 [PDF-PROCESSOR] 📨 Enviando resposta para o usuário...`);
       // Enviar resposta da análise
       await client.sendText(sender, assistantResponse.trim());
 
@@ -2164,26 +2282,29 @@ async function processPdfDocument(sessionName, message, email) {
       CONVERSATIONS.set(convoKey, convo);
 
       // Log da atividade
-      console.log(`✅ PDF processado com sucesso para ${sender}`);
+      console.log(`📄 [PDF-PROCESSOR] ✅ PDF processado com sucesso para ${sender}`);
 
       // Cleanup do arquivo OpenAI (opcional - os arquivos expiram automaticamente)
+      console.log(`📄 [PDF-PROCESSOR] 🗑️ Limpando arquivo da OpenAI...`);
       try {
         await axios.delete(`https://api.openai.com/v1/files/${fileId}`, {
           headers: {
             'Authorization': `Bearer ${OPENAI_API_KEY}`
           }
         });
-        console.log(`🗑️ Arquivo ${fileId} removido da OpenAI`);
+        console.log(`📄 [PDF-PROCESSOR] ✅ Arquivo ${fileId} removido da OpenAI`);
       } catch (deleteError) {
-        console.warn(`⚠️ Não foi possível deletar arquivo ${fileId}:`, deleteError.message);
+        console.warn(`📄 [PDF-PROCESSOR] ⚠️ Não foi possível deletar arquivo ${fileId}:`, deleteError.message);
       }
 
     } catch (apiError) {
-      console.error('❌ Erro na API da OpenAI:', apiError?.response?.data || apiError.message);
+      console.error(`📄 [PDF-PROCESSOR] ❌ Erro na API da OpenAI:`, apiError?.response?.status);
+      console.error(`📄 [PDF-PROCESSOR] ❌ Erro detalhado:`, apiError?.response?.data || apiError.message);
+      console.error(`📄 [PDF-PROCESSOR] ❌ Headers da resposta:`, apiError?.response?.headers);
       
       // Fallback: tentar com método tradicional
       try {
-        console.log('🔄 Tentando fallback com chat/completions...');
+        console.log(`📄 [PDF-PROCESSOR] 🔄 Tentando fallback com chat/completions...`);
         
         // Usar método alternativo se a nova API falhar
         const fallbackPrompt = `Analise este documento PDF e identifique possíveis problemas legais, cláusulas suspeitas ou práticas questionáveis. O usuário enviou o arquivo: ${message.filename}`;
@@ -2198,10 +2319,11 @@ async function processPdfDocument(sessionName, message, email) {
         });
 
         const fallbackText = fallbackResponse.choices[0].message.content;
+        console.log(`📄 [PDF-PROCESSOR] ✅ Fallback executado com sucesso`);
         await client.sendText(sender, fallbackText);
         
       } catch (fallbackError) {
-        console.error('❌ Erro no fallback:', fallbackError.message);
+        console.error(`📄 [PDF-PROCESSOR] ❌ Erro no fallback:`, fallbackError.message);
         await client.sendText(sender, 
           '❌ Não foi possível processar este PDF no momento. Tente novamente mais tarde ou envie um arquivo diferente.'
         );
@@ -2212,10 +2334,10 @@ async function processPdfDocument(sessionName, message, email) {
       try {
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath);
-          console.log(`🗑️ Arquivo temporário removido: ${tempFilePath}`);
+          console.log(`📄 [PDF-PROCESSOR] 🗑️ Arquivo temporário removido: ${tempFilePath}`);
         }
       } catch (cleanupError) {
-        console.warn(`⚠️ Erro ao limpar arquivo temporário:`, cleanupError.message);
+        console.warn(`📄 [PDF-PROCESSOR] ⚠️ Erro ao limpar arquivo temporário:`, cleanupError.message);
       }
     }
 
@@ -2227,12 +2349,14 @@ async function processPdfDocument(sessionName, message, email) {
         sessaoNumero: sessionName,
         whatsappNumero
       });
+      console.log(`📄 [PDF-PROCESSOR] ✅ Log de sessão salvo`);
     } catch (err) {
-      console.error('❌ Erro ao gravar log de sessão:', err);
+      console.error(`📄 [PDF-PROCESSOR] ❌ Erro ao gravar log de sessão:`, err);
     }
 
   } catch (error) {
-    console.error('❌ Erro ao processar PDF:', error);
+    console.error(`📄 [PDF-PROCESSOR] ❌ Erro geral no processamento:`, error);
+    console.error(`📄 [PDF-PROCESSOR] ❌ Stack trace:`, error.stack);
     
     try {
       const session = SESSIONS.get(sessionName);
@@ -2242,9 +2366,11 @@ async function processPdfDocument(sessionName, message, email) {
         );
       }
     } catch (sendError) {
-      console.error('❌ Erro ao enviar mensagem de erro:', sendError);
+      console.error(`📄 [PDF-PROCESSOR] ❌ Erro ao enviar mensagem de erro:`, sendError);
     }
   }
+
+  console.log(`📄 [PDF-PROCESSOR] 🏁 Processamento finalizado para ${sessionName}`);
 }
 // ATUALIZAR: processBotAudio (aplicar as mesmas modificações)
 // FUNÇÃO processBotAudio ORIGINAL + TIMEOUT
