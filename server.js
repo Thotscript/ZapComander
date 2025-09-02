@@ -2293,11 +2293,23 @@ Recomenda-se sempre a consulta a um advogado especializado em real estate na Fl�
       const analysisDuration = Date.now() - analysisStartTime;
       console.log(`📄 [PDF-PROCESSOR] ✅ Análise concluída em ${analysisDuration}ms`);
       console.log(`📄 [PDF-PROCESSOR] 📋 GPT Response status: ${gptResponse.status}`);
-      console.log(`📄 [PDF-PROCESSOR] 📋 GPT Response headers:`, JSON.stringify(gptResponse.headers, null, 2));
       
-      const assistantResponse = gptResponse.data.output_text || gptResponse.data.choices?.[0]?.message?.content;
+      // Extrair resposta do formato correto da nova API
+      let assistantResponse;
       
-      console.log(`📄 [PDF-PROCESSOR] 📄 Response type: ${gptResponse.data.output_text ? 'output_text' : 'choices[0].message.content'}`);
+      if (gptResponse.data.output && gptResponse.data.output.length > 0) {
+        // Nova API responses format
+        const outputContent = gptResponse.data.output[0].content;
+        if (outputContent && outputContent.length > 0) {
+          assistantResponse = outputContent.find(item => item.type === 'output_text')?.text;
+        }
+        console.log(`📄 [PDF-PROCESSOR] 📄 Response type: output[0].content[0].text`);
+      } else {
+        // Fallback para formato antigo
+        assistantResponse = gptResponse.data.choices?.[0]?.message?.content;
+        console.log(`📄 [PDF-PROCESSOR] 📄 Response type: choices[0].message.content (fallback)`);
+      }
+      
       console.log(`📄 [PDF-PROCESSOR] 📄 Response length: ${assistantResponse?.length || 0} characters`);
       console.log(`📄 [PDF-PROCESSOR] 📄 Response preview: ${assistantResponse?.substring(0, 200) || 'null'}...`);
 
