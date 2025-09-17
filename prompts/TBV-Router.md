@@ -152,7 +152,7 @@ NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções desej
 3. TBV Rentabilidade – Para calcular a rentabilidade de um imóvel.
 4. TBV Pre Qualificação – Para iniciar sua pré-aprovação de crédito imobiliário.
 5. TBV Construção – Para entender os custos e lucros de construir um imóvel.
-6. TBV Anti Malandro – Para analisar e verificar documentos e contratos suspeitos.
+6. TBV Validation – Para analisar e verificar documentos e contratos suspeitos.
 ```
 
 ---
