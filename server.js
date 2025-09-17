@@ -956,16 +956,16 @@ app.post('/auth/login', async (req, res) => {
             historyLength: stored.history?.length
           } : 'null');
           
-          // Só processar PDF se há conversa ativa do tbvantimalandro
-          if (stored && stored.activeTrigger === 'tbvantimalandro') {
-            console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvantimalandro ativa');
+          // Só processar PDF se há conversa ativa do tbvvalidation
+          if (stored && stored.activeTrigger === 'tbvvalidation') {
+            console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvvalidation ativa');
             console.log('📄 [MESSAGE-DEBUG] 🚀 Chamando processPdfDocument...');
             enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
           } else {
             console.log(`📄 [MESSAGE-DEBUG] ❌ Documento para bot ignorado. Motivo:`);
             console.log(`📄 [MESSAGE-DEBUG] - Stored exists: ${!!stored}`);
             console.log(`📄 [MESSAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
-            console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvantimalandro`);
+            console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvvalidation`);
             
             // Enviar mensagem explicativa se não há conversa ativa
             await client.sendText(message.from, 
@@ -1921,7 +1921,7 @@ async function handleTriggerMortgage(session, message, userInput, sessionName, e
 
 
 
-async function handleTriggerAntimalandro(session, message, userInput, sessionName, email) {
+async function handleTriggervalidation(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
   const convoKey = `${session.myNumber}:${sender}`;
@@ -1929,10 +1929,10 @@ async function handleTriggerAntimalandro(session, message, userInput, sessionNam
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'tbvantimalandro'
+    activeTrigger: 'tbvvalidation'
   };
 
-  // Carrega o prompt "tbvantimalandro"
+  // Carrega o prompt "tbvvalidation"
   const prompt = loadPrompt('tbvantimalandro');
 
   // Se for a primeira interação, injeta o system prompt
@@ -1992,7 +1992,7 @@ const TRIGGERS = {
   tbvconstruction: handleTriggerTBVConstruction,
   tbvrentabilidade: handleTriggerTBVRentabilidade,
   tbvmortgage: handleTriggerMortgage,
-  tbvantimalandro : handleTriggerAntimalandro
+  tbvvalidation : handleTriggervalidation
 };
 
 // =======================================================================================================================================================
@@ -2109,9 +2109,9 @@ async function processPdfDocument(sessionName, message, email) {
     console.log(`📄 [PDF-PROCESSOR] ConvoKey: ${convoKey}`);
     console.log(`📄 [PDF-PROCESSOR] Stored conversation:`, stored ? `Active trigger: ${stored.activeTrigger}` : 'null');
 
-    // Verificar se há uma conversa ativa do tbvantimalandro esperando PDF
-    if (!stored || stored.activeTrigger !== 'tbvantimalandro') {
-      console.log('📄 [PDF-PROCESSOR] ❌ PDF recebido, mas não há conversa ativa do tbvantimalandro');
+    // Verificar se há uma conversa ativa do tbvvalidation esperando PDF
+    if (!stored || stored.activeTrigger !== 'tbvvalidation') {
+      console.log('📄 [PDF-PROCESSOR] ❌ PDF recebido, mas não há conversa ativa do tbvvalidation');
       return;
     }
 
@@ -2348,7 +2348,7 @@ Recomenda-se sempre a consulta a um advogado especializado em real estate na Fl�
       console.log(`📄 [PDF-PROCESSOR] ✅ PDF processado com sucesso para ${sender}`);
 
       // ✅ ENCERRAR CONVERSA APÓS ANÁLISE
-      console.log(`📄 [PDF-PROCESSOR] 🔚 Encerrando conversa tbvantimalandro...`);
+      console.log(`📄 [PDF-PROCESSOR] 🔚 Encerrando conversa tbvvalidation...`);
       clearConversationTimeout(convoKey);
       CONVERSATIONS.delete(convoKey);
       console.log(`📄 [PDF-PROCESSOR] ✅ Conversa encerrada - bot voltou ao fluxo normal`);
@@ -3239,7 +3239,7 @@ async function processText(sessionName, message, email) {
       tbvprequalificacao: 'tbvprequalificacao',
       tbvconstruction:    'tbvconstruction',
       tbvconstrucao:      'tbvconstruction',
-      tbvantimalandro:    'tbvantimalandro'
+      tbvvalidation:      'tbvvalidation'
     };
 
     if (valid[norm]) {
@@ -3611,16 +3611,16 @@ const restoreSession = async ({ sessionName, email }) => {
                 historyLength: stored.history?.length
               } : 'null');
               
-              // Só processar PDF se há conversa ativa do tbvantimalandro
-              if (stored && stored.activeTrigger === 'tbvantimalandro') {
-                console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvantimalandro ativa');
+              // Só processar PDF se há conversa ativa do tbvvalidation
+              if (stored && stored.activeTrigger === 'tbvvalidation') {
+                console.log('📄 [MESSAGE-DEBUG] ✅ Documento PDF detectado em conversa tbvvalidation ativa');
                 console.log('📄 [MESSAGE-DEBUG] 🚀 Chamando processPdfDocument...');
                 enqueueProcessing(sessionName, () => processPdfDocument(sessionName, message, email));
               } else {
                 console.log(`📄 [MESSAGE-DEBUG] ❌ Documento para bot ignorado. Motivo:`);
                 console.log(`📄 [MESSAGE-DEBUG] - Stored exists: ${!!stored}`);
                 console.log(`📄 [MESSAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
-                console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvantimalandro`);
+                console.log(`📄 [MESSAGE-DEBUG] - Expected: tbvvalidation`);
                 
                 // Enviar mensagem explicativa se não há conversa ativa
                 await client.sendText(message.from, 

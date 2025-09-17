@@ -101,7 +101,7 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 
 ---
 
-### `TBVAntiMalandro`
+### `TBVValidation`
 
 **Ative sempre que:**
 - O usuário menciona **análise de documentos**, **contratos suspeitos**, **revisão de papéis** ou **verificação de documentos legais**
@@ -168,7 +168,7 @@ Responda com **exatamente um dos seguintes valores**:
 - `TBVRentabilidade`  
 - `TBVPreQualificação`  
 - `TBVConstruction`
-- `TBVAntiMalandro`
+- `TBVValidation`
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
