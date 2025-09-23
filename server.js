@@ -1747,6 +1747,104 @@ async function handleTBVEventosConversation(session, message, userInput, session
 }
 
 
+async function handleTriggerBusinessCard(session, message, userInput, sessionName, email) {
+  const client   = session.client;
+  const sender   = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
+
+  // Inicia ou recupera o estado da conversa
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvbusinesscard',
+    imageData: null // Para armazenar a imagem do cartão
+  };
+
+  // Carrega o prompt "TBVBusinessCard" (arquivo prompts/TBVBusinessCard.txt)
+  const prompt = loadPrompt('TBVBusinessCard');
+
+  // Se for a primeira interação, injeta o system prompt
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+    // ✅ NOVO: Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+  } else {
+    // ✅ NOVO: Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
+  }
+
+  // Verifica se a mensagem contém uma imagem
+  if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
+    // Processa a imagem do cartão
+    const imageBuffer = await client.decryptFile(message);
+    const base64Image = imageBuffer.toString('base64');
+    
+    convo.imageData = base64Image;
+    
+    // Envia a imagem para o GPT Vision
+    convo.history.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: userInput || 'Aqui está a imagem do cartão de visita' },
+        { 
+          type: 'image_url', 
+          image_url: { 
+            url: `data:${message.mimetype};base64,${base64Image}` 
+          }
+        }
+      ]
+    });
+  } else {
+    // Mensagem de texto normal
+    convo.history.push({ role: 'user', content: userInput });
+  }
+
+  // Chama o GPT com vision capabilities se houver imagem
+  const gptResponse = await openai.chat.completions.create({
+    model: message.type === 'image' ? 'gpt-4-vision-preview' : ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.1,
+    max_tokens: 2000
+  });
+
+  const assistantResponse = gptResponse.choices[0].message.content.trim();
+  convo.history.push({ role: 'assistant', content: assistantResponse });
+
+  // Se o GPT devolveu o token de encerramento, finaliza aqui:
+  if (assistantResponse === 'finalizando-digitalizacao') {
+    await client.sendText(
+      sender,
+      '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
+    );
+    // ✅ NOVO: Limpar timeout quando conversa termina automaticamente
+    clearConversationTimeout(convoKey);
+    CONVERSATIONS.delete(convoKey);
+    return;
+  }
+
+  // Verifica se a resposta contém um data URI para enviar como arquivo
+  const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\\s]+/);
+  if (dataUriMatch) {
+    // Extrai o VCF do data URI e envia como arquivo
+    try {
+      const dataUri = dataUriMatch[0];
+      const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
+      const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
+      
+      // Extrai o nome do contato para o arquivo
+      const nameMatch = vcfContent.match(/FN:(.+)/);
+      const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
+      
+      // Envia o arquivo VCF
+      await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
+    } catch (error) {
+      console.error('Erro ao processar VCF:', error);
+    }
+  }
+
+  // Envia a resposta normal
+  await client.sendText(sender, assistantResponse);
+  CONVERSATIONS.set(convoKey, convo);
+}
 
 
 async function handleTriggerTBVConstruction(session, message, userInput, sessionName, email) {
@@ -1992,7 +2090,8 @@ const TRIGGERS = {
   tbvconstruction: handleTriggerTBVConstruction,
   tbvrentabilidade: handleTriggerTBVRentabilidade,
   tbvmortgage: handleTriggerMortgage,
-  tbvvalidation : handleTriggervalidation
+  tbvvalidation : handleTriggervalidation,
+  tbvbusinesscard : handleTriggerBusinessCard
 };
 
 // =======================================================================================================================================================
@@ -3239,7 +3338,8 @@ async function processText(sessionName, message, email) {
       tbvprequalificacao: 'tbvprequalificacao',
       tbvconstruction:    'tbvconstruction',
       tbvconstrucao:      'tbvconstruction',
-      tbvvalidation:      'tbvvalidation'
+      tbvvalidation:      'tbvvalidation',
+      tbvbusinesscard:    'tbvbusinesscard'
     };
 
     if (valid[norm]) {

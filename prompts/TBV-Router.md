@@ -101,6 +101,28 @@ ou mencionar eventos típicos como: médico, dentista, reunião, aniversário, c
 
 ---
 
+### `TBVBusinessCard`
+
+Ative se:
+Se a mensagem trata de cartão de visitas / business card / Cartão de contato
+
+Palavras-chave (exemplos):
+
+PT-BR: “cartão de visitas”, “cartões de visita”, “cartão profissional”,"Cartao de contato"
+
+EN: “business card”, “card design”, "Contact Card"
+
+ES: “tarjeta de presentación”, “tarjeta profesional”.
+
+✅ Exemplos válidos:
+
+- "Resuma este cartão de visitas"
+- "Leia esse contato"
+
+🚫 Não ative se “cartão” for cartão de crédito/débito, vale-presente ou outro contexto não relacionado a cartão de visitas.
+
+---
+
 ### `TBVValidation`
 
 **Ative sempre que:**
@@ -153,6 +175,7 @@ NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções desej
 4. TBV Pre Qualificação – Para iniciar sua pré-aprovação de crédito imobiliário.
 5. TBV Construção – Para entender os custos e lucros de construir um imóvel.
 6. TBV Validation – Para analisar e verificar documentos e contratos suspeitos.
+7. TBV Business Card - Para resumir cartões de visita ou contato.
 ```
 
 ---
@@ -169,6 +192,7 @@ Responda com **exatamente um dos seguintes valores**:
 - `TBVPreQualificação`  
 - `TBVConstruction`
 - `TBVValidation`
+- `TBVBusinessCard`
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
