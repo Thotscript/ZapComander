@@ -1830,120 +1830,187 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
     console.log(`📷 [BUSINESS-CARD] Timeout renovado para conversa existente`);
   }
 
-  // Verifica se a mensagem contém uma imagem
-  if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
-    console.log(`📷 [BUSINESS-CARD] Processando imagem: ${message.mimetype}`);
-    
-    try {
-      // Processa a imagem do cartão
-      const imageBuffer = await client.decryptFile(message);
-      const base64Image = imageBuffer.toString('base64');
-      
-      console.log(`📷 [BUSINESS-CARD] Imagem decodificada. Tamanho: ${base64Image.length} chars`);
-      
-      convo.imageData = base64Image;
-      
-      // Envia a imagem para o GPT Vision
-      convo.history.push({
-        role: 'user',
-        content: [
-          { 
-            type: 'text', 
-            text: userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar' 
-          },
-          { 
-            type: 'image_url', 
-            image_url: { 
-              url: `data:${message.mimetype};base64,${base64Image}` 
-            }
-          }
-        ]
-      });
-
-      console.log(`📷 [BUSINESS-CARD] Mensagem preparada para GPT Vision`);
-      
-    } catch (imageError) {
-      console.error(`❌ [BUSINESS-CARD] Erro ao processar imagem:`, imageError);
-      await client.sendText(sender, 'Erro ao processar a imagem. Tente enviar novamente.');
-      return;
-    }
-  } else {
-    // Mensagem de texto normal
-    console.log(`📷 [BUSINESS-CARD] Processando texto: "${userInput}"`);
-    convo.history.push({ role: 'user', content: userInput });
-  }
+  let gptResponse;
 
   try {
-    // Chama o GPT com vision capabilities se houver imagem
-    const modelToUse = (message.type === 'image' || message.mimetype?.startsWith('image/')) 
-      ? 'gpt-image-1' 
-      : ASSISTANT_MODEL;
-    
-    console.log(`📷 [BUSINESS-CARD] Chamando GPT com modelo: ${modelToUse}`);
-
-    const gptResponse = await openai.chat.completions.create({
-      model: modelToUse,
-      messages: convo.history,
-      temperature: 0.1,
-      max_tokens: 2000
-    });
-
-    const assistantResponse = gptResponse.choices[0].message.content.trim();
-    console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
-    console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
-    
-    convo.history.push({ role: 'assistant', content: assistantResponse });
-
-    // Se o GPT devolveu o token de encerramento, finaliza aqui:
-    if (assistantResponse === 'finalizando-digitalizacao') {
-      console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
-      await client.sendText(
-        sender,
-        '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
-      );
-      clearConversationTimeout(convoKey);
-      CONVERSATIONS.delete(convoKey);
-      return;
-    }
-
-    // Verifica se a resposta contém um data URI para enviar como arquivo
-    const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\s]+/);
-    if (dataUriMatch) {
-      console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, preparando arquivo...`);
+    // Verifica se a mensagem contém uma imagem
+    if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
+      console.log(`📷 [BUSINESS-CARD] Processando imagem: ${message.mimetype}`);
+      
       try {
-        const dataUri = dataUriMatch[0];
-        const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
-        const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
+        // Processa a imagem do cartão
+        const imageBuffer = await client.decryptFile(message);
+        const base64Image = imageBuffer.toString('base64');
         
-        // Extrai o nome do contato para o arquivo
-        const nameMatch = vcfContent.match(/FN:(.+)/);
-        const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
+        console.log(`📷 [BUSINESS-CARD] Imagem decodificada. Tamanho: ${base64Image.length} chars`);
         
-        console.log(`📷 [BUSINESS-CARD] Enviando arquivo VCF: ${fileName}`);
+        convo.imageData = base64Image;
         
-        // Envia o arquivo VCF
-        await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
-        console.log(`📷 [BUSINESS-CARD] Arquivo VCF enviado com sucesso`);
-      } catch (error) {
-        console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', error);
-      }
-    }
+        console.log(`📷 [BUSINESS-CARD] Mensagem preparada para GPT Vision`);
+        
+        // ✅ NOVA CHAMADA USANDO A API RESPONSES
+        console.log(`📷 [BUSINESS-CARD] Chamando GPT com nova API responses...`);
+        
+        gptResponse = await axios.post('https://api.openai.com/v1/responses', {
+          model: 'gpt-4.1',
+          input: [
+            {
+              role: 'user',
+              content: [
+                { 
+                  type: 'input_text', 
+                  text: `${prompt}\n\nUsuário: ${userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar'}` 
+                },
+                {
+                  type: 'input_image',
+                  image_url: `data:${message.mimetype};base64,${base64Image}`
+                }
+              ]
+            }
+          ]
+        }, {
+          headers: {
+            'Authorization': `Bearer ${OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 120000 // 2 minutos de timeout
+        });
 
-    // Envia a resposta normal
-    console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
-    await client.sendText(sender, assistantResponse);
-    console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
+        // Extrair resposta do formato da nova API responses
+        let assistantResponse;
+        
+        if (gptResponse.data.output && gptResponse.data.output.length > 0) {
+          // Nova API responses format
+          const outputContent = gptResponse.data.output[0].content;
+          if (outputContent && outputContent.length > 0) {
+            assistantResponse = outputContent.find(item => item.type === 'output_text')?.text;
+          }
+          console.log(`📷 [BUSINESS-CARD] Response type: output[0].content[0].text`);
+        } else {
+          // Fallback para formato antigo (caso a resposta venha em outro formato)
+          assistantResponse = gptResponse.data.choices?.[0]?.message?.content;
+          console.log(`📷 [BUSINESS-CARD] Response type: choices[0].message.content (fallback)`);
+        }
+
+        if (!assistantResponse) {
+          console.error(`📷 [BUSINESS-CARD] ❌ Resposta vazia da OpenAI`);
+          console.error(`📷 [BUSINESS-CARD] 🔍 Full response data:`, JSON.stringify(gptResponse.data, null, 2));
+          throw new Error('Resposta vazia da OpenAI');
+        }
+
+        console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
+        console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
+        
+        // Adicionar à história da conversa
+        convo.history.push({
+          role: 'user',
+          content: [
+            { 
+              type: 'text', 
+              text: userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar' 
+            },
+            { 
+              type: 'image_url', 
+              image_url: { 
+                url: `data:${message.mimetype};base64,${base64Image}` 
+              }
+            }
+          ]
+        });
+        convo.history.push({ role: 'assistant', content: assistantResponse });
+
+        // Se o GPT devolveu o token de encerramento, finaliza aqui:
+        if (assistantResponse === 'finalizando-digitalizacao') {
+          console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
+          await client.sendText(
+            sender,
+            '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
+          );
+          clearConversationTimeout(convoKey);
+          CONVERSATIONS.delete(convoKey);
+          return;
+        }
+
+        // Verifica se a resposta contém um data URI para enviar como arquivo
+        const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\s]+/);
+        if (dataUriMatch) {
+          console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, preparando arquivo...`);
+          try {
+            const dataUri = dataUriMatch[0];
+            const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
+            const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
+            
+            // Extrai o nome do contato para o arquivo
+            const nameMatch = vcfContent.match(/FN:(.+)/);
+            const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
+            
+            console.log(`📷 [BUSINESS-CARD] Enviando arquivo VCF: ${fileName}`);
+            
+            // Envia o arquivo VCF
+            await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
+            console.log(`📷 [BUSINESS-CARD] Arquivo VCF enviado com sucesso`);
+          } catch (error) {
+            console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', error);
+          }
+        }
+
+        // Envia a resposta normal
+        console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
+        await client.sendText(sender, assistantResponse);
+        console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
+        
+      } catch (imageError) {
+        console.error(`❌ [BUSINESS-CARD] Erro ao processar imagem:`, imageError);
+        await client.sendText(sender, 'Erro ao processar a imagem. Tente enviar novamente.');
+        return;
+      }
+    } else {
+      // Mensagem de texto normal - usar API tradicional
+      console.log(`📷 [BUSINESS-CARD] Processando texto: "${userInput}"`);
+      convo.history.push({ role: 'user', content: userInput });
+
+      // Usar a API chat/completions tradicional para texto
+      gptResponse = await openai.chat.completions.create({
+        model: ASSISTANT_MODEL,
+        messages: convo.history,
+        temperature: 0.1,
+        max_tokens: 2000
+      });
+
+      const assistantResponse = gptResponse.choices[0].message.content.trim();
+      console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
+      console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
+      
+      convo.history.push({ role: 'assistant', content: assistantResponse });
+
+      // Se o GPT devolveu o token de encerramento, finaliza aqui:
+      if (assistantResponse === 'finalizando-digitalizacao') {
+        console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
+        await client.sendText(
+          sender,
+          '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
+        );
+        clearConversationTimeout(convoKey);
+        CONVERSATIONS.delete(convoKey);
+        return;
+      }
+
+      // Envia a resposta normal
+      console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
+      await client.sendText(sender, assistantResponse);
+      console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
+    }
     
     CONVERSATIONS.set(convoKey, convo);
 
   } catch (gptError) {
-    console.error(`❌ [BUSINESS-CARD] Erro na chamada GPT:`, gptError);
+    console.error(`❌ [BUSINESS-CARD] Erro na chamada GPT:`, gptError?.response?.data || gptError);
+    console.error(`❌ [BUSINESS-CARD] Status:`, gptError?.response?.status);
     await client.sendText(sender, 
       'Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente.'
     );
   }
 }
-
 
 async function handleTriggerTBVConstruction(session, message, userInput, sessionName, email) {
   const client = session.client;
