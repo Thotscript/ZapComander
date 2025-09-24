@@ -879,7 +879,7 @@ app.post('/auth/login', async (req, res) => {
       }
     });
 
-      client.onAnyMessage(async (message) => {
+client.onAnyMessage(async (message) => {
   try {
     // ===== DEBUG GERAL PARA TODAS AS MENSAGENS =====
     console.log(`🔍 [MESSAGE-DEBUG] Mensagem recebida - Tipo: ${message.type}`);
@@ -926,6 +926,61 @@ app.post('/auth/login', async (req, res) => {
 
     if (message.type === 'chat') {
       await processText(sessionName, message, email);
+    }
+
+       // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
+    if (message.type === 'image' || message.type === 'IMAGE') {
+      console.log(`🔍 [IMAGE-DEBUG] ✅ IMAGEM DETECTADA!`);
+      console.log(`🔍 [IMAGE-DEBUG] To: ${message.to}`);
+      console.log(`🔍 [IMAGE-DEBUG] From: ${message.from}`);
+      console.log(`🔍 [IMAGE-DEBUG] MAIN_BOT_NUMBER: ${MAIN_BOT_NUMBER}`);
+
+      // Verificar se é direcionada ao bot
+      if (message.to === MAIN_BOT_NUMBER) {
+        console.log(`🔍 [IMAGE-DEBUG] 🤖 Imagem É para o bot!`);
+        
+        // Verificar se é a sessão correta
+        const receivingSession = SESSIONS.get(sessionName);
+        if (receivingSession && receivingSession.myNumber === message.to) {
+          console.log('🤖 [IMAGE-DEBUG] Imagem direcionada ao bot detectada (sessão correta)');
+          
+          const convoKey = `${session.myNumber}:${message.from}`;
+          const stored = CONVERSATIONS.get(convoKey);
+          
+          console.log(`🔍 [IMAGE-DEBUG] ConvoKey: ${convoKey}`);
+          console.log(`🔍 [IMAGE-DEBUG] Stored conversation:`, stored ? {
+            activeTrigger: stored.activeTrigger,
+            historyLength: stored.history?.length
+          } : 'null');
+          
+          // ✅ VERIFICAR SE HÁ CONVERSA ATIVA DO tbvbusinesscard
+          if (stored && stored.activeTrigger === 'tbvbusinesscard') {
+            console.log('📷 [IMAGE-DEBUG] ✅ Imagem detectada em conversa tbvbusinesscard ativa');
+            console.log('📷 [IMAGE-DEBUG] 🚀 Chamando handleTriggerBusinessCard...');
+            await handleTriggerBusinessCard(session, message, '', sessionName, email);
+            return;
+          } else {
+            console.log(`📷 [IMAGE-DEBUG] ❌ Imagem para bot ignorada. Motivo:`);
+            console.log(`📷 [IMAGE-DEBUG] - Stored exists: ${!!stored}`);
+            console.log(`📷 [IMAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
+            console.log(`📷 [IMAGE-DEBUG] - Expected: tbvbusinesscard`);
+            
+            // Enviar mensagem explicativa se não há conversa ativa
+            await client.sendText(message.from, 
+              '📷 Para processar imagens de cartão, primeiro ative o assistente enviando uma mensagem sobre digitalização de cartão de visita.'
+            );
+            return;
+          }
+        } else {
+          console.log('🔄 [IMAGE-DEBUG] Imagem para bot detectada, mas processado por outra sessão - ignorando duplicata');
+          return;
+        }
+      } else {
+        // Imagem normal (não direcionada ao bot)
+        console.log('📱 [IMAGE-DEBUG] Imagem NÃO é para o bot - processando como texto normal');
+        await processText(sessionName, message, email);
+        return;
+      }
     }
 
     // ===== VERIFICAÇÃO DE DOCUMENTO COM TIPOS CORRETOS =====
@@ -1752,98 +1807,141 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
   const sender   = message.from;
   const convoKey = `${session.myNumber}:${sender}`;
 
+  console.log(`📷 [BUSINESS-CARD] Processando mensagem tipo: ${message.type}`);
+  console.log(`📷 [BUSINESS-CARD] UserInput: "${userInput}"`);
+
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
     activeTrigger: 'tbvbusinesscard',
-    imageData: null // Para armazenar a imagem do cartão
+    imageData: null
   };
 
-  // Carrega o prompt "TBVBusinessCard" (arquivo prompts/TBVBusinessCard.txt)
+  // Carrega o prompt "TBVBusinessCard"
   const prompt = loadPrompt('TBVBusinessCard');
 
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
     convo.history.push({ role: 'system', content: prompt });
-    // ✅ NOVO: Definir timeout quando conversa inicia
     setConversationTimeout(convoKey, session, sender);
+    console.log(`📷 [BUSINESS-CARD] Conversa iniciada com system prompt`);
   } else {
-    // ✅ NOVO: Renovar timeout a cada interação
     refreshConversationTimeout(convoKey, session, sender);
+    console.log(`📷 [BUSINESS-CARD] Timeout renovado para conversa existente`);
   }
 
   // Verifica se a mensagem contém uma imagem
   if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
-    // Processa a imagem do cartão
-    const imageBuffer = await client.decryptFile(message);
-    const base64Image = imageBuffer.toString('base64');
+    console.log(`📷 [BUSINESS-CARD] Processando imagem: ${message.mimetype}`);
     
-    convo.imageData = base64Image;
-    
-    // Envia a imagem para o GPT Vision
-    convo.history.push({
-      role: 'user',
-      content: [
-        { type: 'text', text: userInput || 'Aqui está a imagem do cartão de visita' },
-        { 
-          type: 'image_url', 
-          image_url: { 
-            url: `data:${message.mimetype};base64,${base64Image}` 
+    try {
+      // Processa a imagem do cartão
+      const imageBuffer = await client.decryptFile(message);
+      const base64Image = imageBuffer.toString('base64');
+      
+      console.log(`📷 [BUSINESS-CARD] Imagem decodificada. Tamanho: ${base64Image.length} chars`);
+      
+      convo.imageData = base64Image;
+      
+      // Envia a imagem para o GPT Vision
+      convo.history.push({
+        role: 'user',
+        content: [
+          { 
+            type: 'text', 
+            text: userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar' 
+          },
+          { 
+            type: 'image_url', 
+            image_url: { 
+              url: `data:${message.mimetype};base64,${base64Image}` 
+            }
           }
-        }
-      ]
-    });
+        ]
+      });
+
+      console.log(`📷 [BUSINESS-CARD] Mensagem preparada para GPT Vision`);
+      
+    } catch (imageError) {
+      console.error(`❌ [BUSINESS-CARD] Erro ao processar imagem:`, imageError);
+      await client.sendText(sender, 'Erro ao processar a imagem. Tente enviar novamente.');
+      return;
+    }
   } else {
     // Mensagem de texto normal
+    console.log(`📷 [BUSINESS-CARD] Processando texto: "${userInput}"`);
     convo.history.push({ role: 'user', content: userInput });
   }
 
-  // Chama o GPT com vision capabilities se houver imagem
-  const gptResponse = await openai.chat.completions.create({
-    model: message.type === 'image' ? 'gpt-4-vision-preview' : ASSISTANT_MODEL,
-    messages: convo.history,
-    temperature: 0.1,
-    max_tokens: 2000
-  });
+  try {
+    // Chama o GPT com vision capabilities se houver imagem
+    const modelToUse = (message.type === 'image' || message.mimetype?.startsWith('image/')) 
+      ? 'gpt-4-vision-preview' 
+      : ASSISTANT_MODEL;
+    
+    console.log(`📷 [BUSINESS-CARD] Chamando GPT com modelo: ${modelToUse}`);
 
-  const assistantResponse = gptResponse.choices[0].message.content.trim();
-  convo.history.push({ role: 'assistant', content: assistantResponse });
+    const gptResponse = await openai.chat.completions.create({
+      model: modelToUse,
+      messages: convo.history,
+      temperature: 0.1,
+      max_tokens: 2000
+    });
 
-  // Se o GPT devolveu o token de encerramento, finaliza aqui:
-  if (assistantResponse === 'finalizando-digitalizacao') {
-    await client.sendText(
-      sender,
-      '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
-    );
-    // ✅ NOVO: Limpar timeout quando conversa termina automaticamente
-    clearConversationTimeout(convoKey);
-    CONVERSATIONS.delete(convoKey);
-    return;
-  }
+    const assistantResponse = gptResponse.choices[0].message.content.trim();
+    console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
+    console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
+    
+    convo.history.push({ role: 'assistant', content: assistantResponse });
 
-  // Verifica se a resposta contém um data URI para enviar como arquivo
-  const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\\s]+/);
-  if (dataUriMatch) {
-    // Extrai o VCF do data URI e envia como arquivo
-    try {
-      const dataUri = dataUriMatch[0];
-      const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
-      const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
-      
-      // Extrai o nome do contato para o arquivo
-      const nameMatch = vcfContent.match(/FN:(.+)/);
-      const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
-      
-      // Envia o arquivo VCF
-      await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
-    } catch (error) {
-      console.error('Erro ao processar VCF:', error);
+    // Se o GPT devolveu o token de encerramento, finaliza aqui:
+    if (assistantResponse === 'finalizando-digitalizacao') {
+      console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
+      await client.sendText(
+        sender,
+        '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
+      );
+      clearConversationTimeout(convoKey);
+      CONVERSATIONS.delete(convoKey);
+      return;
     }
-  }
 
-  // Envia a resposta normal
-  await client.sendText(sender, assistantResponse);
-  CONVERSATIONS.set(convoKey, convo);
+    // Verifica se a resposta contém um data URI para enviar como arquivo
+    const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\s]+/);
+    if (dataUriMatch) {
+      console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, preparando arquivo...`);
+      try {
+        const dataUri = dataUriMatch[0];
+        const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
+        const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
+        
+        // Extrai o nome do contato para o arquivo
+        const nameMatch = vcfContent.match(/FN:(.+)/);
+        const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
+        
+        console.log(`📷 [BUSINESS-CARD] Enviando arquivo VCF: ${fileName}`);
+        
+        // Envia o arquivo VCF
+        await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
+        console.log(`📷 [BUSINESS-CARD] Arquivo VCF enviado com sucesso`);
+      } catch (error) {
+        console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', error);
+      }
+    }
+
+    // Envia a resposta normal
+    console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
+    await client.sendText(sender, assistantResponse);
+    console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
+    
+    CONVERSATIONS.set(convoKey, convo);
+
+  } catch (gptError) {
+    console.error(`❌ [BUSINESS-CARD] Erro na chamada GPT:`, gptError);
+    await client.sendText(sender, 
+      'Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente.'
+    );
+  }
 }
 
 
