@@ -1876,7 +1876,7 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
   try {
     // Chama o GPT com vision capabilities se houver imagem
     const modelToUse = (message.type === 'image' || message.mimetype?.startsWith('image/')) 
-      ? 'gpt-4-vision-preview' 
+      ? 'gpt-image-1' 
       : ASSISTANT_MODEL;
     
     console.log(`📷 [BUSINESS-CARD] Chamando GPT com modelo: ${modelToUse}`);
