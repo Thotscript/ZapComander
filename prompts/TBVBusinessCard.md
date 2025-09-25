@@ -58,31 +58,10 @@ finalizando-digitalizacao
 
 Após confirmação "SIM", forneça SEMPRE estas três opções:
 
-### Opção 1 - Site Gerador (Mais Fácil)
-```
-🔗 **OPÇÃO 1 - Mais Fácil:**
-Acesse no celular: **vcardmaker.com**
-
-📋 **Copie estes dados:**
-Nome: [nome]
-Empresa: [empresa]
-[... todos os campos ...]
-```
-
 ### Opção 2 - Link Data URI
 ```
 🔗 **OPÇÃO 2 - Link Direto:**
-data:text/vcard;charset=utf-8,[VCF CODIFICADO]
-```
-
-### Opção 3 - Código VCF
-```
-📄 **OPÇÃO 3 - Código Manual:**
-BEGIN:VCARD
-VERSION:3.0
-FN:[Nome]
-[... resto do VCF ...]
-END:VCARD
+http://data:text/vcard;charset=utf-8,[VCF CODIFICADO]
 ```
 
 ## 7. Codificação Data URI
