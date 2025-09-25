@@ -58,9 +58,9 @@ finalizando-digitalizacao
 
 Após confirmação "SIM", forneça SEMPRE estas três opções:
 
-### Opção 2 - Link Data URI
+### Link Data URI
 ```
-🔗 **OPÇÃO 2 - Link Direto:**
+🔗 **Link Direto:**
 http://data:text/vcard;charset=utf-8,[VCF CODIFICADO]
 ```
 

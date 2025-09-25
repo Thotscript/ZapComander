@@ -221,6 +221,19 @@ function normalizarHorario(input, timezone) {
   return null;
 }
 
+const VCF_DIR = path.join(__dirname, 'public', 'vcf');
+
+[
+  path.dirname(FILTERS_FILE),
+  SESSION_LOGS_DIR,
+  QR_CODES_DIR,
+  VCF_DIR,  // NOVA LINHA
+  AUDIO_DIR,
+  TOKEN_DIR
+].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
 
 const MAIN_BOT_NUMBER = '14073015137@c.us';
 const processingQueues = new Map();
@@ -302,6 +315,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use('/qrcodes', express.static(QR_CODES_DIR));
+app.use('/vcf', express.static(VCF_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function getTimezoneFromNumber(number) {
@@ -311,6 +325,31 @@ function getTimezoneFromNumber(number) {
 
   return DDI_TO_TIMEZONE[ddi] || DDI_TO_TIMEZONE[ddi.slice(0, 2)] || 'UTC';
 }
+
+
+function cleanupOldVCFFiles() {
+  try {
+    const files = fs.readdirSync(VCF_DIR);
+    const now = Date.now();
+    const maxAge = 5 * 60 * 1000; // 5 minutos
+
+    files.forEach(file => {
+      const filePath = path.join(VCF_DIR, file);
+      const stats = fs.statSync(filePath);
+      const fileAge = now - stats.mtime.getTime();
+      
+      if (fileAge > maxAge) {
+        fs.unlinkSync(filePath);
+        console.log(`VCF antigo removido: ${file}`);
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao limpar arquivos VCF antigos:', error);
+  }
+}
+
+// Executar limpeza a cada minuto
+setInterval(cleanupOldVCFFiles, 60000);
 
 // ===== Rotas e lógica de sessão =====
 
@@ -1931,26 +1970,46 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
           return;
         }
 
-        // Verifica se a resposta contém um data URI para enviar como arquivo
+        // ✅ NOVA LÓGICA: Verifica se a resposta contém um data URI para criar arquivo temporário
         const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\s]+/);
         if (dataUriMatch) {
-          console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, preparando arquivo...`);
+          console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, criando arquivo temporário...`);
           try {
             const dataUri = dataUriMatch[0];
             const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
-            const vcfBuffer = Buffer.from(vcfContent, 'utf-8');
             
             // Extrai o nome do contato para o arquivo
             const nameMatch = vcfContent.match(/FN:(.+)/);
-            const fileName = nameMatch ? `${nameMatch[1].replace(/[^a-zA-Z0-9]/g, '_')}.vcf` : 'contato.vcf';
+            const baseName = nameMatch ? nameMatch[1].replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') : 'contato';
+            const timestamp = Date.now();
+            const fileName = `${baseName}_${timestamp}.vcf`;
+            const filePath = path.join(__dirname, 'public', 'vcf', fileName);
             
-            console.log(`📷 [BUSINESS-CARD] Enviando arquivo VCF: ${fileName}`);
+            // Garante que o diretório VCF existe
+            const vcfDir = path.dirname(filePath);
+            if (!fs.existsSync(vcfDir)) {
+              fs.mkdirSync(vcfDir, { recursive: true });
+            }
             
-            // Envia o arquivo VCF
-            await client.sendFile(sender, vcfBuffer, fileName, 'Contato VCF');
-            console.log(`📷 [BUSINESS-CARD] Arquivo VCF enviado com sucesso`);
-          } catch (error) {
-            console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', error);
+            // Salva arquivo temporário
+            fs.writeFileSync(filePath, vcfContent, 'utf-8');
+            
+            // Gera link para download
+            const downloadLink = `https://verbai.com.br:8443/vcf/${fileName}`;
+            
+            console.log(`📷 [BUSINESS-CARD] Arquivo VCF criado: ${fileName}`);
+            
+            // Substitui o data URI na resposta pelo link clicável
+            assistantResponse = assistantResponse.replace(
+              dataUriMatch[0],
+              `🔗 **Link para Download:**\n${downloadLink}\n\n*Link válido por 5 minutos*`
+            );
+            
+            console.log(`📷 [BUSINESS-CARD] Data URI substituído por link HTTP`);
+            
+          } catch (vcfError) {
+            console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', vcfError);
+            // Mantém a resposta original em caso de erro
           }
         }
 
