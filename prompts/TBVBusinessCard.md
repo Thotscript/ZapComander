@@ -54,15 +54,7 @@ finalizando-digitalizacao
 * Se o usuário digitar "CORRIGIR":
   > "Por favor, indique qual campo deseja corrigir e a informação correta. Exemplo: 'E-mail correto é joao@empresa.com'"
 
-## 6. Geração do VCF
-
-Após confirmação "SIM", forneça SEMPRE estas três opções:
-
-### Link Data URI
-```
-🔗 **Link Direto:**
-http://data:text/vcard;charset=utf-8,[VCF CODIFICADO]
-```
+Após gerar o VCF, informe: "Arquivo VCF gerado! O link para download será disponibilizado automaticamente."
 
 ## 7. Codificação Data URI
 

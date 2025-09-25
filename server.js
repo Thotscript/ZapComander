@@ -1843,7 +1843,9 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
     activeTrigger: 'tbvbusinesscard',
-    imageData: null
+    imageData: null,
+    extractedData: null,
+    waitingForConfirmation: false
   };
 
   // Carrega o prompt "TBVBusinessCard"
@@ -1854,209 +1856,348 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
     convo.history.push({ role: 'system', content: prompt });
     setConversationTimeout(convoKey, session, sender);
     console.log(`📷 [BUSINESS-CARD] Conversa iniciada com system prompt`);
+    
+    // Enviar mensagem de boas-vindas
+    await client.sendText(sender, 
+      '🎯 *Digitalizador de Cartões de Visita Pro*\n\n' +
+      '📸 Envie uma foto clara do cartão de visita para digitalizar.'
+    );
+    
+    CONVERSATIONS.set(convoKey, convo);
+    return;
   } else {
     refreshConversationTimeout(convoKey, session, sender);
     console.log(`📷 [BUSINESS-CARD] Timeout renovado para conversa existente`);
   }
 
-  let gptResponse;
-
-  try {
-    // Verifica se a mensagem contém uma imagem
-    if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
-      console.log(`📷 [BUSINESS-CARD] Processando imagem: ${message.mimetype}`);
-      
-      try {
-        // Processa a imagem do cartão
-        const imageBuffer = await client.decryptFile(message);
-        const base64Image = imageBuffer.toString('base64');
-        
-        console.log(`📷 [BUSINESS-CARD] Imagem decodificada. Tamanho: ${base64Image.length} chars`);
-        
-        convo.imageData = base64Image;
-        
-        console.log(`📷 [BUSINESS-CARD] Mensagem preparada para GPT Vision`);
-        
-        // ✅ NOVA CHAMADA USANDO A API RESPONSES
-        console.log(`📷 [BUSINESS-CARD] Chamando GPT com nova API responses...`);
-        
-        gptResponse = await axios.post('https://api.openai.com/v1/responses', {
-          model: 'gpt-4.1',
-          input: [
-            {
-              role: 'user',
-              content: [
-                { 
-                  type: 'input_text', 
-                  text: `${prompt}\n\nUsuário: ${userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar'}` 
-                },
-                {
-                  type: 'input_image',
-                  image_url: `data:${message.mimetype};base64,${base64Image}`
-                }
-              ]
-            }
-          ]
-        }, {
-          headers: {
-            'Authorization': `Bearer ${OPENAI_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 120000 // 2 minutos de timeout
-        });
-
-        // Extrair resposta do formato da nova API responses
-        let assistantResponse;
-        
-        if (gptResponse.data.output && gptResponse.data.output.length > 0) {
-          // Nova API responses format
-          const outputContent = gptResponse.data.output[0].content;
-          if (outputContent && outputContent.length > 0) {
-            assistantResponse = outputContent.find(item => item.type === 'output_text')?.text;
-          }
-          console.log(`📷 [BUSINESS-CARD] Response type: output[0].content[0].text`);
-        } else {
-          // Fallback para formato antigo (caso a resposta venha em outro formato)
-          assistantResponse = gptResponse.data.choices?.[0]?.message?.content;
-          console.log(`📷 [BUSINESS-CARD] Response type: choices[0].message.content (fallback)`);
-        }
-
-        if (!assistantResponse) {
-          console.error(`📷 [BUSINESS-CARD] ❌ Resposta vazia da OpenAI`);
-          console.error(`📷 [BUSINESS-CARD] 🔍 Full response data:`, JSON.stringify(gptResponse.data, null, 2));
-          throw new Error('Resposta vazia da OpenAI');
-        }
-
-        console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
-        console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
-        
-        // Adicionar à história da conversa
-        convo.history.push({
-          role: 'user',
-          content: [
-            { 
-              type: 'text', 
-              text: userInput || 'Aqui está a imagem do cartão de visita que preciso digitalizar' 
-            },
-            { 
-              type: 'image_url', 
-              image_url: { 
-                url: `data:${message.mimetype};base64,${base64Image}` 
-              }
-            }
-          ]
-        });
-        convo.history.push({ role: 'assistant', content: assistantResponse });
-
-        // Se o GPT devolveu o token de encerramento, finaliza aqui:
-        if (assistantResponse === 'finalizando-digitalizacao') {
-          console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
-          await client.sendText(
-            sender,
-            '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
-          );
-          clearConversationTimeout(convoKey);
-          CONVERSATIONS.delete(convoKey);
-          return;
-        }
-
-        // ✅ NOVA LÓGICA: Verifica se a resposta contém um data URI para criar arquivo temporário
-        const dataUriMatch = assistantResponse.match(/data:text\/vcard[^\s]+/);
-        if (dataUriMatch) {
-          console.log(`📷 [BUSINESS-CARD] Data URI VCF detectado, criando arquivo temporário...`);
-          try {
-            const dataUri = dataUriMatch[0];
-            const vcfContent = decodeURIComponent(dataUri.replace(/^data:text\/vcard;charset=utf-8,/, ''));
-            
-            // Extrai o nome do contato para o arquivo
-            const nameMatch = vcfContent.match(/FN:(.+)/);
-            const baseName = nameMatch ? nameMatch[1].replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') : 'contato';
-            const timestamp = Date.now();
-            const fileName = `${baseName}_${timestamp}.vcf`;
-            const filePath = path.join(__dirname, 'public', 'vcf', fileName);
-            
-            // Garante que o diretório VCF existe
-            const vcfDir = path.dirname(filePath);
-            if (!fs.existsSync(vcfDir)) {
-              fs.mkdirSync(vcfDir, { recursive: true });
-            }
-            
-            // Salva arquivo temporário
-            fs.writeFileSync(filePath, vcfContent, 'utf-8');
-            
-            // Gera link para download
-            const downloadLink = `https://verbai.com.br:8443/vcf/${fileName}`;
-            
-            console.log(`📷 [BUSINESS-CARD] Arquivo VCF criado: ${fileName}`);
-            
-            // Substitui o data URI na resposta pelo link clicável
-            assistantResponse = assistantResponse.replace(
-              dataUriMatch[0],
-              `🔗 **Link para Download:**\n${downloadLink}\n\n*Link válido por 5 minutos*`
-            );
-            
-            console.log(`📷 [BUSINESS-CARD] Data URI substituído por link HTTP`);
-            
-          } catch (vcfError) {
-            console.error('❌ [BUSINESS-CARD] Erro ao processar VCF:', vcfError);
-            // Mantém a resposta original em caso de erro
-          }
-        }
-
-        // Envia a resposta normal
-        console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
-        await client.sendText(sender, assistantResponse);
-        console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
-        
-      } catch (imageError) {
-        console.error(`❌ [BUSINESS-CARD] Erro ao processar imagem:`, imageError);
-        await client.sendText(sender, 'Erro ao processar a imagem. Tente enviar novamente.');
-        return;
-      }
-    } else {
-      // Mensagem de texto normal - usar API tradicional
-      console.log(`📷 [BUSINESS-CARD] Processando texto: "${userInput}"`);
-      convo.history.push({ role: 'user', content: userInput });
-
-      // Usar a API chat/completions tradicional para texto
-      gptResponse = await openai.chat.completions.create({
-        model: ASSISTANT_MODEL,
-        messages: convo.history,
-        temperature: 0.1,
-        max_tokens: 2000
-      });
-
-      const assistantResponse = gptResponse.choices[0].message.content.trim();
-      console.log(`📷 [BUSINESS-CARD] Resposta do GPT recebida. Tamanho: ${assistantResponse.length} chars`);
-      console.log(`📷 [BUSINESS-CARD] Início da resposta: ${assistantResponse.substring(0, 100)}...`);
-      
-      convo.history.push({ role: 'assistant', content: assistantResponse });
-
-      // Se o GPT devolveu o token de encerramento, finaliza aqui:
-      if (assistantResponse === 'finalizando-digitalizacao') {
-        console.log(`📷 [BUSINESS-CARD] Token de encerramento detectado`);
-        await client.sendText(
-          sender,
-          '✅ Digitalização concluída! Para digitalizar outro cartão, envie uma nova foto quando quiser.'
-        );
-        clearConversationTimeout(convoKey);
-        CONVERSATIONS.delete(convoKey);
-        return;
-      }
-
-      // Envia a resposta normal
-      console.log(`📷 [BUSINESS-CARD] Enviando resposta para o usuário...`);
-      await client.sendText(sender, assistantResponse);
-      console.log(`📷 [BUSINESS-CARD] Resposta enviada com sucesso`);
+  // Verificar se está aguardando confirmação
+  if (convo.waitingForConfirmation) {
+    const userResponse = userInput.toLowerCase().trim();
+    
+    // Verificar comandos de interrupção
+    if (['não', 'nao', 'cancelar', 'parar', 'tchau', 'não quero mais'].includes(userResponse)) {
+      console.log(`📷 [BUSINESS-CARD] Comando de interrupção detectado: ${userInput}`);
+      await client.sendText(sender, 'finalizando-digitalizacao');
+      clearConversationTimeout(convoKey);
+      CONVERSATIONS.delete(convoKey);
+      return;
     }
     
-    CONVERSATIONS.set(convoKey, convo);
+    if (userResponse === 'sim') {
+      // Gerar VCF com os dados validados
+      console.log(`📷 [BUSINESS-CARD] Confirmação recebida, gerando VCF...`);
+      await generateAndSendVCF(client, sender, convo.extractedData);
+      
+      // Perguntar se deseja digitalizar outro cartão
+      setTimeout(async () => {
+        await client.sendText(sender, 
+          '✅ Digitalização concluída!\n\n' +
+          '🔄 Deseja digitalizar outro cartão? Envie uma nova foto!'
+        );
+      }, 2000);
+      
+      // Resetar estado para nova digitalização
+      convo.waitingForConfirmation = false;
+      convo.extractedData = null;
+      convo.imageData = null;
+      CONVERSATIONS.set(convoKey, convo);
+      return;
+      
+    } else if (userResponse === 'corrigir') {
+      await client.sendText(sender, 
+        '✏️ *Por favor, indique qual campo deseja corrigir e a informação correta.*\n\n' +
+        '📝 Exemplo: "E-mail correto é joao@empresa.com"'
+      );
+      convo.waitingForConfirmation = false;
+      CONVERSATIONS.set(convoKey, convo);
+      return;
+      
+    } else {
+      // Verificar se é uma correção de campo
+      const correctionMatch = userInput.match(/(nome|cargo|empresa|celular|telefone|e-mail|email|website|endereço|endereco|linkedin)\s+(correto\s+é|é)\s+(.+)/i);
+      if (correctionMatch) {
+        const field = correctionMatch[1].toLowerCase();
+        const newValue = correctionMatch[3].trim();
+        
+        // Atualizar o campo nos dados extraídos
+        if (convo.extractedData) {
+          const fieldMap = {
+            'nome': 'nome',
+            'cargo': 'cargo', 
+            'empresa': 'empresa',
+            'celular': 'celular',
+            'telefone': 'telefone',
+            'e-mail': 'email',
+            'email': 'email',
+            'website': 'website',
+            'endereço': 'endereco',
+            'endereco': 'endereco',
+            'linkedin': 'linkedin'
+          };
+          
+          if (fieldMap[field]) {
+            convo.extractedData[fieldMap[field]] = newValue;
+            
+            // Mostrar tabela atualizada
+            const updatedTable = generateValidationTable(convo.extractedData);
+            await client.sendText(sender, updatedTable + '\n\n📝 Todos os dados estão corretos? Digite **SIM** ou **CORRIGIR**');
+            
+            convo.waitingForConfirmation = true;
+            CONVERSATIONS.set(convoKey, convo);
+            return;
+          }
+        }
+      }
+      
+      await client.sendText(sender, 
+        '❓ Não entendi sua resposta.\n\n' +
+        '📝 Digite:\n' +
+        '• **SIM** - para confirmar os dados\n' +
+        '• **CORRIGIR** - para alterar algum campo\n' +
+        '• "Não" - para cancelar'
+      );
+      return;
+    }
+  }
 
-  } catch (gptError) {
-    console.error(`❌ [BUSINESS-CARD] Erro na chamada GPT:`, gptError?.response?.data || gptError);
-    console.error(`❌ [BUSINESS-CARD] Status:`, gptError?.response?.status);
+  // Verificar se a mensagem contém uma imagem
+  if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
+    console.log(`📷 [BUSINESS-CARD] Processando imagem: ${message.mimetype}`);
+    
+    try {
+      // Processa a imagem do cartão
+      const imageBuffer = await client.decryptFile(message);
+      const base64Image = imageBuffer.toString('base64');
+      
+      console.log(`📷 [BUSINESS-CARD] Imagem decodificada. Tamanho: ${base64Image.length} chars`);
+      
+      convo.imageData = base64Image;
+      
+      // Prompt específico para extração de dados
+      const extractionPrompt = `Analise esta imagem de cartão de visita e extraia TODOS os dados visíveis em formato JSON.
+
+Retorne APENAS um objeto JSON com esta estrutura:
+{
+  "nome": "Nome da pessoa",
+  "cargo": "Cargo/Função", 
+  "empresa": "Nome da empresa",
+  "celular": "Celular formatado como +55 XX XXXXX-XXXX",
+  "telefone": "Telefone fixo formatado como +55 XX XXXX-XXXX", 
+  "email": "E-mail",
+  "website": "Website/URL",
+  "endereco": "Endereço completo",
+  "linkedin": "LinkedIn ou redes sociais"
+}
+
+Se algum campo não estiver visível ou legível, use "Não informado".
+Para telefones brasileiros, sempre inclua o código +55.`;
+
+      console.log(`📷 [BUSINESS-CARD] Chamando GPT para extração de dados...`);
+      
+      const gptResponse = await axios.post('https://api.openai.com/v1/responses', {
+        model: 'gpt-4.1',
+        input: [
+          {
+            role: 'user',
+            content: [
+              { 
+                type: 'input_text', 
+                text: extractionPrompt
+              },
+              {
+                type: 'input_image',
+                image_url: `data:${message.mimetype};base64,${base64Image}`
+              }
+            ]
+          }
+        ]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 120000
+      });
+
+      // Extrair resposta
+      let assistantResponse;
+      if (gptResponse.data.output && gptResponse.data.output.length > 0) {
+        const outputContent = gptResponse.data.output[0].content;
+        if (outputContent && outputContent.length > 0) {
+          assistantResponse = outputContent.find(item => item.type === 'output_text')?.text;
+        }
+      } else {
+        assistantResponse = gptResponse.data.choices?.[0]?.message?.content;
+      }
+
+      if (!assistantResponse) {
+        throw new Error('Resposta vazia da OpenAI');
+      }
+
+      console.log(`📷 [BUSINESS-CARD] Resposta recebida: ${assistantResponse.substring(0, 200)}...`);
+      
+      // Extrair JSON da resposta
+      let extractedData;
+      try {
+        const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          extractedData = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('JSON não encontrado na resposta');
+        }
+      } catch (parseError) {
+        console.error('❌ Erro ao fazer parse do JSON:', parseError);
+        await client.sendText(sender, 
+          '❌ A imagem está com baixa qualidade. Por favor, envie uma foto mais clara do cartão.'
+        );
+        return;
+      }
+
+      // Salvar dados extraídos
+      convo.extractedData = extractedData;
+      
+      // Gerar tabela de validação
+      const validationTable = generateValidationTable(extractedData);
+      
+      // Enviar tabela para validação
+      await client.sendText(sender, validationTable + '\n\n📝 Todos os dados estão corretos? Digite **SIM** ou **CORRIGIR**');
+      
+      convo.waitingForConfirmation = true;
+      
+    } catch (imageError) {
+      console.error(`❌ [BUSINESS-CARD] Erro ao processar imagem:`, imageError);
+      await client.sendText(sender, 
+        '❌ Erro ao processar a imagem. Tente enviar uma foto mais clara.'
+      );
+      return;
+    }
+  } else if (userInput) {
+    // Mensagem de texto normal
+    console.log(`📷 [BUSINESS-CARD] Processando texto: "${userInput}"`);
+    
+    // Verificar comandos de interrupção
+    if (['não', 'nao', 'cancelar', 'parar', 'tchau', 'não quero mais'].includes(userInput.toLowerCase().trim())) {
+      console.log(`📷 [BUSINESS-CARD] Comando de interrupção detectado`);
+      await client.sendText(sender, 'finalizando-digitalizacao');
+      clearConversationTimeout(convoKey);
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+    
+    // Resposta padrão para texto
     await client.sendText(sender, 
-      'Desculpe, ocorreu um erro ao processar sua solicitação. Tente novamente.'
+      '📸 Por favor, envie uma foto clara do cartão de visita para digitalizar.\n\n' +
+      '💡 Dicas para melhor resultado:\n' +
+      '• Boa iluminação\n' +
+      '• Cartão totalmente visível\n' +
+      '• Foto sem tremulação'
+    );
+  }
+  
+  CONVERSATIONS.set(convoKey, convo);
+}
+
+// Função para gerar a tabela de validação
+function generateValidationTable(data) {
+  return `✅ **Dados Identificados:**
+
+| Campo | Informação |
+|-------|------------|
+| 👤 Nome | ${data.nome || 'Não informado'} |
+| 💼 Cargo | ${data.cargo || 'Não informado'} |
+| 🏢 Empresa | ${data.empresa || 'Não informado'} |
+| 📱 Celular | ${data.celular || 'Não informado'} |
+| ☎️ Telefone | ${data.telefone || 'Não informado'} |
+| 📧 E-mail | ${data.email || 'Não informado'} |
+| 🌐 Website | ${data.website || 'Não informado'} |
+| 📍 Endereço | ${data.endereco || 'Não informado'} |
+| 💬 LinkedIn | ${data.linkedin || 'Não informado'} |`;
+}
+
+// Função para gerar e enviar VCF
+async function generateAndSendVCF(client, sender, data) {
+  try {
+    console.log(`📷 [BUSINESS-CARD] Gerando arquivo VCF...`);
+    
+    // Gerar conteúdo VCF
+    let vcfContent = 'BEGIN:VCARD\nVERSION:3.0\n';
+    
+    if (data.nome && data.nome !== 'Não informado') {
+      vcfContent += `FN:${data.nome}\n`;
+      vcfContent += `N:${data.nome};;;;\n`;
+    }
+    
+    if (data.cargo && data.cargo !== 'Não informado') {
+      vcfContent += `TITLE:${data.cargo}\n`;
+    }
+    
+    if (data.empresa && data.empresa !== 'Não informado') {
+      vcfContent += `ORG:${data.empresa}\n`;
+    }
+    
+    if (data.celular && data.celular !== 'Não informado') {
+      vcfContent += `TEL;TYPE=CELL:${data.celular}\n`;
+    }
+    
+    if (data.telefone && data.telefone !== 'Não informado') {
+      vcfContent += `TEL;TYPE=WORK:${data.telefone}\n`;
+    }
+    
+    if (data.email && data.email !== 'Não informado') {
+      vcfContent += `EMAIL:${data.email}\n`;
+    }
+    
+    if (data.website && data.website !== 'Não informado') {
+      vcfContent += `URL:${data.website}\n`;
+    }
+    
+    if (data.endereco && data.endereco !== 'Não informado') {
+      vcfContent += `ADR:;;${data.endereco};;;;\n`;
+    }
+    
+    if (data.linkedin && data.linkedin !== 'Não informado') {
+      vcfContent += `URL:${data.linkedin}\n`;
+    }
+    
+    vcfContent += 'END:VCARD';
+    
+    // Criar arquivo temporário
+    const baseName = (data.nome && data.nome !== 'Não informado') ? 
+      data.nome.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') : 
+      'contato';
+    const timestamp = Date.now();
+    const fileName = `${baseName}_${timestamp}.vcf`;
+    const filePath = path.join(__dirname, 'public', 'vcf', fileName);
+    
+    // Garantir que o diretório existe
+    const vcfDir = path.dirname(filePath);
+    if (!fs.existsSync(vcfDir)) {
+      fs.mkdirSync(vcfDir, { recursive: true });
+    }
+    
+    // Salvar arquivo
+    fs.writeFileSync(filePath, vcfContent, 'utf-8');
+    
+    // Gerar link para download
+    const downloadLink = `https://verbai.com.br:8443/vcf/${fileName}`;
+    
+    console.log(`📷 [BUSINESS-CARD] Arquivo VCF criado: ${fileName}`);
+    
+    // Enviar link via mensagem
+    const message = `🎉 **Arquivo VCF gerado com sucesso!**\n\n` +
+                   `🔗 **Link para Download:**\n${downloadLink}\n\n` +
+                   `💾 Clique no link para baixar o contato\n` +
+                   `⏰ *Link válido por 5 minutos*\n\n` +
+                   `📱 Após baixar, você pode importar o contato diretamente para sua agenda!`;
+    
+    await client.sendText(sender, message);
+    
+    console.log(`📷 [BUSINESS-CARD] Link enviado com sucesso para ${sender}`);
+    
+  } catch (error) {
+    console.error('❌ [BUSINESS-CARD] Erro ao gerar VCF:', error);
+    await client.sendText(sender, 
+      '❌ Erro ao gerar arquivo de contato. Tente novamente.'
     );
   }
 }
