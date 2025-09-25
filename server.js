@@ -26,7 +26,7 @@ import { spawn } from 'child_process';
 import { DateTime } from 'luxon';
 import { createRequire } from 'module';
 import { google } from 'googleapis';
-
+import tls from 'tls';
 
 
 // ===== SISTEMA DE TIMEOUT AUTOMÁTICO PARA BOTS =====
@@ -227,9 +227,60 @@ const processingQueues = new Map();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const app = express();
+
 const options = {
+  // Certificado padrão (fallback)
   key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
   cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem'),
+  
+  // SNI Callback para múltiplos domínios
+  SNICallback: (domain, callback) => {
+    let keyPath, certPath;
+    
+    try {
+      switch (domain) {
+        case 'vcard.thebroker.vip':
+          keyPath = '/etc/letsencrypt/live/vcard.thebroker.vip/privkey.pem';
+          certPath = '/etc/letsencrypt/live/vcard.thebroker.vip/fullchain.pem';
+          break;
+          
+        case 'verbai.com.br':
+        default:
+          keyPath = '/etc/letsencrypt/live/verbai.com.br/privkey.pem';
+          certPath = '/etc/letsencrypt/live/verbai.com.br/fullchain.pem';
+          break;
+      }
+      
+      // Verificar se os certificados existem
+      if (!fs.existsSync(keyPath) || !fs.existsSync(certPath)) {
+        console.warn(`Certificados não encontrados para ${domain}, usando padrão`);
+        keyPath = '/etc/letsencrypt/live/verbai.com.br/privkey.pem';
+        certPath = '/etc/letsencrypt/live/verbai.com.br/fullchain.pem';
+      }
+      
+      const ctx = tls.createSecureContext({
+        key: fs.readFileSync(keyPath),
+        cert: fs.readFileSync(certPath)
+      });
+      
+      callback(null, ctx);
+      
+    } catch (error) {
+      console.error(`Erro ao carregar certificado para ${domain}:`, error.message);
+      
+      // Fallback para certificado padrão
+      try {
+        const defaultCtx = tls.createSecureContext({
+          key: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/privkey.pem'),
+          cert: fs.readFileSync('/etc/letsencrypt/live/verbai.com.br/fullchain.pem')
+        });
+        callback(null, defaultCtx);
+      } catch (fallbackError) {
+        callback(fallbackError);
+      }
+    }
+  },
+  
   secureOptions:
     constants.SSL_OP_NO_SSLv2 |
     constants.SSL_OP_NO_SSLv3 |
@@ -290,20 +341,34 @@ app.use(express.json());
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", "https://verbai.com.br:8443"],
-      imgSrc:     ["'self'", "data:", "https://verbai.com.br:8443"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443"]
+      defaultSrc: ["'self'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"],
+      imgSrc:     ["'self'", "data:", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"],
+      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"]
     }
   }
 }));
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
+  const allowedOrigins = [
+    'https://thebroker.vip',
+    'https://verbai.com.br:8443',
+    'https://vcard.thebroker.vip:8443'
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', 'https://thebroker.vip');
+  }
+  
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.header('Cross-Origin-Resource-Policy', 'cross-origin');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use('/vcf', express.static(VCF_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -2179,7 +2244,7 @@ async function generateAndSendVCF(client, sender, data) {
     fs.writeFileSync(filePath, vcfContent, 'utf-8');
     
     // Gerar link para download
-    const downloadLink = `https://verbai.com.br:8443/vcf/${fileName}`;
+    const downloadLink = `https://vcard.thebroker.vip:8443/vcf/${fileName}`;
     
     console.log(`📷 [BUSINESS-CARD] Arquivo VCF criado: ${fileName}`);
     
