@@ -246,17 +246,6 @@ const options = {
 
 const VCF_DIR = path.join(__dirname, 'public', 'vcf');
 
-[
-  path.dirname(FILTERS_FILE),
-  SESSION_LOGS_DIR,
-  QR_CODES_DIR,
-  VCF_DIR,  // NOVA LINHA
-  AUDIO_DIR,
-  TOKEN_DIR
-].forEach(dir => {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-});
-
 const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
 const server = https.createServer(options, app);
 const logStream = fs.createWriteStream('/var/log/wpptalk-errors.log', { flags: 'a' });
@@ -288,6 +277,7 @@ const SESSION_FILTERS = new Map();
   path.dirname(FILTERS_FILE),
   SESSION_LOGS_DIR,
   QR_CODES_DIR,
+  VCF_DIR,
   AUDIO_DIR,
   TOKEN_DIR
 ].forEach(dir => {
