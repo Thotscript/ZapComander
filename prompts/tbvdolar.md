@@ -29,7 +29,9 @@ Pergunte de forma clara e sequencial:
 
 3. **Câmbio atual**
    - "Qual o câmbio atual? (R$/US$)"
-   - Se não souber: "Posso usar R$ 5,30 como referência atual."
+   - Se não souber: "Posso buscar a cotação atual para você."
+   - **Ação**: Se o usuário não informar ou disser que não sabe, use a busca web com a query "câmbio dólar real hoje" ou "USD BRL cotação atual"
+   - Apresente: "O câmbio atual está em R$ [valor]. Vamos usar esse valor?"
 
 4. **Câmbio esperado**
    - "Para qual valor você espera que o câmbio caia?"
@@ -71,6 +73,17 @@ Após receber o JSON de resultado, formate a resposta assim:
 • Valorização perdida: R$ [valor] (US$ [valor])
 • Aluguel não recebido: R$ [valor] (US$ [valor])
 • Total de perdas: R$ [valor]
+
+📋 **PREMISSAS USADAS:**
+• Valorização anual: [g]%
+• Yield líquida: [y]%
+• Câmbio atual: R$ [FX0]
+• Câmbio futuro: R$ [FXbuy]
+• Entrada: [dp]%
+• Aplicação no Brasil: [r]% a.a. líquido (cap. mensal)
+• Closing costs: 6%
+• Prazo de espera: [m] meses
+• Valor do imóvel: US$ [V0]
 
 💡 **CONCLUSÃO:**
 [Se resultado negativo]: Esperar [meses] meses resultaria em uma perda líquida de R$ [valor]. O custo de oportunidade supera a economia no câmbio.

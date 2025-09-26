@@ -2275,11 +2275,11 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'tbvesperardolar'
+    activeTrigger: 'esperardolar'
   };
   
   // Carrega o prompt "EsperarDolar"
-  const prompt = loadPrompt('tbvdolar');
+  const prompt = loadPrompt('EsperarDolar');
   
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
@@ -2314,6 +2314,10 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
     model: ASSISTANT_MODEL,
     messages: convo.history,
     temperature: 0.2,
+    tools: [{
+      type: "web_search",
+      description: "Buscar informações na web, especialmente cotação atual do dólar"
+    }],
     functions: [{
       name: "calcularCustoEsperar",
       description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
