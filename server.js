@@ -2310,34 +2310,35 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   convo.history.push({ role: 'user', content: userInput });
   
   // Chama o GPT com capacidade de function calling
-  const gptResponse = await openai.chat.completions.create({
-    model: ASSISTANT_MODEL,
-    messages: convo.history,
-    temperature: 0.2,
-    tools: [{
-      type: "web_search",
-      description: "Buscar informações na web, especialmente cotação atual do dólar"
-    }],
-    functions: [{
-      name: "calcularCustoEsperar",
-      description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
-      parameters: {
-        type: "object",
-        properties: {
-          V0: { type: "number", description: "Valor do imóvel em USD" },
-          m: { type: "number", description: "Meses de espera" },
-          FX0: { type: "number", description: "Câmbio atual R$/USD" },
-          FXbuy: { type: "number", description: "Câmbio futuro esperado R$/USD" },
-          r: { type: "number", description: "Taxa de aplicação anual (opcional)" },
-          g: { type: "number", description: "Valorização anual do imóvel (opcional)" },
-          y: { type: "number", description: "Yield anual do imóvel (opcional)" },
-          dp: { type: "number", description: "Percentual de downpayment (opcional)" }
-        },
-        required: ["V0", "m", "FX0", "FXbuy"]
+  // Chama o GPT com capacidade de function calling
+const gptResponse = await openai.responses.create({
+  model: ASSISTANT_MODEL,
+  input: convo.history.map(msg => `${msg.role}: ${msg.content}`).join('\n'),
+  tools: [
+    { type: "web_search" },
+    {
+      type: "function",
+      function: {
+        name: "calcularCustoEsperar",
+        description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
+        parameters: {
+          type: "object",
+          properties: {
+            V0: { type: "number", description: "Valor do imóvel em USD" },
+            m: { type: "number", description: "Meses de espera" },
+            FX0: { type: "number", description: "Câmbio atual R$/USD" },
+            FXbuy: { type: "number", description: "Câmbio futuro esperado R$/USD" },
+            r: { type: "number", description: "Taxa de aplicação anual (opcional)" },
+            g: { type: "number", description: "Valorização anual do imóvel (opcional)" },
+            y: { type: "number", description: "Yield anual do imóvel (opcional)" },
+            dp: { type: "number", description: "Percentual de downpayment (opcional)" }
+          },
+          required: ["V0", "m", "FX0", "FXbuy"]
+        }
       }
-    }],
-    function_call: "auto"
-  });
+    }
+  ]
+});
   
   const responseMessage = gptResponse.choices[0].message;
   
