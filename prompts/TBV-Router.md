@@ -123,7 +123,7 @@ ES: “tarjeta de presentación”, “tarjeta profesional”.
 
 ---
 
-### `TBVDolar`
+### `TBVEsperarDolar`
 
 Se a mensagem contém contéudo sobre **esperar cair o dólar** ou simulacoes baseadas no valor atual ou futuro do dólar.
 
@@ -185,7 +185,7 @@ NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções desej
 5. TBV Construção – Para entender os custos e lucros de construir um imóvel.
 6. TBV Validation – Para analisar e verificar documentos e contratos suspeitos.
 7. TBV Business Card - Para resumir cartões de visita ou contato.
-8. TBV Dolar - Informacoes sobre rentabilidade baseada no dólar.
+8. TBV Esperar Dolar - Informacoes sobre rentabilidade baseada no dólar.
 ```
 
 ---
@@ -203,7 +203,7 @@ Responda com **exatamente um dos seguintes valores**:
 - `TBVConstruction`
 - `TBVValidation`
 - `TBVBusinessCard`
-- `TBVDolar`
+- `TBVEsperarDolar`
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
