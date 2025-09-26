@@ -2267,6 +2267,253 @@ async function generateAndSendVCF(client, sender, data) {
   }
 }
 
+async function handleTriggerEsperarDolar(session, message, userInput, sessionName, email) {
+  const client   = session.client;
+  const sender   = message.from;
+  const convoKey = `${session.myNumber}:${sender}`;
+  
+  // Inicia ou recupera o estado da conversa
+  let convo = CONVERSATIONS.get(convoKey) || {
+    history: [],
+    activeTrigger: 'tbvesperardolar'
+  };
+  
+  // Carrega o prompt "EsperarDolar"
+  const prompt = loadPrompt('tbvdolar');
+  
+  // Se for a primeira interação, injeta o system prompt
+  if (convo.history.length === 0) {
+    convo.history.push({ role: 'system', content: prompt });
+    // Definir timeout quando conversa inicia
+    setConversationTimeout(convoKey, session, sender);
+    
+    // Adiciona também a função de cálculo como uma tool/function
+    convo.history.push({
+      role: 'system',
+      content: `Você tem acesso a uma função chamada calcularCustoEsperar que recebe um JSON e retorna os cálculos. 
+      Quando tiver todos os dados necessários, use esta função passando um objeto JSON com os seguintes campos:
+      - V0: valor do imóvel em USD (obrigatório)
+      - m: meses de espera (obrigatório)
+      - FX0: câmbio atual (obrigatório)
+      - FXbuy: câmbio futuro esperado (obrigatório)
+      - r: taxa de aplicação anual (opcional, default 0.12)
+      - g: valorização anual do imóvel (opcional, default 0.05)
+      - y: yield anual do imóvel (opcional, default 0.08)
+      - dp: percentual de downpayment (opcional, default 0.30)`
+    });
+  } else {
+    // Renovar timeout a cada interação
+    refreshConversationTimeout(convoKey, session, sender);
+  }
+  
+  // Empilha a mensagem do usuário
+  convo.history.push({ role: 'user', content: userInput });
+  
+  // Chama o GPT com capacidade de function calling
+  const gptResponse = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.2,
+    functions: [{
+      name: "calcularCustoEsperar",
+      description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
+      parameters: {
+        type: "object",
+        properties: {
+          V0: { type: "number", description: "Valor do imóvel em USD" },
+          m: { type: "number", description: "Meses de espera" },
+          FX0: { type: "number", description: "Câmbio atual R$/USD" },
+          FXbuy: { type: "number", description: "Câmbio futuro esperado R$/USD" },
+          r: { type: "number", description: "Taxa de aplicação anual (opcional)" },
+          g: { type: "number", description: "Valorização anual do imóvel (opcional)" },
+          y: { type: "number", description: "Yield anual do imóvel (opcional)" },
+          dp: { type: "number", description: "Percentual de downpayment (opcional)" }
+        },
+        required: ["V0", "m", "FX0", "FXbuy"]
+      }
+    }],
+    function_call: "auto"
+  });
+  
+  const responseMessage = gptResponse.choices[0].message;
+  
+  // Se o GPT chamou a função
+  if (responseMessage.function_call) {
+    const functionName = responseMessage.function_call.name;
+    const functionArgs = JSON.parse(responseMessage.function_call.arguments);
+    
+    if (functionName === "calcularCustoEsperar") {
+      // Executa a função de cálculo
+      const resultado = calcularCustoEsperar(functionArgs);
+      
+      // Adiciona o resultado à conversa
+      convo.history.push({
+        role: 'function',
+        name: 'calcularCustoEsperar',
+        content: JSON.stringify(resultado)
+      });
+      
+      // Pede ao GPT para formatar a resposta baseada no resultado
+      const formattedResponse = await openai.chat.completions.create({
+        model: ASSISTANT_MODEL,
+        messages: convo.history,
+        temperature: 0.2
+      });
+      
+      const assistantResponse = formattedResponse.choices[0].message.content.trim();
+      convo.history.push({ role: 'assistant', content: assistantResponse });
+      
+      // Se o GPT devolveu o token de encerramento
+      if (assistantResponse === 'finalizando-atendimento') {
+        await client.sendText(
+          sender,
+          '👍 Até mais! Quando quiser fazer uma nova análise, é só digitar o gatilho novamente.'
+        );
+        clearConversationTimeout(convoKey);
+        CONVERSATIONS.delete(convoKey);
+        return;
+      }
+      
+      // Envia a resposta
+      await client.sendText(sender, assistantResponse);
+    }
+  } else {
+    // Resposta normal sem chamar função
+    const assistantResponse = responseMessage.content.trim();
+    convo.history.push({ role: 'assistant', content: assistantResponse });
+    
+    // Se o GPT devolveu o token de encerramento
+    if (assistantResponse === 'finalizando-atendimento') {
+      await client.sendText(
+        sender,
+        '👍 Até mais! Quando quiser fazer uma nova análise, é só digitar o gatilho novamente.'
+      );
+      clearConversationTimeout(convoKey);
+      CONVERSATIONS.delete(convoKey);
+      return;
+    }
+    
+    await client.sendText(sender, assistantResponse);
+  }
+  
+  // Salva o estado da conversa
+  CONVERSATIONS.set(convoKey, convo);
+}
+
+// Função de cálculo (incluída aqui para referência, mas pode estar em outro arquivo)
+function calcularCustoEsperar(inputs) {
+    // Validar e extrair inputs com defaults
+    const {
+        V0,           // Valor do imóvel em US$ (obrigatório)
+        m,            // Meses de espera (obrigatório)
+        FX0,          // Câmbio atual (obrigatório)
+        FXbuy,        // Câmbio futuro (obrigatório)
+        r = 0.12,     // Taxa aplicação anual (default 12%)
+        g = 0.05,     // Valorização anual imóvel (default 5%)
+        y = 0.08,     // Yield anual imóvel (default 8%)
+        dp = 0.30     // Downpayment (default 30%)
+    } = inputs;
+
+    // Validar inputs obrigatórios
+    if (!V0 || !m || !FX0 || !FXbuy) {
+        throw new Error('Inputs obrigatórios: V0, m, FX0, FXbuy');
+    }
+
+    // Cálculos intermediários
+    const calculos = {};
+
+    // 1. Bases
+    calculos.downUS = V0 * dp;
+    calculos.Base_Down_BRL = calculos.downUS * FX0;
+
+    // 2. Taxas mensais
+    calculos.r_m = Math.pow(1 + r, 1/12) - 1;
+    calculos.g_m = Math.pow(1 + g, 1/12) - 1;
+    calculos.y_m = Math.pow(1 + y, 1/12) - 1;
+
+    // 3. Ganhos - Aplicação
+    calculos.Fator_Rend = Math.pow(1 + calculos.r_m, m);
+    calculos.Rend_Down_BRL = calculos.Base_Down_BRL * (calculos.Fator_Rend - 1);
+
+    // 4. Ganhos - Câmbio
+    calculos.GanhoFX_Down_BRL = calculos.downUS * (FX0 - FXbuy);
+
+    // 5. Total Ganhos
+    calculos.TOTAL_GANHOS = calculos.Rend_Down_BRL + calculos.GanhoFX_Down_BRL;
+
+    // 6. Perdas - Valorização
+    calculos.Fator_Val = Math.pow(1 + calculos.g_m, m);
+    calculos.ValPerd_USD = V0 * (calculos.Fator_Val - 1);
+    calculos.ValPerd_BRL = calculos.ValPerd_USD * FXbuy;
+
+    // 7. Perdas - Yield
+    calculos.Fator_Yield = Math.pow(1 + calculos.y_m, m);
+    calculos.YieldPerd_USD = V0 * (calculos.Fator_Yield - 1);
+    calculos.YieldPerd_BRL = calculos.YieldPerd_USD * FXbuy;
+
+    // 8. Total Perdas
+    calculos.TOTAL_PERDAS = calculos.ValPerd_BRL + calculos.YieldPerd_BRL;
+
+    // 9. Resultado Final
+    calculos.Resultado_BRL = calculos.TOTAL_GANHOS - calculos.TOTAL_PERDAS;
+    calculos.Resultado_USD = calculos.Resultado_BRL / FXbuy;
+
+    // Preparar output formatado
+    const output = {
+        resultado: {
+            BRL: Math.round(calculos.Resultado_BRL),
+            USD: Math.round(calculos.Resultado_USD)
+        },
+        ganhos: {
+            total: Math.round(calculos.TOTAL_GANHOS),
+            aplicacao: {
+                base_BRL: Math.round(calculos.Base_Down_BRL),
+                rendimento_BRL: Math.round(calculos.Rend_Down_BRL)
+            },
+            cambio: {
+                ganho_BRL: Math.round(calculos.GanhoFX_Down_BRL)
+            }
+        },
+        perdas: {
+            total: Math.round(calculos.TOTAL_PERDAS),
+            valorizacao: {
+                USD: Math.round(calculos.ValPerd_USD),
+                BRL: Math.round(calculos.ValPerd_BRL)
+            },
+            yield: {
+                USD: Math.round(calculos.YieldPerd_USD),
+                BRL: Math.round(calculos.YieldPerd_BRL)
+            }
+        },
+        parametros: {
+            valor_imovel_USD: V0,
+            meses_espera: m,
+            cambio_atual: FX0,
+            cambio_futuro: FXbuy,
+            taxa_aplicacao_anual: r,
+            valorizacao_anual: g,
+            yield_anual: y,
+            downpayment: dp
+        },
+        calculos_intermediarios: {
+            downUS: calculos.downUS,
+            base_down_BRL: calculos.Base_Down_BRL,
+            taxas_mensais: {
+                aplicacao: calculos.r_m,
+                valorizacao: calculos.g_m,
+                yield: calculos.y_m
+            },
+            fatores: {
+                rendimento: calculos.Fator_Rend,
+                valorizacao: calculos.Fator_Val,
+                yield: calculos.Fator_Yield
+            }
+        }
+    };
+
+    return output;
+}
+
 async function handleTriggerTBVConstruction(session, message, userInput, sessionName, email) {
   const client = session.client;
   const sender = message.from;
@@ -2511,7 +2758,8 @@ const TRIGGERS = {
   tbvrentabilidade: handleTriggerTBVRentabilidade,
   tbvmortgage: handleTriggerMortgage,
   tbvvalidation : handleTriggervalidation,
-  tbvbusinesscard : handleTriggerBusinessCard
+  tbvbusinesscard : handleTriggerBusinessCard,
+  tbvesperardolar: handleTriggerEsperarDolar
 };
 
 // =======================================================================================================================================================
@@ -3759,7 +4007,8 @@ async function processText(sessionName, message, email) {
       tbvconstruction:    'tbvconstruction',
       tbvconstrucao:      'tbvconstruction',
       tbvvalidation:      'tbvvalidation',
-      tbvbusinesscard:    'tbvbusinesscard'
+      tbvbusinesscard:    'tbvbusinesscard',
+      tbvesperardolar:    'tbvesperardolar'
     };
 
     if (valid[norm]) {
