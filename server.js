@@ -2309,13 +2309,14 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   // Empilha a mensagem do usuário
   convo.history.push({ role: 'user', content: userInput });
   
-  // Chama o GPT com capacidade de function calling
-  // Chama o GPT com capacidade de function calling
+// Chama o GPT com capacidade de function calling
 const gptResponse = await openai.responses.create({
   model: ASSISTANT_MODEL,
   input: convo.history.map(msg => `${msg.role}: ${msg.content}`).join('\n'),
   tools: [
-    { type: "web_search" },
+    { 
+      type: "web_search" 
+    },
     {
       type: "function",
       function: {
