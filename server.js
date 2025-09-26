@@ -2315,7 +2315,8 @@ const gptResponse = await openai.responses.create({
   input: convo.history.map(msg => `${msg.role}: ${msg.content}`).join('\n'),
   tools: [
     { 
-      type: "web_search" 
+      type: "web_search",
+      name: "web_search"
     },
     {
       type: "function",
