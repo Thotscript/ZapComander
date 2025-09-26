@@ -2275,11 +2275,11 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'esperardolar'
+    activeTrigger: 'tbvesperardolar'
   };
   
   // Carrega o prompt "EsperarDolar"
-  const prompt = loadPrompt('EsperarDolar');
+  const prompt = loadPrompt('tbvdolar');
   
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
