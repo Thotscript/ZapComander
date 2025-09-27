@@ -3104,7 +3104,7 @@ async function gerarPDFCambio(resultado, inputs) {
     
     // 🔴 URL mantém o formato esperado com subdomínio pdf
     return {
-      url: `https://pdf.thebroker.vip/${nomeArquivo}`,
+      url: `https://pdf.thebroker.vip/pdf/${nomeArquivo}`,
       validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
     };
     
