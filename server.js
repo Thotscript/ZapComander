@@ -27,7 +27,7 @@ import { DateTime } from 'luxon';
 import { createRequire } from 'module';
 import { google } from 'googleapis';
 import tls from 'tls';
-import pupperteer from 'puppeteer';
+import puppeteer from 'puppeteer';
 import crypto from 'crypto';
 
 
