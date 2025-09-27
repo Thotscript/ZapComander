@@ -3242,13 +3242,13 @@ async function handleTriggerEsperarJuros(session, message, userInput, sessionNam
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'tbvesperarjuros'
+    activeTrigger: 'esperarjuros'
   };
   
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
     // Carrega o prompt "EsperarJuros"
-    const prompt = loadPrompt('tbvjuros');
+    const prompt = loadPrompt('EsperarJuros');
     
     // Combina tudo em uma única mensagem system para evitar conflitos
     const fullSystemPrompt = `${prompt}
@@ -3268,7 +3268,10 @@ Quando tiver todos os dados necessários, use esta função passando um objeto J
 - pct_closing: custo refinanciamento (opcional, default 0.01)
 - prazo_meses: prazo financiamento (opcional, default 360)
 
-O sistema gerará automaticamente um PDF com os resultados que ficará disponível por 5 minutos em um link temporário.`;
+IMPORTANTE: Quando receber o resultado da função com pdf_url, você DEVE incluir o link clicável do PDF na sua resposta usando o formato:
+📑 **RELATÓRIO COMPLETO:** [Acessar PDF](pdf_url_aqui) - válido por 5 minutos
+
+O sistema gerará automaticamente um PDF com os resultados que ficará disponível por 5 minutos.`;
     
     // Adiciona apenas UMA mensagem system
     convo.history.push({ role: 'system', content: fullSystemPrompt });
@@ -3341,6 +3344,15 @@ O sistema gerará automaticamente um PDF com os resultados que ficará disponív
         });
         
         // Pede ao GPT para formatar a resposta baseada no resultado
+        // Adiciona instrução explícita para incluir o link do PDF
+        convo.history.push({
+          role: 'system',
+          content: `Formate uma resposta amigável incluindo os resultados. IMPORTANTE: Inclua o link do PDF que está em pdf_url do resultado. Use este formato exato para o link: 
+          
+📑 **RELATÓRIO COMPLETO:** ${resultadoComPDF.pdf_url}
+(Válido até ${new Date(resultadoComPDF.pdf_validade).toLocaleTimeString('pt-BR')})`
+        });
+        
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
