@@ -3242,13 +3242,13 @@ async function handleTriggerEsperarJuros(session, message, userInput, sessionNam
   // Inicia ou recupera o estado da conversa
   let convo = CONVERSATIONS.get(convoKey) || {
     history: [],
-    activeTrigger: 'esperarjuros'
+    activeTrigger: 'tbvesperarjuros'
   };
   
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
     // Carrega o prompt "EsperarJuros"
-    const prompt = loadPrompt('EsperarJuros');
+    const prompt = loadPrompt('tbvjuros');
     
     // Combina tudo em uma única mensagem system para evitar conflitos
     const fullSystemPrompt = `${prompt}
