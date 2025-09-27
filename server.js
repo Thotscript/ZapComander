@@ -2535,10 +2535,53 @@ IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO menc
         });
         
         // Pede ao GPT para formatar a resposta baseada no resultado
-        // MODIFICADO: Removida instrução para incluir link do PDF
+        // MODIFICADO: Adiciona instrução explícita para apenas formatar o JSON
+        convo.history.push({
+          role: 'system',
+          content: `INSTRUÇÃO CRÍTICA: 
+          
+Você recebeu um JSON com os resultados já calculados. Sua ÚNICA tarefa é apresentar esses valores de forma organizada e clara.
+
+REGRAS OBRIGATÓRIAS:
+1. NÃO faça NENHUM cálculo próprio
+2. NÃO modifique NENHUM valor recebido
+3. NÃO calcule percentuais, diferenças ou qualquer operação matemática
+4. NÃO interprete ou valide os números
+5. Use APENAS os valores exatos do JSON recebido
+6. NÃO mencione PDF ou relatório
+
+Formato EXATO para apresentação:
+
+📊 **ANÁLISE DO CUSTO DE ESPERAR O CÂMBIO**
+
+**Cenário Analisado:**
+• Imóvel de US$ [use o valor de parametros.valor_imovel_USD]
+• Espera de [use parametros.meses_espera] meses
+• Câmbio: R$ [use parametros.cambio_atual] → R$ [use parametros.cambio_futuro]
+
+**RESULTADO: [Se resultado.BRL > 0 escreva "Ganho", senão "Perda"] de R$ [use resultado.BRL] (US$ [use resultado.USD])**
+
+✅ **GANHOS AO ESPERAR:**
+• Rendimento no Brasil: R$ [use ganhos.aplicacao.rendimento_BRL]
+• Economia no câmbio: R$ [use ganhos.cambio.ganho_BRL]
+• Total de ganhos: R$ [use ganhos.total]
+
+❌ **PERDAS POR ESPERAR:**
+• Valorização perdida: R$ [use perdas.valorizacao.BRL] (US$ [use perdas.valorizacao.USD])
+• Aluguel não recebido: R$ [use perdas.yield.BRL] (US$ [use perdas.yield.USD])
+• Total de perdas: R$ [use perdas.total]
+
+💡 **CONCLUSÃO:**
+[Se resultado.BRL < 0]: Esperar resultaria em uma perda líquida. O custo de oportunidade supera a economia no câmbio.
+[Se resultado.BRL > 0]: Esperar resultaria em um ganho líquido. A economia no câmbio compensa o custo de oportunidade.
+
+Lembre-se: use APENAS os valores do JSON, sem fazer nenhum cálculo ou modificação.`
+        });
+        
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
+          temperature: 0.1  // Temperatura baixa para menor variação
         });
         
         const assistantResponse = formattedResponse.choices[0].message.content.trim();
@@ -3306,6 +3349,7 @@ IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO menc
   const gptResponse = await openai.chat.completions.create({
     model: ASSISTANT_MODEL,
     messages: convo.history,
+    temperature: 0.2,
     functions: [{
       name: "calcularEsperarJurosComRefinanciamento",
       description: "Calcula se vale a pena esperar juros cair ou comprar agora e refinanciar",
@@ -3355,11 +3399,66 @@ IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO menc
         });
         
         // Pede ao GPT para formatar a resposta baseada no resultado
-        // MODIFICADO: Removida instrução para incluir link do PDF
+        // MODIFICADO: Adiciona instrução explícita para apenas formatar o JSON
+        convo.history.push({
+          role: 'system',
+          content: `INSTRUÇÃO CRÍTICA:
+
+Você recebeu um JSON com os resultados já calculados. Sua ÚNICA tarefa é apresentar esses valores de forma organizada e clara.
+
+REGRAS OBRIGATÓRIAS:
+1. NÃO faça NENHUM cálculo próprio
+2. NÃO modifique NENHUM valor recebido
+3. NÃO calcule percentuais, diferenças ou qualquer operação matemática
+4. NÃO interprete ou valide os números
+5. Use APENAS os valores exatos do JSON recebido
+6. NÃO mencione PDF ou relatório
+
+Formato EXATO para apresentação:
+
+📊 **ANÁLISE: ESPERAR JUROS vs COMPRAR AGORA**
+
+**Cenário Analisado:**
+• Imóvel de US$ [use o valor de parametros.V0]
+• Espera de [use parametros.m1] meses para juros caírem
+• Taxa atual: [use parametros.r_atual convertido para %]% → Taxa futura: [use parametros.r_futura convertido para %]%
+
+**RESULTADO: [use resultado.conclusao]**
+Diferença: US$ [use resultado.valor_final]
+
+✅ **GANHOS AO ESPERAR:**
+• Economia pontos refinanciamento: US$ [use ganhos.economia_pontos]
+• Economia prestações iniciais: US$ [use ganhos.economia_prestacoes_periodo]
+• Rendimento do downpayment: US$ [use ganhos.rendimento_downpayment]
+• Total ganhos: US$ [use ganhos.total]
+
+❌ **PERDAS POR ESPERAR:**
+• Valorização do imóvel: US$ [use perdas.valorizacao_imovel]
+• Downpayment adicional: US$ [use perdas.downpayment_adicional]
+• Total perdas: US$ [use perdas.total]
+
+📈 **COMPARAÇÃO DE CENÁRIOS:**
+
+**Se comprar hoje:**
+• Downpayment: US$ [use comparacao_cenarios.comprar_hoje.downpayment]
+• Prestação inicial ([r_atual]%): US$ [use comparacao_cenarios.comprar_hoje.prestacao_inicial]/mês
+• Prestação após refinanciar ([r_futura]%): US$ [use comparacao_cenarios.comprar_hoje.prestacao_apos_refi]/mês
+
+**Se esperar:**
+• Downpayment: US$ [use comparacao_cenarios.esperar_comprar.downpayment]
+• Prestação única ([r_futura]%): US$ [use comparacao_cenarios.esperar_comprar.prestacao_unica]/mês
+
+💡 **CONCLUSÃO:**
+[Se resultado.valor_final > 0]: Esperar [m1] meses resultaria em economia de US$ [valor_final]. Os ganhos com aplicação e economia de juros compensam a valorização do imóvel.
+[Se resultado.valor_final < 0]: Comprar agora economizaria US$ [valor_final absoluto]. A valorização do imóvel supera os benefícios de esperar juros menores.
+
+Lembre-se: use APENAS os valores do JSON, sem fazer nenhum cálculo ou modificação.`
+        });
+        
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
-          temperature: 0.2
+          temperature: 0.1  // Temperatura baixa para menor variação
         });
         
         const assistantResponse = formattedResponse.choices[0].message.content.trim();
