@@ -245,6 +245,11 @@ const options = {
           keyPath = '/etc/letsencrypt/live/vcard.thebroker.vip/privkey.pem';
           certPath = '/etc/letsencrypt/live/vcard.thebroker.vip/fullchain.pem';
           break;
+
+        case 'pdf.thebroker.vip':
+          keyPath = '/etc/letsencrypt/live/pdf.thebroker.vip/privkey.pem';
+          certPath = '/etc/letsencrypt/live/pdf.thebroker.vip/fullchain.pem';
+          break;
           
         case 'verbai.com.br':
         default:
@@ -298,6 +303,8 @@ const options = {
 };
 
 const VCF_DIR = path.join(__dirname, 'public', 'vcf');
+const PDF_DIR = path.join(__dirname, 'public', 'pdf');
+
 
 const prompt_qualification = fs.readFileSync(path.join(__dirname, 'prompts', 'pre-qualification.txt'), 'utf8');
 const server = https.createServer(options, app);
@@ -331,6 +338,7 @@ const SESSION_FILTERS = new Map();
   SESSION_LOGS_DIR,
   QR_CODES_DIR,
   VCF_DIR,
+  PDF_DIR,
   AUDIO_DIR,
   TOKEN_DIR
 ].forEach(dir => {
@@ -343,9 +351,9 @@ app.use(express.json());
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"],
-      imgSrc:     ["'self'", "data:", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443"]
+      defaultSrc: ["'self'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443", "https://pdf.thebroker.vip:8443"],
+      imgSrc:     ["'self'", "data:", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443", "https://pdf.thebroker.vip:8443"],
+      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://verbai.com.br:8443", "https://vcard.thebroker.vip:8443", "https://pdf.thebroker.vip:8443"]
     }
   }
 }));
@@ -354,7 +362,8 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     'https://thebroker.vip',
     'https://verbai.com.br:8443',
-    'https://vcard.thebroker.vip:8443'
+    'https://vcard.thebroker.vip:8443',
+    'https://pdf.thebroker.vip:8443'
   ];
   
   const origin = req.headers.origin;
@@ -371,6 +380,8 @@ app.use((req, res, next) => {
   next();
 });
 
+// Servir arquivos PDF estáticos
+app.use('/pdf', express.static(PDF_DIR));
 app.use('/qrcodes', express.static(QR_CODES_DIR));
 app.use('/vcf', express.static(VCF_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -2583,6 +2594,7 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
 }
 
 // Função para gerar o PDF de câmbio
+// Função para gerar o PDF de câmbio (CORRIGIDA)
 async function gerarPDFCambio(resultado, inputs) {
   const browser = await puppeteer.launch({
     headless: true,
@@ -3057,9 +3069,15 @@ async function gerarPDFCambio(resultado, inputs) {
     
     await page.setContent(html);
     
-    // Gerar nome único para o PDF
-    const nomeArquivo = `analise_cambio_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.pdf`;
-    const caminhoCompleto = path.join('/var/www/pdf.thebroker.vip', nomeArquivo);
+    // 🔴 CORREÇÃO: Usar a variável PDF_DIR ao invés do caminho hardcoded
+    const timestamp = Date.now();
+    const randomHash = crypto.randomBytes(4).toString('hex');
+    const nomeArquivo = `analise_cambio_${timestamp}_${randomHash}.pdf`;
+    const caminhoCompleto = path.join(PDF_DIR, nomeArquivo); // 🔴 USANDO PDF_DIR AQUI
+    
+    // 🔴 GARANTIR QUE O DIRETÓRIO EXISTE (caso PDF_DIR seja relativo)
+    const fs = require('fs').promises; // Usar fs promises para async/await
+    await fs.mkdir(PDF_DIR, { recursive: true }).catch(() => {}); // Criar diretório se não existir
     
     // Gerar o PDF
     await page.pdf({
@@ -3076,16 +3094,19 @@ async function gerarPDFCambio(resultado, inputs) {
     
     await browser.close();
     
+    console.log(`💹 [CAMBIO-PDF] Arquivo PDF criado: ${nomeArquivo} em ${PDF_DIR}`); // 🔴 Log melhorado
+    
     // Agendar exclusão do arquivo após 5 minutos
     setTimeout(async () => {
       try {
         await fs.unlink(caminhoCompleto);
-        console.log(`PDF ${nomeArquivo} removido após 5 minutos`);
+        console.log(`💹 [CAMBIO-PDF] PDF ${nomeArquivo} removido após 5 minutos`);
       } catch (error) {
-        console.error(`Erro ao remover PDF ${nomeArquivo}:`, error);
+        console.error(`❌ [CAMBIO-PDF] Erro ao remover PDF ${nomeArquivo}:`, error);
       }
     }, 5 * 60 * 1000); // 5 minutos
     
+    // 🔴 URL mantém o formato esperado com subdomínio pdf
     return {
       url: `https://pdf.thebroker.vip/${nomeArquivo}`,
       validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
