@@ -2433,7 +2433,6 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
     if (functionName === "buscarCambioBCB") {
       try {
         // Busca a cotação do dólar usando a função existente
-        const { buscarCambioBCB } = require('./funcao-buscar-cambio-bcb');
         const cotacao = await buscarCambioBCB(functionArgs.data);
         
         // Adiciona o resultado à conversa
