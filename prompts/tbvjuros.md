@@ -91,10 +91,6 @@ Diferença: R$ [valor]
 [Se melhor comprar agora]: Comprar agora e refinanciar depois economizaria US$ [valor]. A valorização do imóvel durante a espera supera os benefícios de aguardar juros menores.
 
 [Se melhor esperar]: Esperar os juros caírem resultaria em economia de US$ [valor]. Os ganhos com aplicação e economia de juros compensam a valorização do imóvel.
-
-📑 **RELATÓRIO COMPLETO:**
-Preparei um relatório detalhado com todos os cálculos e gráficos.
-🔗 [Link do PDF - válido por 5 minutos]
 ```
 
 ## 4. Interação Pós-Análise

@@ -2360,7 +2360,7 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
     // Carrega o prompt "EsperarDolar"
     const prompt = loadPrompt('tbvdolar');
     
-    // Combina tudo em uma única mensagem system para evitar conflitos
+    // MODIFICADO: Removido instruções sobre incluir o link do PDF
     const fullSystemPrompt = `${prompt}
 
 Você tem acesso a duas funções principais:
@@ -2373,12 +2373,11 @@ Você tem acesso a duas funções principais:
 2. calcularCustoEsperar(inputs) - calcula se vale a pena esperar o câmbio cair
    - Parâmetros obrigatórios: V0, m, FX0, FXbuy
    - Parâmetros opcionais: r, g, y, dp
-   - Gera automaticamente um PDF com os resultados
 
 Quando o usuário não souber o câmbio atual, use buscarCambioBCB() para obter a cotação oficial.
 Quando tiver todos os dados necessários, use calcularCustoEsperar.
 
-O PDF gerado ficará disponível por 5 minutos em um link temporário.`;
+IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO mencione nada sobre PDF ou relatório completo. Apenas forneça a análise detalhada dos números.`;
     
     // Adiciona apenas UMA mensagem system
     convo.history.push({ role: 'system', content: fullSystemPrompt });
@@ -2519,27 +2518,24 @@ O PDF gerado ficará disponível por 5 minutos em um link temporário.`;
       // Se for a função de cálculo
       const args = functionName === "calcularCustoEsperar" ? functionArgs : JSON.parse(responseMessage.function_call.arguments);
       
+      let pdfInfo = null;
+      
       try {
         // Executa a função de cálculo
         const resultado = calcularCustoEsperar(args);
         
         // Gera o PDF com os resultados
-        const pdfInfo = await gerarPDFCambio(resultado, args);
+        pdfInfo = await gerarPDFCambio(resultado, args);
         
-        // Adiciona o resultado à conversa incluindo o link do PDF
-        const resultadoComPDF = {
-          ...resultado,
-          pdf_url: pdfInfo.url,
-          pdf_validade: pdfInfo.validade
-        };
-        
+        // MODIFICADO: Não incluímos mais o PDF no resultado enviado ao GPT
         convo.history.push({
           role: 'function',
           name: 'calcularCustoEsperar',
-          content: JSON.stringify(resultadoComPDF)
+          content: JSON.stringify(resultado)
         });
         
         // Pede ao GPT para formatar a resposta baseada no resultado
+        // MODIFICADO: Removida instrução para incluir link do PDF
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
@@ -2560,15 +2556,38 @@ O PDF gerado ficará disponível por 5 minutos em um link temporário.`;
           return;
         }
         
-        // Envia a resposta
+        // Envia a resposta do GPT
         await client.sendText(sender, assistantResponse);
+        
+        // NOVO: Envia o link do PDF manualmente após a resposta do GPT
+        if (pdfInfo && pdfInfo.url) {
+          const pdfMessage = `💹 **RELATÓRIO COMPLETO EM PDF**
+
+Preparei um relatório visual detalhado com gráficos comparativos da análise de câmbio.
+
+🔗 **Acesse aqui:** ${pdfInfo.url}
+
+⏰ *Link válido até ${new Date(pdfInfo.validade).toLocaleTimeString('pt-BR')} (5 minutos)*
+
+💡 Dica: Salve o PDF para consultas futuras sobre sua decisão de investimento!`;
+          
+          // Aguarda um pequeno delay para melhor UX
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          // Envia a mensagem com o link do PDF
+          await client.sendText(sender, pdfMessage);
+        }
         
       } catch (error) {
         console.error('Erro ao processar cálculo ou gerar PDF:', error);
-        await client.sendText(
-          sender,
-          'Houve um erro ao processar sua análise. Vou apresentar os resultados de forma simplificada.'
-        );
+        
+        // Se houve erro na geração do PDF, ainda envia a resposta do GPT
+        if (!pdfInfo) {
+          await client.sendText(
+            sender,
+            '⚠️ Não consegui gerar o PDF com o relatório visual, mas a análise acima está completa com todos os dados necessários para sua decisão.'
+          );
+        }
       }
     }
   } else {
@@ -2594,7 +2613,7 @@ O PDF gerado ficará disponível por 5 minutos em um link temporário.`;
   CONVERSATIONS.set(convoKey, convo);
 }
 
-// Função para gerar o PDF de câmbio (CORRIGIDA)
+// Função para gerar o PDF de câmbio (mantida sem alterações)
 async function gerarPDFCambio(resultado, inputs) {
   const browser = await puppeteer.launch({
     headless: true,
@@ -3069,11 +3088,11 @@ async function gerarPDFCambio(resultado, inputs) {
     
     await page.setContent(html);
     
-    // 🔴 CORREÇÃO: Usar a variável PDF_DIR ao invés do caminho hardcoded
+    // Usa a variável PDF_DIR ao invés do caminho hardcoded
     const timestamp = Date.now();
     const randomHash = crypto.randomBytes(4).toString('hex');
     const nomeArquivo = `analise_cambio_${timestamp}_${randomHash}.pdf`;
-    const caminhoCompleto = path.join(PDF_DIR, nomeArquivo); // 🔴 USANDO PDF_DIR AQUI
+    const caminhoCompleto = path.join(PDF_DIR, nomeArquivo);
     
     // Gerar o PDF
     await page.pdf({
@@ -3090,7 +3109,7 @@ async function gerarPDFCambio(resultado, inputs) {
     
     await browser.close();
     
-    console.log(`💹 [CAMBIO-PDF] Arquivo PDF criado: ${nomeArquivo} em ${PDF_DIR}`); // 🔴 Log melhorado
+    console.log(`💹 [CAMBIO-PDF] Arquivo PDF criado: ${nomeArquivo} em ${PDF_DIR}`);
     
     // Agendar exclusão do arquivo após 5 minutos
     setTimeout(async () => {
@@ -3102,7 +3121,7 @@ async function gerarPDFCambio(resultado, inputs) {
       }
     }, 5 * 60 * 1000); // 5 minutos
     
-    // 🔴 URL mantém o formato esperado com subdomínio pdf
+    // URL mantém o formato esperado com subdomínio pdf
     return {
       url: `https://pdf.thebroker.vip:8443/pdf/${nomeArquivo}`,
       validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
@@ -3251,6 +3270,7 @@ async function handleTriggerEsperarJuros(session, message, userInput, sessionNam
     const prompt = loadPrompt('tbvjuros');
     
     // Combina tudo em uma única mensagem system para evitar conflitos
+    // MODIFICADO: Removido instruções sobre incluir o link do PDF
     const fullSystemPrompt = `${prompt}
 
 Você tem acesso a uma função chamada calcularEsperarJurosComRefinanciamento que recebe um JSON e retorna os cálculos. 
@@ -3268,10 +3288,7 @@ Quando tiver todos os dados necessários, use esta função passando um objeto J
 - pct_closing: custo refinanciamento (opcional, default 0.01)
 - prazo_meses: prazo financiamento (opcional, default 360)
 
-IMPORTANTE: Quando receber o resultado da função com pdf_url, você DEVE incluir o link clicável do PDF na sua resposta usando o formato:
-📑 **RELATÓRIO COMPLETO:** [Acessar PDF](pdf_url_aqui) - válido por 5 minutos
-
-O sistema gerará automaticamente um PDF com os resultados que ficará disponível por 5 minutos.`;
+IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO mencione nada sobre PDF ou relatório completo. Apenas forneça a análise detalhada dos números.`;
     
     // Adiciona apenas UMA mensagem system
     convo.history.push({ role: 'system', content: fullSystemPrompt });
@@ -3323,36 +3340,24 @@ O sistema gerará automaticamente um PDF com os resultados que ficará disponív
     const functionArgs = JSON.parse(responseMessage.function_call.arguments);
     
     if (functionName === "calcularEsperarJurosComRefinanciamento") {
+      let pdfInfo = null;
+      
       try {
         // Executa a função de cálculo
         const resultado = calcularEsperarJurosComRefinanciamento(functionArgs);
         
         // Gera o PDF com os resultados
-        const pdfInfo = await gerarPDFResultado(resultado, functionArgs);
+        pdfInfo = await gerarPDFResultado(resultado, functionArgs);
         
-        // Adiciona o resultado à conversa incluindo o link do PDF
-        const resultadoComPDF = {
-          ...resultado,
-          pdf_url: pdfInfo.url,
-          pdf_validade: pdfInfo.validade
-        };
-        
+        // MODIFICADO: Não incluímos mais o PDF no resultado enviado ao GPT
         convo.history.push({
           role: 'function',
           name: 'calcularEsperarJurosComRefinanciamento',
-          content: JSON.stringify(resultadoComPDF)
+          content: JSON.stringify(resultado)
         });
         
         // Pede ao GPT para formatar a resposta baseada no resultado
-        // Adiciona instrução explícita para incluir o link do PDF
-        convo.history.push({
-          role: 'system',
-          content: `Formate uma resposta amigável incluindo os resultados. IMPORTANTE: Inclua o link do PDF que está em pdf_url do resultado. Use este formato exato para o link: 
-          
-📑 **RELATÓRIO COMPLETO:** ${resultadoComPDF.pdf_url}
-(Válido até ${new Date(resultadoComPDF.pdf_validade).toLocaleTimeString('pt-BR')})`
-        });
-        
+        // MODIFICADO: Removida instrução para incluir link do PDF
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
@@ -3373,15 +3378,38 @@ O sistema gerará automaticamente um PDF com os resultados que ficará disponív
           return;
         }
         
-        // Envia a resposta
+        // Envia a resposta do GPT
         await client.sendText(sender, assistantResponse);
+        
+        // NOVO: Envia o link do PDF manualmente após a resposta do GPT
+        if (pdfInfo && pdfInfo.url) {
+          const pdfMessage = `📑 **RELATÓRIO COMPLETO EM PDF**
+
+Preparei um relatório detalhado com gráficos e análise visual completa dos seus cenários.
+
+🔗 **Acesse aqui:** ${pdfInfo.url}
+
+⏰ *Link válido até ${new Date(pdfInfo.validade).toLocaleTimeString('pt-BR')} (5 minutos)*
+
+💡 Dica: Salve o PDF para consultas futuras!`;
+          
+          // Aguarda um pequeno delay para melhor UX
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          
+          // Envia a mensagem com o link do PDF
+          await client.sendText(sender, pdfMessage);
+        }
         
       } catch (error) {
         console.error('Erro ao processar cálculo ou gerar PDF:', error);
-        await client.sendText(
-          sender,
-          'Houve um erro ao processar sua análise. Vou apresentar os resultados de forma simplificada.'
-        );
+        
+        // Se houve erro na geração do PDF, ainda envia a resposta do GPT
+        if (!pdfInfo) {
+          await client.sendText(
+            sender,
+            '⚠️ Não consegui gerar o PDF com o relatório visual, mas a análise acima está completa com todos os dados necessários para sua decisão.'
+          );
+        }
       }
     }
   } else {
@@ -3407,7 +3435,7 @@ O sistema gerará automaticamente um PDF com os resultados que ficará disponív
   CONVERSATIONS.set(convoKey, convo);
 }
 
-// Função para gerar o PDF (CORRIGIDA)
+// Função para gerar o PDF (mantida sem alterações)
 async function gerarPDFResultado(resultado, inputs) {
   const browser = await puppeteer.launch({
     headless: true,
@@ -3864,11 +3892,11 @@ async function gerarPDFResultado(resultado, inputs) {
     
     await page.setContent(html);
     
-    // 🔴 CORREÇÃO PRINCIPAL: Usar a variável PDF_DIR ao invés do caminho hardcoded
+    // Usa a variável PDF_DIR ao invés do caminho hardcoded
     const timestamp = Date.now();
     const randomHash = crypto.randomBytes(4).toString('hex');
     const nomeArquivo = `analise_juros_${timestamp}_${randomHash}.pdf`;
-    const caminhoCompleto = path.join(PDF_DIR, nomeArquivo); // 🔴 USANDO PDF_DIR AQUI
+    const caminhoCompleto = path.join(PDF_DIR, nomeArquivo);
     
     // Gerar o PDF
     await page.pdf({
@@ -3885,7 +3913,7 @@ async function gerarPDFResultado(resultado, inputs) {
     
     await browser.close();
     
-    console.log(`📊 [JUROS-PDF] Arquivo PDF criado: ${nomeArquivo} em ${PDF_DIR}`); // 🔴 Log melhorado
+    console.log(`📊 [JUROS-PDF] Arquivo PDF criado: ${nomeArquivo} em ${PDF_DIR}`);
     
     // Agendar exclusão do arquivo após 5 minutos
     setTimeout(async () => {
@@ -3897,7 +3925,7 @@ async function gerarPDFResultado(resultado, inputs) {
       }
     }, 5 * 60 * 1000); // 5 minutos
     
-    // 🔴 URL mantém o formato esperado com subdomínio pdf
+    // URL mantém o formato esperado com subdomínio pdf
     return {
       url: `https://pdf.thebroker.vip:8443/pdf/${nomeArquivo}`,
       validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
