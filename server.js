@@ -3075,10 +3075,6 @@ async function gerarPDFCambio(resultado, inputs) {
     const nomeArquivo = `analise_cambio_${timestamp}_${randomHash}.pdf`;
     const caminhoCompleto = path.join(PDF_DIR, nomeArquivo); // 🔴 USANDO PDF_DIR AQUI
     
-    // 🔴 GARANTIR QUE O DIRETÓRIO EXISTE (caso PDF_DIR seja relativo)
-    const fs = require('fs').promises; // Usar fs promises para async/await
-    await fs.mkdir(PDF_DIR, { recursive: true }).catch(() => {}); // Criar diretório se não existir
-    
     // Gerar o PDF
     await page.pdf({
       path: caminhoCompleto,
