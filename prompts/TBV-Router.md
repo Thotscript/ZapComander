@@ -132,6 +132,15 @@ Exemplos válidos:
 - Simule um investimento de x com o dólar a y.
 ---
 
+### `TBVEsperarJuros`
+
+Se a mensagem contém contéudo sobre **esperar cair o juros cair** ou simulacoes baseadas no valor atual ou futuro de juros.
+
+Exemplos válidos: 
+- Eu devo esperar os juros cairem?
+- Simule um investimento de x com o juros a y.
+---
+
 ### `TBVValidation`
 
 **Ative sempre que:**
@@ -186,6 +195,7 @@ NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções desej
 6. TBV Validation – Para analisar e verificar documentos e contratos suspeitos.
 7. TBV Business Card - Para resumir cartões de visita ou contato.
 8. TBV Esperar Dolar - Informacoes sobre rentabilidade baseada no dólar.
+9. TBV Esperar Juros - Simula rentabilidade se esperar os juros baixarem.
 ```
 
 ---
@@ -204,6 +214,7 @@ Responda com **exatamente um dos seguintes valores**:
 - `TBVValidation`
 - `TBVBusinessCard`
 - `TBVEsperarDolar`
+- `TBVEsperarJuros`
 - `NENHUM BOT ATIVADO — Por favor, você pode me dizer qual dessas opções deseja acessar?`
 
 **Nunca escreva explicações, comentários ou análises adicionais.**
