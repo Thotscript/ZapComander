@@ -27,6 +27,8 @@ import { DateTime } from 'luxon';
 import { createRequire } from 'module';
 import { google } from 'googleapis';
 import tls from 'tls';
+import pupperteer from 'puppeteer';
+import crypto from 'crypto';
 
 
 // ===== SISTEMA DE TIMEOUT AUTOMÁTICO PARA BOTS =====
@@ -2267,6 +2269,70 @@ async function generateAndSendVCF(client, sender, data) {
   }
 }
 
+async function buscarCambioBCB(dataInicial = null, maxTentativas = 7) {
+    // Se não foi passada uma data, usar hoje
+    let dataAtual = dataInicial ? new Date(dataInicial) : new Date();
+    let tentativas = 0;
+    
+    while (tentativas < maxTentativas) {
+        try {
+            // Formatar a data no formato MM-DD-YYYY
+            const mes = String(dataAtual.getMonth() + 1).padStart(2, '0');
+            const dia = String(dataAtual.getDate()).padStart(2, '0');
+            const ano = dataAtual.getFullYear();
+            const dataFormatada = `${mes}-${dia}-${ano}`;
+            
+            // Montar a URL
+            const url = `https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoMoedaDia(moeda=@moeda,dataCotacao=@dataCotacao)?%40moeda='USD'&%40dataCotacao='${dataFormatada}'&%24orderby=dataHoraCotacao%20asc&%24top=100&%24select=cotacaoCompra,cotacaoVenda,dataHoraCotacao,tipoBoletim&%24format=json`;
+            
+            // Fazer a requisição
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            // Verificar se tem dados
+            if (data.value && data.value.length > 0) {
+                // Pegar a última cotação disponível (geralmente o fechamento)
+                const ultimaCotacao = data.value[data.value.length - 1];
+                
+                return {
+                    sucesso: true,
+                    data: dataFormatada,
+                    cotacaoVenda: ultimaCotacao.cotacaoVenda,
+                    cotacaoCompra: ultimaCotacao.cotacaoCompra,
+                    dataHoraCotacao: ultimaCotacao.dataHoraCotacao,
+                    tipoBoletim: ultimaCotacao.tipoBoletim,
+                    todasCotacoes: data.value // Caso precise ver todas as cotações do dia
+                };
+            }
+            
+            // Se não tem dados, voltar um dia
+            tentativas++;
+            dataAtual.setDate(dataAtual.getDate() - 1);
+            
+        } catch (error) {
+            console.error('Erro ao buscar cotação:', error);
+            tentativas++;
+            dataAtual.setDate(dataAtual.getDate() - 1);
+        }
+    }
+    
+    // Se não encontrou em nenhum dos dias
+    return {
+        sucesso: false,
+        erro: 'Não foi possível encontrar cotação nos últimos ' + maxTentativas + ' dias'
+    };
+}
+
+/**
+ * Versão simplificada que retorna apenas o valor da cotação de venda
+ * @param {Date|string} data - Data para buscar (opcional)
+ * @returns {number|null} Valor da cotação de venda ou null se não encontrar
+ */
+async function obterCotacaoVenda(data = null) {
+    const resultado = await buscarCambioBCB(data);
+    return resultado.sucesso ? resultado.cotacaoVenda : null;
+}
+
 async function handleTriggerEsperarDolar(session, message, userInput, sessionName, email) {
   const client   = session.client;
   const sender   = message.from;
@@ -2290,16 +2356,22 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
     // Adiciona também a função de cálculo como uma tool/function
     convo.history.push({
       role: 'system',
-      content: `Você tem acesso a uma função chamada calcularCustoEsperar que recebe um JSON e retorna os cálculos. 
-      Quando tiver todos os dados necessários, use esta função passando um objeto JSON com os seguintes campos:
-      - V0: valor do imóvel em USD (obrigatório)
-      - m: meses de espera (obrigatório)
-      - FX0: câmbio atual (obrigatório)
-      - FXbuy: câmbio futuro esperado (obrigatório)
-      - r: taxa de aplicação anual (opcional, default 0.12)
-      - g: valorização anual do imóvel (opcional, default 0.05)
-      - y: yield anual do imóvel (opcional, default 0.08)
-      - dp: percentual de downpayment (opcional, default 0.30)`
+      content: `Você tem acesso a duas funções principais:
+      
+      1. buscarCambioBCB(data) - busca a cotação do dólar no Banco Central. 
+         - Se data for null, busca a cotação mais recente
+         - Retorna objeto com: sucesso, data, cotacaoVenda, cotacaoCompra, tipoBoletim
+         - A API do BCB pode não ter dados em fins de semana/feriados
+      
+      2. calcularCustoEsperar(inputs) - calcula se vale a pena esperar o câmbio cair
+         - Parâmetros obrigatórios: V0, m, FX0, FXbuy
+         - Parâmetros opcionais: r, g, y, dp
+         - Gera automaticamente um PDF com os resultados
+      
+      Quando o usuário não souber o câmbio atual, use buscarCambioBCB() para obter a cotação oficial.
+      Quando tiver todos os dados necessários, use calcularCustoEsperar.
+      
+      O PDF gerado ficará disponível por 5 minutos em um link temporário.`
     });
   } else {
     // Renovar timeout a cada interação
@@ -2309,18 +2381,27 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   // Empilha a mensagem do usuário
   convo.history.push({ role: 'user', content: userInput });
   
-// Chama o GPT com capacidade de function calling
-const gptResponse = await openai.responses.create({
-  model: ASSISTANT_MODEL,
-  input: convo.history.map(msg => `${msg.role}: ${msg.content}`).join('\n'),
-  tools: [
-    { 
-      type: "web_search",
-      name: "web_search"
-    },
-    {
-      type: "function",
-      function: {
+  // Chama o GPT com capacidade de function calling
+  const gptResponse = await openai.chat.completions.create({
+    model: ASSISTANT_MODEL,
+    messages: convo.history,
+    temperature: 0.2,
+    functions: [
+      {
+        name: "buscarCambioBCB",
+        description: "Busca a cotação atual do dólar no Banco Central do Brasil",
+        parameters: {
+          type: "object",
+          properties: {
+            data: { 
+              type: "string", 
+              description: "Data para buscar cotação (formato YYYY-MM-DD). Se null, busca a mais recente.",
+              nullable: true
+            }
+          }
+        }
+      },
+      {
         name: "calcularCustoEsperar",
         description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
         parameters: {
@@ -2338,51 +2419,146 @@ const gptResponse = await openai.responses.create({
           required: ["V0", "m", "FX0", "FXbuy"]
         }
       }
-    }
-  ]
-});
+    ],
+    function_call: "auto"
+  });
   
   const responseMessage = gptResponse.choices[0].message;
   
-  // Se o GPT chamou a função
+  // Se o GPT chamou uma função
   if (responseMessage.function_call) {
     const functionName = responseMessage.function_call.name;
     const functionArgs = JSON.parse(responseMessage.function_call.arguments);
     
-    if (functionName === "calcularCustoEsperar") {
-      // Executa a função de cálculo
-      const resultado = calcularCustoEsperar(functionArgs);
-      
-      // Adiciona o resultado à conversa
-      convo.history.push({
-        role: 'function',
-        name: 'calcularCustoEsperar',
-        content: JSON.stringify(resultado)
-      });
-      
-      // Pede ao GPT para formatar a resposta baseada no resultado
-      const formattedResponse = await openai.chat.completions.create({
-        model: ASSISTANT_MODEL,
-        messages: convo.history,
-        temperature: 0.2
-      });
-      
-      const assistantResponse = formattedResponse.choices[0].message.content.trim();
-      convo.history.push({ role: 'assistant', content: assistantResponse });
-      
-      // Se o GPT devolveu o token de encerramento
-      if (assistantResponse === 'finalizando-atendimento') {
-        await client.sendText(
-          sender,
-          '👍 Até mais! Quando quiser fazer uma nova análise, é só digitar o gatilho novamente.'
-        );
-        clearConversationTimeout(convoKey);
-        CONVERSATIONS.delete(convoKey);
+    if (functionName === "buscarCambioBCB") {
+      try {
+        // Busca a cotação do dólar usando a função existente
+        const { buscarCambioBCB } = require('./funcao-buscar-cambio-bcb');
+        const cotacao = await buscarCambioBCB(functionArgs.data);
+        
+        // Adiciona o resultado à conversa
+        convo.history.push({
+          role: 'function',
+          name: 'buscarCambioBCB',
+          content: JSON.stringify(cotacao)
+        });
+        
+        // Continua a conversa com o resultado da cotação
+        const continuationResponse = await openai.chat.completions.create({
+          model: ASSISTANT_MODEL,
+          messages: convo.history,
+          temperature: 0.2,
+          functions: [
+            {
+              name: "calcularCustoEsperar",
+              description: "Calcula se vale a pena esperar o câmbio cair para comprar um imóvel",
+              parameters: {
+                type: "object",
+                properties: {
+                  V0: { type: "number", description: "Valor do imóvel em USD" },
+                  m: { type: "number", description: "Meses de espera" },
+                  FX0: { type: "number", description: "Câmbio atual R$/USD" },
+                  FXbuy: { type: "number", description: "Câmbio futuro esperado R$/USD" },
+                  r: { type: "number", description: "Taxa de aplicação anual (opcional)" },
+                  g: { type: "number", description: "Valorização anual do imóvel (opcional)" },
+                  y: { type: "number", description: "Yield anual do imóvel (opcional)" },
+                  dp: { type: "number", description: "Percentual de downpayment (opcional)" }
+                },
+                required: ["V0", "m", "FX0", "FXbuy"]
+              }
+            }
+          ],
+          function_call: "auto"
+        });
+        
+        // Processa a resposta recursivamente
+        responseMessage.content = continuationResponse.choices[0].message.content;
+        responseMessage.function_call = continuationResponse.choices[0].message.function_call;
+        
+      } catch (error) {
+        console.error('Erro ao buscar cotação BCB:', error);
+        
+        // Se falhar, informa o usuário
+        convo.history.push({
+          role: 'function',
+          name: 'buscarCambioBCB',
+          content: JSON.stringify({
+            sucesso: false,
+            erro: 'Não foi possível buscar a cotação do BCB. Por favor, informe o câmbio atual manualmente.'
+          })
+        });
+        
+        // Continua a conversa
+        const errorResponse = await openai.chat.completions.create({
+          model: ASSISTANT_MODEL,
+          messages: convo.history,
+          temperature: 0.2
+        });
+        
+        const assistantResponse = errorResponse.choices[0].message.content.trim();
+        convo.history.push({ role: 'assistant', content: assistantResponse });
+        
+        await client.sendText(sender, assistantResponse);
+        CONVERSATIONS.set(convoKey, convo);
         return;
       }
+    }
+    
+    if (functionName === "calcularCustoEsperar" || responseMessage.function_call?.name === "calcularCustoEsperar") {
+      // Se for a função de cálculo
+      const args = functionName === "calcularCustoEsperar" ? functionArgs : JSON.parse(responseMessage.function_call.arguments);
       
-      // Envia a resposta
-      await client.sendText(sender, assistantResponse);
+      try {
+        // Executa a função de cálculo
+        const resultado = calcularCustoEsperar(args);
+        
+        // Gera o PDF com os resultados
+        const pdfInfo = await gerarPDFCambio(resultado, args);
+        
+        // Adiciona o resultado à conversa incluindo o link do PDF
+        const resultadoComPDF = {
+          ...resultado,
+          pdf_url: pdfInfo.url,
+          pdf_validade: pdfInfo.validade
+        };
+        
+        convo.history.push({
+          role: 'function',
+          name: 'calcularCustoEsperar',
+          content: JSON.stringify(resultadoComPDF)
+        });
+        
+        // Pede ao GPT para formatar a resposta baseada no resultado
+        const formattedResponse = await openai.chat.completions.create({
+          model: ASSISTANT_MODEL,
+          messages: convo.history,
+          temperature: 0.2
+        });
+        
+        const assistantResponse = formattedResponse.choices[0].message.content.trim();
+        convo.history.push({ role: 'assistant', content: assistantResponse });
+        
+        // Se o GPT devolveu o token de encerramento
+        if (assistantResponse === 'finalizando-atendimento') {
+          await client.sendText(
+            sender,
+            '👍 Até mais! Quando quiser fazer uma nova análise, é só digitar o gatilho novamente.'
+          );
+          clearConversationTimeout(convoKey);
+          CONVERSATIONS.delete(convoKey);
+          return;
+        }
+        
+        // Envia a resposta
+        await client.sendText(sender, assistantResponse);
+        
+      } catch (error) {
+        console.error('Erro ao processar cálculo ou gerar PDF:', error);
+        await client.sendText(
+          sender,
+          'Houve um erro ao processar sua análise. Vou apresentar os resultados de forma simplificada.'
+        );
+      }
     }
   } else {
     // Resposta normal sem chamar função
@@ -2405,6 +2581,540 @@ const gptResponse = await openai.responses.create({
   
   // Salva o estado da conversa
   CONVERSATIONS.set(convoKey, convo);
+}
+
+// Função para gerar o PDF de câmbio
+async function gerarPDFCambio(resultado, inputs) {
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+  
+  try {
+    const page = await browser.newPage();
+    
+    // HTML com design profissional
+    const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+        
+        .page {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background-color: #000000;
+            color: #ffffff;
+            padding: 30px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: -1px;
+        }
+        
+        .logo {
+            font-size: 18px;
+            font-weight: 600;
+            text-align: right;
+        }
+        
+        /* Subtitle Bar */
+        .subtitle-bar {
+            background-color: #e91e63;
+            color: #ffffff;
+            padding: 10px 40px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        /* Exchange Rate Display */
+        .cambio-section {
+            background-color: #000;
+            color: #fff;
+            padding: 30px 40px;
+            text-align: center;
+        }
+        
+        .cambio-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 30px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .cambio-card {
+            background-color: #1a1a1a;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #333;
+        }
+        
+        .cambio-label {
+            font-size: 12px;
+            color: #ccc;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        
+        .cambio-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #e91e63;
+        }
+        
+        .cambio-arrow {
+            font-size: 48px;
+            color: #e91e63;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            padding: 30px 40px;
+            background-color: #f5f5f5;
+        }
+        
+        /* Left Section */
+        .left-section {
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .section-title {
+            background-color: #e91e63;
+            color: #ffffff;
+            padding: 10px 15px;
+            margin: -25px -25px 20px -25px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .data-row:last-child {
+            border-bottom: none;
+        }
+        
+        .data-label {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .data-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .total-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #e91e63;
+        }
+        
+        .total-row .data-label {
+            font-weight: 700;
+            color: #333;
+        }
+        
+        .total-row .data-value {
+            font-size: 16px;
+            color: #e91e63;
+        }
+        
+        /* Right Section - Metrics */
+        .right-section {
+            background-color: #000000;
+            padding: 30px;
+            border-radius: 8px;
+            color: #ffffff;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .metric-circle {
+            text-align: center;
+        }
+        
+        .circle-container {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 10px;
+            position: relative;
+        }
+        
+        .circle-bg {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 8px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .circle-positive {
+            border-color: #4caf50;
+        }
+        
+        .circle-negative {
+            border-color: #e91e63;
+        }
+        
+        .circle-value {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .circle-label {
+            font-size: 11px;
+            color: #ccc;
+            margin-top: 5px;
+        }
+        
+        .metric-title {
+            font-size: 14px;
+            color: #ccc;
+            font-weight: 600;
+        }
+        
+        /* Result Section */
+        .result-section {
+            background-color: #ffffff;
+            margin: 0 40px 30px;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .result-positive {
+            border: 3px solid #4caf50;
+        }
+        
+        .result-negative {
+            border: 3px solid #e91e63;
+        }
+        
+        .result-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .result-value {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .result-value-usd {
+            font-size: 24px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 15px;
+        }
+        
+        .result-positive .result-value {
+            color: #4caf50;
+        }
+        
+        .result-negative .result-value {
+            color: #e91e63;
+        }
+        
+        .result-description {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        /* Footer */
+        .footer {
+            background-color: #000;
+            color: #ffffff;
+            padding: 30px 40px;
+            text-align: center;
+        }
+        
+        .footer-brand {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .footer-info {
+            font-size: 12px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <!-- Header -->
+        <div class="header">
+            <h1>ANÁLISE ESPERAR O CÂMBIO CAIR</h1>
+            <div class="logo">THE FLORIDA<br>LOUNGE</div>
+        </div>
+        
+        <!-- Subtitle -->
+        <div class="subtitle-bar">
+            IMÓVEL: ${formatCurrencyUSD(inputs.V0)} | ESPERA: ${inputs.m} MESES | CÂMBIO: R$ ${inputs.FX0.toFixed(2)} → R$ ${inputs.FXbuy.toFixed(2)}
+        </div>
+        
+        <!-- Exchange Rate Display -->
+        <div class="cambio-section">
+            <div class="cambio-grid">
+                <div class="cambio-card">
+                    <div class="cambio-label">Câmbio Atual</div>
+                    <div class="cambio-value">R$ ${inputs.FX0.toFixed(2).replace('.', ',')}</div>
+                </div>
+                <div class="cambio-arrow">→</div>
+                <div class="cambio-card">
+                    <div class="cambio-label">Câmbio Esperado</div>
+                    <div class="cambio-value">R$ ${inputs.FXbuy.toFixed(2).replace('.', ',')}</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Section - Details -->
+            <div class="left-section">
+                <h3 class="section-title">PARÂMETROS DA ANÁLISE</h3>
+                <div class="data-row">
+                    <span class="data-label">VALOR IMÓVEL</span>
+                    <span class="data-value">${formatCurrencyUSD(inputs.V0)}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">DOWNPAYMENT (${(inputs.dp*100).toFixed(0)}%)</span>
+                    <span class="data-value">${formatCurrencyUSD(inputs.V0 * inputs.dp)}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">PERÍODO DE ESPERA</span>
+                    <span class="data-value">${inputs.m} meses</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">QUEDA ESPERADA</span>
+                    <span class="data-value">${((inputs.FX0 - inputs.FXbuy) / inputs.FX0 * 100).toFixed(1)}%</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">APLICAÇÃO NO BRASIL</span>
+                    <span class="data-value">${(inputs.r*100).toFixed(1)}% a.a.</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">VALORIZAÇÃO IMÓVEL</span>
+                    <span class="data-value">${(inputs.g*100).toFixed(1)}% a.a.</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">YIELD/ALUGUEL</span>
+                    <span class="data-value">${(inputs.y*100).toFixed(1)}% a.a.</span>
+                </div>
+            </div>
+            
+            <!-- Right Section - Metrics -->
+            <div class="right-section">
+                <div class="metrics-grid">
+                    <!-- Ganhos -->
+                    <div class="metric-circle">
+                        <div class="circle-container">
+                            <div class="circle-bg circle-positive">
+                                <div class="circle-value">${formatCurrencyBRL(resultado.ganhos.total)}</div>
+                                <div class="circle-label">Ganhos</div>
+                            </div>
+                        </div>
+                        <div class="metric-title">TOTAL GANHOS</div>
+                    </div>
+                    
+                    <!-- Perdas -->
+                    <div class="metric-circle">
+                        <div class="circle-container">
+                            <div class="circle-bg circle-negative">
+                                <div class="circle-value">${formatCurrencyBRL(resultado.perdas.total)}</div>
+                                <div class="circle-label">Perdas</div>
+                            </div>
+                        </div>
+                        <div class="metric-title">TOTAL PERDAS</div>
+                    </div>
+                </div>
+                
+                <!-- Capital Details -->
+                <div style="text-align: center; margin-top: 30px; padding-top: 30px; border-top: 1px solid #333;">
+                    <div style="font-size: 24px; font-weight: 700; color: #e91e63; margin-bottom: 10px;">
+                        ${formatCurrencyBRL(resultado.ganhos.aplicacao.base_BRL)}
+                    </div>
+                    <div style="font-size: 14px; color: #ccc;">CAPITAL APLICADO</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Result Section -->
+        <div class="result-section ${resultado.resultado.BRL > 0 ? 'result-positive' : 'result-negative'}">
+            <h2 class="result-title">${resultado.resultado.BRL > 0 ? 'VALE A PENA ESPERAR' : 'MELHOR COMPRAR AGORA'}</h2>
+            <div class="result-value">${formatCurrencyBRL(Math.abs(resultado.resultado.BRL))}</div>
+            <div class="result-value-usd">${formatCurrencyUSD(Math.abs(resultado.resultado.USD))}</div>
+            <p class="result-description">
+                ${resultado.resultado.BRL > 0 
+                    ? `Esperar ${inputs.m} meses resultaria em ganho de ${formatCurrencyBRL(Math.abs(resultado.resultado.BRL))}. A economia no câmbio e os rendimentos compensam a valorização do imóvel.`
+                    : `Comprar agora evitaria perda de ${formatCurrencyBRL(Math.abs(resultado.resultado.BRL))}. A valorização do imóvel e os aluguéis perdidos superam a economia esperada no câmbio.`}
+            </p>
+        </div>
+        
+        <!-- Detailed Breakdown -->
+        <div class="main-content">
+            <div class="left-section">
+                <h3 class="section-title">GANHOS AO ESPERAR</h3>
+                <div class="data-row">
+                    <span class="data-label">RENDIMENTO DA APLICAÇÃO</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.ganhos.aplicacao.rendimento_BRL)}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">ECONOMIA NO CÂMBIO</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.ganhos.cambio.ganho_BRL)}</span>
+                </div>
+                <div class="data-row total-row">
+                    <span class="data-label">TOTAL GANHOS</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.ganhos.total)}</span>
+                </div>
+            </div>
+            
+            <div class="left-section">
+                <h3 class="section-title">PERDAS POR ESPERAR</h3>
+                <div class="data-row">
+                    <span class="data-label">VALORIZAÇÃO IMÓVEL (${formatCurrencyUSD(resultado.perdas.valorizacao.USD)})</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.perdas.valorizacao.BRL)}</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">YIELD PERDIDO (${formatCurrencyUSD(resultado.perdas.yield.USD)})</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.perdas.yield.BRL)}</span>
+                </div>
+                <div class="data-row total-row">
+                    <span class="data-label">TOTAL PERDAS</span>
+                    <span class="data-value">${formatCurrencyBRL(resultado.perdas.total)}</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-brand">THE FLORIDA LOUNGE</div>
+            <div class="footer-info">
+                @thefloridalounge | Relatório gerado em ${new Date().toLocaleString('pt-BR')}<br>
+                Este relatório é uma simulação educativa e deve ser validada com um especialista.
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+    
+    await page.setContent(html);
+    
+    // Gerar nome único para o PDF
+    const nomeArquivo = `analise_cambio_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.pdf`;
+    const caminhoCompleto = path.join('/var/www/pdf.thebroker.vip', nomeArquivo);
+    
+    // Gerar o PDF
+    await page.pdf({
+      path: caminhoCompleto,
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        right: '20px',
+        bottom: '20px',
+        left: '20px'
+      }
+    });
+    
+    await browser.close();
+    
+    // Agendar exclusão do arquivo após 5 minutos
+    setTimeout(async () => {
+      try {
+        await fs.unlink(caminhoCompleto);
+        console.log(`PDF ${nomeArquivo} removido após 5 minutos`);
+      } catch (error) {
+        console.error(`Erro ao remover PDF ${nomeArquivo}:`, error);
+      }
+    }, 5 * 60 * 1000); // 5 minutos
+    
+    return {
+      url: `https://pdf.thebroker.vip/${nomeArquivo}`,
+      validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
+    };
+    
+  } catch (error) {
+    await browser.close();
+    throw error;
+  }
+}
+
+// Funções auxiliares para formatar moeda
+function formatCurrencyBRL(value) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value);
+}
+
+function formatCurrencyUSD(value) {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(value);
 }
 
 // Função de cálculo (incluída aqui para referência, mas pode estar em outro arquivo)
@@ -2502,20 +3212,7 @@ function calcularCustoEsperar(inputs) {
             yield_anual: y,
             downpayment: dp
         },
-        calculos_intermediarios: {
-            downUS: calculos.downUS,
-            base_down_BRL: calculos.Base_Down_BRL,
-            taxas_mensais: {
-                aplicacao: calculos.r_m,
-                valorizacao: calculos.g_m,
-                yield: calculos.y_m
-            },
-            fatores: {
-                rendimento: calculos.Fator_Rend,
-                valorizacao: calculos.Fator_Val,
-                yield: calculos.Fator_Yield
-            }
-        }
+        calculos_intermediarios: calculos
     };
 
     return output;
