@@ -96,7 +96,6 @@ Após receber o JSON de resultado, formate a resposta assim:
 
 [Se resultado positivo]: Esperar [meses] meses resultaria em um ganho líquido de R$ [valor]. A economia no câmbio compensa o custo de oportunidade.
 
-⚠️ **IMPORTANTE:** Este link expira em 5 minutos. Salve o arquivo se precisar consultá-lo depois.
 ```
 
 ## 4. Interação Pós-Análise
