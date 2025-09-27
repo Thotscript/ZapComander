@@ -2355,35 +2355,36 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
     activeTrigger: 'tbvesperardolar'
   };
   
-  // Carrega o prompt "EsperarDolar"
-  const prompt = loadPrompt('tbvdolar');
-  
   // Se for a primeira interação, injeta o system prompt
   if (convo.history.length === 0) {
-    convo.history.push({ role: 'system', content: prompt });
+    // Carrega o prompt "EsperarDolar"
+    const prompt = loadPrompt('tbvdolar');
+    
+    // Combina tudo em uma única mensagem system para evitar conflitos
+    const fullSystemPrompt = `${prompt}
+
+Você tem acesso a duas funções principais:
+
+1. buscarCambioBCB(data) - busca a cotação do dólar no Banco Central. 
+   - Se data for null, busca a cotação mais recente
+   - Retorna objeto com: sucesso, data, cotacaoVenda, cotacaoCompra, tipoBoletim
+   - A API do BCB pode não ter dados em fins de semana/feriados
+
+2. calcularCustoEsperar(inputs) - calcula se vale a pena esperar o câmbio cair
+   - Parâmetros obrigatórios: V0, m, FX0, FXbuy
+   - Parâmetros opcionais: r, g, y, dp
+   - Gera automaticamente um PDF com os resultados
+
+Quando o usuário não souber o câmbio atual, use buscarCambioBCB() para obter a cotação oficial.
+Quando tiver todos os dados necessários, use calcularCustoEsperar.
+
+O PDF gerado ficará disponível por 5 minutos em um link temporário.`;
+    
+    // Adiciona apenas UMA mensagem system
+    convo.history.push({ role: 'system', content: fullSystemPrompt });
+    
     // Definir timeout quando conversa inicia
     setConversationTimeout(convoKey, session, sender);
-    
-    // Adiciona também a função de cálculo como uma tool/function
-    convo.history.push({
-      role: 'system',
-      content: `Você tem acesso a duas funções principais:
-      
-      1. buscarCambioBCB(data) - busca a cotação do dólar no Banco Central. 
-         - Se data for null, busca a cotação mais recente
-         - Retorna objeto com: sucesso, data, cotacaoVenda, cotacaoCompra, tipoBoletim
-         - A API do BCB pode não ter dados em fins de semana/feriados
-      
-      2. calcularCustoEsperar(inputs) - calcula se vale a pena esperar o câmbio cair
-         - Parâmetros obrigatórios: V0, m, FX0, FXbuy
-         - Parâmetros opcionais: r, g, y, dp
-         - Gera automaticamente um PDF com os resultados
-      
-      Quando o usuário não souber o câmbio atual, use buscarCambioBCB() para obter a cotação oficial.
-      Quando tiver todos os dados necessários, use calcularCustoEsperar.
-      
-      O PDF gerado ficará disponível por 5 minutos em um link temporário.`
-    });
   } else {
     // Renovar timeout a cada interação
     refreshConversationTimeout(convoKey, session, sender);
@@ -2593,7 +2594,6 @@ async function handleTriggerEsperarDolar(session, message, userInput, sessionNam
   CONVERSATIONS.set(convoKey, convo);
 }
 
-// Função para gerar o PDF de câmbio
 // Função para gerar o PDF de câmbio (CORRIGIDA)
 async function gerarPDFCambio(resultado, inputs) {
   const browser = await puppeteer.launch({
@@ -3104,7 +3104,7 @@ async function gerarPDFCambio(resultado, inputs) {
     
     // 🔴 URL mantém o formato esperado com subdomínio pdf
     return {
-      url: `https://pdf.thebroker.vip/pdf/${nomeArquivo}`,
+      url: `https://pdf.thebroker.vip:8443/pdf/${nomeArquivo}`,
       validade: new Date(Date.now() + 5 * 60 * 1000).toISOString()
     };
     
