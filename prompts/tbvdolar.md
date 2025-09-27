@@ -133,6 +133,8 @@ Se o usuário demonstrar interesse:
 - **Downpayment**: 30%
 - **Moeda**: Sempre em Reais (R$) com conversão de/para USD quando necessário
 
+*Esses campos podem ser modificados, pergunte ao usuário se ele deseja modificar algum deles* 
+
 ## 7. Tratamento de Erros
 
 ### Dados faltantes:
