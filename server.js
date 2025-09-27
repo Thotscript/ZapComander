@@ -2539,7 +2539,6 @@ IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO menc
         const formattedResponse = await openai.chat.completions.create({
           model: ASSISTANT_MODEL,
           messages: convo.history,
-          temperature: 0.2
         });
         
         const assistantResponse = formattedResponse.choices[0].message.content.trim();
@@ -3307,7 +3306,6 @@ IMPORTANTE: Apresente os resultados de forma clara e profissional, mas NÃO menc
   const gptResponse = await openai.chat.completions.create({
     model: ASSISTANT_MODEL,
     messages: convo.history,
-    temperature: 0.2,
     functions: [{
       name: "calcularEsperarJurosComRefinanciamento",
       description: "Calcula se vale a pena esperar juros cair ou comprar agora e refinanciar",
