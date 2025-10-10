@@ -6150,60 +6150,55 @@ const restoreSession = async ({ sessionName, email }) => {
           await processText(sessionName, message, email);
         }
 
-           // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
-    if (message.type === 'image' || message.type === 'IMAGE') {
-      console.log(`🔍 [IMAGE-DEBUG] ✅ IMAGEM DETECTADA!`);
-      console.log(`🔍 [IMAGE-DEBUG] To: ${message.to}`);
-      console.log(`🔍 [IMAGE-DEBUG] From: ${message.from}`);
-      console.log(`🔍 [IMAGE-DEBUG] MAIN_BOT_NUMBER: ${MAIN_BOT_NUMBER}`);
+    // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
+if (message.type === 'image' || message.type === 'IMAGE') {
+  console.log(`🔍 [IMAGE-DEBUG] ✅ IMAGEM DETECTADA!`);
+  console.log(`🔍 [IMAGE-DEBUG] To: ${message.to}`);
+  console.log(`🔍 [IMAGE-DEBUG] From: ${message.from}`);
+  console.log(`🔍 [IMAGE-DEBUG] MAIN_BOT_NUMBER: ${MAIN_BOT_NUMBER}`);
 
-      // Verificar se é direcionada ao bot
-      if (message.to === MAIN_BOT_NUMBER) {
-        console.log(`🔍 [IMAGE-DEBUG] 🤖 Imagem É para o bot!`);
-        
-        // Verificar se é a sessão correta
-        const receivingSession = SESSIONS.get(sessionName);
-        if (receivingSession && receivingSession.myNumber === message.to) {
-          console.log('🤖 [IMAGE-DEBUG] Imagem direcionada ao bot detectada (sessão correta)');
-          
-          const convoKey = `${session.myNumber}:${message.from}`;
-          const stored = CONVERSATIONS.get(convoKey);
-          
-          console.log(`🔍 [IMAGE-DEBUG] ConvoKey: ${convoKey}`);
-          console.log(`🔍 [IMAGE-DEBUG] Stored conversation:`, stored ? {
-            activeTrigger: stored.activeTrigger,
-            historyLength: stored.history?.length
-          } : 'null');
-          
-          // ✅ VERIFICAR SE HÁ CONVERSA ATIVA DO tbvbusinesscard
-          if (stored && stored.activeTrigger === 'tbvbusinesscard') {
-            console.log('📷 [IMAGE-DEBUG] ✅ Imagem detectada em conversa tbvbusinesscard ativa');
-            console.log('📷 [IMAGE-DEBUG] 🚀 Chamando handleTriggerBusinessCard...');
-            await handleTriggerBusinessCard(session, message, '', sessionName, email);
-            return;
-          } else {
-            console.log(`📷 [IMAGE-DEBUG] ❌ Imagem para bot ignorada. Motivo:`);
-            console.log(`📷 [IMAGE-DEBUG] - Stored exists: ${!!stored}`);
-            console.log(`📷 [IMAGE-DEBUG] - Active trigger: ${stored?.activeTrigger || 'none'}`);
-            console.log(`📷 [IMAGE-DEBUG] - Expected: tbvbusinesscard`);
-            
-            // Enviar mensagem explicativa se não há conversa ativa
-            await client.sendText(message.from, 
-              '📷 Para processar imagens de cartão, primeiro ative o assistente enviando uma mensagem sobre digitalização de cartão de visita.'
-            );
-            return;
-          }
-        } else {
-          console.log('🔄 [IMAGE-DEBUG] Imagem para bot detectada, mas processado por outra sessão - ignorando duplicata');
-          return;
-        }
-      } else {
-        // Imagem normal (não direcionada ao bot)
-        console.log('📱 [IMAGE-DEBUG] Imagem NÃO é para o bot - processando como texto normal');
-        await processText(sessionName, message, email);
+  // Verificar se é direcionada ao bot
+  if (message.to === MAIN_BOT_NUMBER) {
+    console.log(`🔍 [IMAGE-DEBUG] 🤖 Imagem É para o bot!`);
+    
+    // Verificar se é a sessão correta
+    const receivingSession = SESSIONS.get(sessionName);
+    if (receivingSession && receivingSession.myNumber === message.to) {
+      console.log('🤖 [IMAGE-DEBUG] Imagem direcionada ao bot detectada (sessão correta)');
+
+      const convoKey = `${session.myNumber}:${message.from}`;
+      const stored = CONVERSATIONS.get(convoKey);
+
+      console.log(`🔍 [IMAGE-DEBUG] ConvoKey: ${convoKey}`);
+      console.log(`🔍 [IMAGE-DEBUG] Stored conversation:`, stored ? {
+        activeTrigger: stored.activeTrigger,
+        historyLength: stored.history?.length
+      } : 'null');
+
+      // ✅ Se há conversa ativa do tbvbusinesscard, mantém o fluxo atual
+      if (stored && stored.activeTrigger === 'tbvbusinesscard') {
+        console.log('📷 [IMAGE-DEBUG] ✅ Imagem detectada em conversa tbvbusinesscard ativa');
+        console.log('📷 [IMAGE-DEBUG] 🚀 Chamando handleTriggerBusinessCard...');
+        await handleTriggerBusinessCard(session, message, '', sessionName, email);
         return;
       }
+
+      // ✅ Caso contrário, usa o novo analisador de imagens (processImage)
+      console.log('🖼️ [IMAGE-DEBUG] 🚀 Sem conversa tbvbusinesscard ativa — chamando processImage...');
+      await processImage(sessionName, message, email);
+      return;
+
+    } else {
+      console.log('🔄 [IMAGE-DEBUG] Imagem para bot detectada, mas processada por outra sessão - ignorando duplicata');
+      return;
     }
+  } else {
+    // Imagem normal (não direcionada ao bot) — preserva comportamento atual
+    console.log('📱 [IMAGE-DEBUG] Imagem NÃO é para o bot - processando como texto normal');
+    await processText(sessionName, message, email);
+    return;
+  }
+}
 
         // ===== PROCESSAMENTO DE DOCUMENTOS PDF =====
         if (message.type === 'document' || message.type === 'DOCUMENT') {
