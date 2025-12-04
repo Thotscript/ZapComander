@@ -1958,10 +1958,22 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
         }
       });
 
-      let assistantResponse = gptResponse.data.output?.[0]?.content?.find(i => i.type === 'output_text')?.text;
+        let assistantResponse = gptResponse.data.output?.[0]?.content?.find(i => i.type === 'output_text')?.text;
 
-      const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
-      const extractedData = JSON.parse(jsonMatch[0]);
+        if (!assistantResponse) {
+          console.error('❌ Resposta vazia da OpenAI:', gptResponse.data);
+          throw new Error('Resposta vazia da OpenAI');
+        }
+
+        const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
+
+        if (!jsonMatch) {
+          console.error('❌ JSON não encontrado na resposta:', assistantResponse);
+          throw new Error('JSON não encontrado');
+        }
+
+        const extractedData = JSON.parse(jsonMatch[0]);
+
 
       convo.extractedData = extractedData;
 
