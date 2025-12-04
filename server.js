@@ -2019,6 +2019,48 @@ Para telefones brasileiros, sempre inclua o código +55.
 
 // Adicione esta função antes da função generateAndSendVCF
 
+function generateValidationTable(data) {
+  let table = '📋 *Dados Extraídos do Cartão:*\n\n';
+  
+  if (data.nome && data.nome !== 'Não informado') {
+    table += `👤 *Nome:* ${data.nome}\n`;
+  }
+  
+  if (data.cargo && data.cargo !== 'Não informado') {
+    table += `💼 *Cargo:* ${data.cargo}\n`;
+  }
+  
+  if (data.empresa && data.empresa !== 'Não informado') {
+    table += `🏢 *Empresa:* ${data.empresa}\n`;
+  }
+  
+  if (data.celular && data.celular !== 'Não informado') {
+    table += `📱 *Celular:* ${data.celular}\n`;
+  }
+  
+  if (data.telefone && data.telefone !== 'Não informado') {
+    table += `☎️ *Telefone:* ${data.telefone}\n`;
+  }
+  
+  if (data.email && data.email !== 'Não informado') {
+    table += `📧 *E-mail:* ${data.email}\n`;
+  }
+  
+  if (data.website && data.website !== 'Não informado') {
+    table += `🌐 *Website:* ${data.website}\n`;
+  }
+  
+  if (data.endereco && data.endereco !== 'Não informado') {
+    table += `📍 *Endereço:* ${data.endereco}\n`;
+  }
+  
+  if (data.linkedin && data.linkedin !== 'Não informado') {
+    table += `🔗 *LinkedIn:* ${data.linkedin}\n`;
+  }
+  
+  return table;
+}
+
 function splitFullName(fullName) {
   const nameParts = fullName.trim().split(' ');
   
@@ -2114,6 +2156,7 @@ async function generateAndSendVCF(client, sender, data) {
     throw error; // Re-throw para o catch acima capturar
   }
 }
+
 async function buscarCambioBCB(dataInicial = null, maxTentativas = 7) {
     // Se não foi passada uma data, usar hoje
     let dataAtual = dataInicial ? new Date(dataInicial) : new Date();
