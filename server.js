@@ -1938,10 +1938,25 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
       const base64Image = imageBuffer.toString('base64');
       convo.imageData = base64Image;
 
-      const extractionPrompt = `Analise esta imagem de cartão de visita e extraia TODOS os dados visíveis em formato JSON. 
-      Retorne APENAS um objeto JSON com esta estrutura:
-      { "nome": "Nome da pessoa", "cargo": "Cargo/Função", "empresa": "Nome da empresa", "celular": "Celular formatado como +55 XX XXXXX-XXXX", "telefone": "Telefone fixo formatado como +55 XX XXXX-XXXX", "email": "E-mail", "website": "Website/URL", "endereco": "Endereço completo", "linkedin": "LinkedIn ou redes sociais" } Se algum campo não estiver visível ou legível, use "Não informado". Para telefones brasileiros, sempre inclua o código +55.;`;
+      const extractionPrompt = `
+Analise esta imagem de cartão de visita e extraia TODOS os dados visíveis em formato JSON.
 
+Retorne APENAS um objeto JSON com esta estrutura:
+{
+  "nome": "Nome da pessoa",
+  "cargo": "Cargo/Função",
+  "empresa": "Nome da empresa",
+  "celular": "Celular formatado como +55 XX XXXXX-XXXX",
+  "telefone": "Telefone fixo formatado como +55 XX XXXX-XXXX",
+  "email": "E-mail",
+  "website": "Website/URL",
+  "endereco": "Endereço completo",
+  "linkedin": "LinkedIn ou redes sociais"
+}
+
+Se algum campo não estiver visível ou legível, use "Não informado".
+Para telefones brasileiros, sempre inclua o código +55.
+`;
       const gptResponse = await axios.post('https://api.openai.com/v1/responses', {
         model: 'gpt-4.1',
         input: [
@@ -1960,22 +1975,10 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
         }
       });
 
-        let assistantResponse = gptResponse.data.output?.[0]?.content?.find(i => i.type === 'output_text')?.text;
+      let assistantResponse = gptResponse.data.output?.[0]?.content?.find(i => i.type === 'output_text')?.text;
 
-        if (!assistantResponse) {
-          console.error('❌ Resposta vazia da OpenAI:', gptResponse.data);
-          throw new Error('Resposta vazia da OpenAI');
-        }
-
-        const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
-
-        if (!jsonMatch) {
-          console.error('❌ JSON não encontrado na resposta:', assistantResponse);
-          throw new Error('JSON não encontrado');
-        }
-
-        const extractedData = JSON.parse(jsonMatch[0]);
-
+      const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
+      const extractedData = JSON.parse(jsonMatch[0]);
 
       convo.extractedData = extractedData;
 
@@ -2016,11 +2019,12 @@ async function generateAndSendVCF(client, sender, data) {
   try {
     let vcfContent = 'BEGIN:VCARD\nVERSION:3.0\n';
     
+    // CORREÇÃO APLICADA AQUI: Adicionado CHARSET=UTF-8 e formatado corretamente o campo N
     if (data.nome && data.nome !== 'Não informado') {
       const { given, family } = splitFullName(data.nome);
 
-      vcfContent += `FN:${data.nome}\n`;
-      vcfContent += `N:${family};${given};;;\n`;
+      vcfContent += `FN;CHARSET=UTF-8:${data.nome}\n`;
+      vcfContent += `N;CHARSET=UTF-8:${family};${given};;;\n`;
     }
     
     if (data.cargo && data.cargo !== 'Não informado') {
@@ -2077,7 +2081,6 @@ async function generateAndSendVCF(client, sender, data) {
     await client.sendText(sender, '❌ Erro ao gerar arquivo de contato.');
   }
 }
-
 
 async function buscarCambioBCB(dataInicial = null, maxTentativas = 7) {
     // Se não foi passada uma data, usar hoje
