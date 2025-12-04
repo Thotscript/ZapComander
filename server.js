@@ -1996,25 +1996,28 @@ Para telefones brasileiros, sempre inclua o código +55.
   CONVERSATIONS.set(convoKey, convo);
 }
 
+// Adicione esta função antes da função generateAndSendVCF
 
-// ✅ FUNÇÃO NOVA — SEPARAÇÃO CORRETA DO NOME
 function splitFullName(fullName) {
-  if (!fullName) return { given: '', family: '' };
-
-  const parts = fullName.trim().split(/\s+/);
-
-  if (parts.length === 1) {
-    return { given: parts[0], family: '' };
+  const nameParts = fullName.trim().split(' ');
+  
+  if (nameParts.length === 1) {
+    return {
+      given: nameParts[0],
+      family: ''
+    };
   }
-
-  const family = parts.pop();
-  const given  = parts.join(' ');
-
-  return { given, family };
+  
+  // Último nome é o sobrenome, o resto é o nome
+  const family = nameParts.pop();
+  const given = nameParts.join(' ');
+  
+  return {
+    given: given,
+    family: family
+  };
 }
 
-
-// ✅ FUNÇÃO CORRIGIDA DO VCF
 async function generateAndSendVCF(client, sender, data) {
   try {
     let vcfContent = 'BEGIN:VCARD\nVERSION:3.0\n';
