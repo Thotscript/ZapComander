@@ -1938,7 +1938,9 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
       const base64Image = imageBuffer.toString('base64');
       convo.imageData = base64Image;
 
-      const extractionPrompt = `Analise esta imagem de cartão de visita e extraia TODOS os dados visíveis em formato JSON...`;
+      const extractionPrompt = `Analise esta imagem de cartão de visita e extraia TODOS os dados visíveis em formato JSON. 
+      Retorne APENAS um objeto JSON com esta estrutura:
+      { "nome": "Nome da pessoa", "cargo": "Cargo/Função", "empresa": "Nome da empresa", "celular": "Celular formatado como +55 XX XXXXX-XXXX", "telefone": "Telefone fixo formatado como +55 XX XXXX-XXXX", "email": "E-mail", "website": "Website/URL", "endereco": "Endereço completo", "linkedin": "LinkedIn ou redes sociais" } Se algum campo não estiver visível ou legível, use "Não informado". Para telefones brasileiros, sempre inclua o código +55.;`;
 
       const gptResponse = await axios.post('https://api.openai.com/v1/responses', {
         model: 'gpt-4.1',
