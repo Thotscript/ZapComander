@@ -1906,20 +1906,30 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
     }
     
     if (userResponse === 'sim') {
-      await generateAndSendVCF(client, sender, convo.extractedData);
-      
-      setTimeout(async () => {
-        await client.sendText(sender, 
-          '✅ Digitalização concluída!\n\n' +
-          '🔄 Deseja digitalizar outro cartão? Envie uma nova foto!'
-        );
-      }, 2000);
-      
-      convo.waitingForConfirmation = false;
-      convo.extractedData = null;
-      convo.imageData = null;
-      CONVERSATIONS.set(convoKey, convo);
-      return;
+      try {
+        console.log('🔄 [VCF] Iniciando geração do VCF...');
+        console.log('📋 [VCF] Dados extraídos:', JSON.stringify(convo.extractedData));
+        
+        await generateAndSendVCF(client, sender, convo.extractedData);
+        
+        setTimeout(async () => {
+          await client.sendText(sender, 
+            '✅ Digitalização concluída!\n\n' +
+            '🔄 Deseja digitalizar outro cartão? Envie uma nova foto!'
+          );
+        }, 2000);
+        
+        convo.waitingForConfirmation = false;
+        convo.extractedData = null;
+        convo.imageData = null;
+        CONVERSATIONS.set(convoKey, convo);
+        return;
+        
+      } catch (vcfError) {
+        console.error('❌ [VCF] Erro ao gerar VCF:', vcfError);
+        await client.sendText(sender, '❌ Erro ao gerar arquivo de contato. Tente novamente.');
+        return;
+      }
       
     } else if (userResponse === 'corrigir') {
       await client.sendText(sender, 
@@ -1934,6 +1944,7 @@ async function handleTriggerBusinessCard(session, message, userInput, sessionNam
 
   if (message.type === 'image' || message.mimetype?.startsWith('image/')) {
     try {
+      console.log('📸 [IMAGE] Processando imagem...');
       const imageBuffer = await client.decryptFile(message);
       const base64Image = imageBuffer.toString('base64');
       convo.imageData = base64Image;
@@ -1957,17 +1968,24 @@ Retorne APENAS um objeto JSON com esta estrutura:
 Se algum campo não estiver visível ou legível, use "Não informado".
 Para telefones brasileiros, sempre inclua o código +55.
 `;
-      const gptResponse = await axios.post('https://api.openai.com/v1/responses', {
-        model: 'gpt-4.1',
-        input: [
+      console.log('🤖 [GPT] Enviando para API...');
+      const gptResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: 'gpt-4o',
+        messages: [
           {
             role: 'user',
             content: [
-              { type: 'input_text', text: extractionPrompt },
-              { type: 'input_image', image_url: `data:${message.mimetype};base64,${base64Image}` }
+              { type: 'text', text: extractionPrompt },
+              { 
+                type: 'image_url', 
+                image_url: { 
+                  url: `data:${message.mimetype};base64,${base64Image}` 
+                } 
+              }
             ]
           }
-        ]
+        ],
+        max_tokens: 1000
       }, {
         headers: {
           'Authorization': `Bearer ${OPENAI_API_KEY}`,
@@ -1975,10 +1993,12 @@ Para telefones brasileiros, sempre inclua o código +55.
         }
       });
 
-      let assistantResponse = gptResponse.data.output?.[0]?.content?.find(i => i.type === 'output_text')?.text;
+      console.log('✅ [GPT] Resposta recebida');
+      let assistantResponse = gptResponse.data.choices[0].message.content;
 
       const jsonMatch = assistantResponse.match(/\{[\s\S]*\}/);
       const extractedData = JSON.parse(jsonMatch[0]);
+      console.log('📋 [EXTRACTED] Dados extraídos:', JSON.stringify(extractedData));
 
       convo.extractedData = extractedData;
 
@@ -1988,6 +2008,7 @@ Para telefones brasileiros, sempre inclua o código +55.
       convo.waitingForConfirmation = true;
       
     } catch (imageError) {
+      console.error('❌ [IMAGE] Erro ao processar imagem:', imageError);
       await client.sendText(sender, '❌ Erro ao processar a imagem. Tente novamente.');
       return;
     }
@@ -2020,11 +2041,14 @@ function splitFullName(fullName) {
 
 async function generateAndSendVCF(client, sender, data) {
   try {
+    console.log('🔨 [VCF] Construindo conteúdo VCF...');
     let vcfContent = 'BEGIN:VCARD\nVERSION:3.0\n';
     
     // CORREÇÃO APLICADA AQUI: Adicionado CHARSET=UTF-8 e formatado corretamente o campo N
     if (data.nome && data.nome !== 'Não informado') {
+      console.log('👤 [VCF] Processando nome:', data.nome);
       const { given, family } = splitFullName(data.nome);
+      console.log('👤 [VCF] Nome dividido - Given:', given, '| Family:', family);
 
       vcfContent += `FN;CHARSET=UTF-8:${data.nome}\n`;
       vcfContent += `N;CHARSET=UTF-8:${family};${given};;;\n`;
@@ -2064,6 +2088,7 @@ async function generateAndSendVCF(client, sender, data) {
     
     vcfContent += 'END:VCARD';
 
+    console.log('💾 [VCF] Salvando arquivo...');
     const baseName = data.nome ? data.nome.replace(/\s+/g, '_') : 'contato';
     const fileName = `${baseName}_${Date.now()}.vcf`;
     const filePath = path.join(__dirname, 'public', 'vcf', fileName);
@@ -2073,18 +2098,22 @@ async function generateAndSendVCF(client, sender, data) {
     }
 
     fs.writeFileSync(filePath, vcfContent, 'utf-8');
+    console.log('✅ [VCF] Arquivo salvo:', filePath);
 
     const downloadLink = `https://vcard.thebroker.vip:8443/vcf/${fileName}`;
 
     await client.sendText(sender, 
       `🎉 **Arquivo VCF gerado com sucesso!**\n\n🔗 ${downloadLink}`
     );
+    
+    console.log('✅ [VCF] Processo completo!');
 
   } catch (error) {
+    console.error('❌ [VCF] Erro detalhado:', error);
     await client.sendText(sender, '❌ Erro ao gerar arquivo de contato.');
+    throw error; // Re-throw para o catch acima capturar
   }
 }
-
 async function buscarCambioBCB(dataInicial = null, maxTentativas = 7) {
     // Se não foi passada uma data, usar hoje
     let dataAtual = dataInicial ? new Date(dataInicial) : new Date();
