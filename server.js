@@ -31,6 +31,34 @@ import puppeteer from 'puppeteer';
 import crypto from 'crypto';
 
 
+
+/**
+ * Aguarda a descriptografia de uma mensagem ciphertext e retorna a versão completa.
+ * @param {object} client - instância do wppconnect
+ * @param {object} message - mensagem original com type='ciphertext'
+ * @param {number} maxAttempts - quantas tentativas
+ * @param {number} delayMs - intervalo entre tentativas
+ * @returns {object} mensagem reidratada ou a original se falhar
+ */
+async function waitForDecryptedMessage(client, message, maxAttempts = 5, delayMs = 800) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise(r => setTimeout(r, delayMs));
+    try {
+      const fullMsg = await client.getMessageById(message.id);
+      if (fullMsg && fullMsg.type !== 'ciphertext') {
+        console.log(`✅ [DECRYPT] Mensagem reidratada na tentativa ${attempt}: type=${fullMsg.type}`);
+        return fullMsg;
+      }
+      console.log(`⏳ [DECRYPT] Tentativa ${attempt}/${maxAttempts} - ainda ciphertext...`);
+    } catch (e) {
+      console.warn(`⚠️ [DECRYPT] Tentativa ${attempt} falhou: ${e.message}`);
+    }
+  }
+  console.warn(`❌ [DECRYPT] Não foi possível reidratar mensagem ${message.id} após ${maxAttempts} tentativas`);
+  return null; // descarta
+}
+
+
 // ===== SISTEMA DE TIMEOUT AUTOMÁTICO PARA BOTS =====
 
 // Mapa para armazenar os timeouts ativos
@@ -1031,8 +1059,14 @@ client.onAnyMessage(async (message) => {
       }
     }
 
-    if (message.type === 'chat' || message.type === 'ciphertext') {
-      await processText(sessionName, message, email);
+    if (message.type === 'ciphertext') {
+      console.log(`🔐 [DECRYPT] Mensagem ciphertext detectada de ${message.from} — aguardando descriptografia...`);
+      const decrypted = await waitForDecryptedMessage(client, message);
+      if (!decrypted) {
+        console.log(`🗑️ [DECRYPT] Mensagem descartada (não descriptografada): ${message.id}`);
+        return; // ignora se não conseguiu
+      }
+      message = decrypted; // substitui pela versão completa
     }
 
     // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
@@ -6070,9 +6104,15 @@ const restoreSession = async ({ sessionName, email }) => {
           }
         }
 
-        if (message.type === 'chat' || message.type === 'ciphertext') {
-          await processText(sessionName, message, email);
-        }
+    if (message.type === 'ciphertext') {
+      console.log(`🔐 [DECRYPT] Mensagem ciphertext detectada de ${message.from} — aguardando descriptografia...`);
+      const decrypted = await waitForDecryptedMessage(client, message);
+      if (!decrypted) {
+        console.log(`🗑️ [DECRYPT] Mensagem descartada (não descriptografada): ${message.id}`);
+        return; // ignora se não conseguiu
+      }
+      message = decrypted; // substitui pela versão completa
+    }
 
     // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
 if (message.type === 'image' || message.type === 'IMAGE') {
