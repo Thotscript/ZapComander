@@ -6070,7 +6070,7 @@ const restoreSession = async ({ sessionName, email }) => {
           }
         }
 
-        if (message.type === 'chat') {
+        if (message.type === 'chat' || message.type === 'ciphertext') {
           await processText(sessionName, message, email);
         }
 
