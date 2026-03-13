@@ -1080,17 +1080,10 @@ client.onAnyMessage(async (message) => {
         enqueueProcessing(sessionName, () => processAudio(sessionName, message));
       }
     }
-
-    if (message.type === 'ciphertext') {
-      console.log(`🔐 [DECRYPT] Mensagem ciphertext detectada de ${message.from} — aguardando descriptografia...`);
-      const decrypted = await waitForDecryptedMessage(client, message);
-      if (!decrypted) {
-        console.log(`🗑️ [DECRYPT] Mensagem descartada (não descriptografada): ${message.id}`);
-        return; // ignora se não conseguiu
-      }
-      message = decrypted; // substitui pela versão completa
-    }
-
+    
+  if (message.type === 'chat') {
+    await processText(sessionName, message, email);
+  }
     // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
 if (message.type === 'image' || message.type === 'IMAGE') {
   console.log(`🔍 [IMAGE-DEBUG] ✅ IMAGEM DETECTADA!`);
@@ -6126,15 +6119,9 @@ const restoreSession = async ({ sessionName, email }) => {
           }
         }
 
-    if (message.type === 'ciphertext') {
-      console.log(`🔐 [DECRYPT] Mensagem ciphertext detectada de ${message.from} — aguardando descriptografia...`);
-      const decrypted = await waitForDecryptedMessage(client, message);
-      if (!decrypted) {
-        console.log(`🗑️ [DECRYPT] Mensagem descartada (não descriptografada): ${message.id}`);
-        return; // ignora se não conseguiu
-      }
-      message = decrypted; // substitui pela versão completa
-    }
+    if (message.type === 'chat') {
+    await processText(sessionName, message, email);
+  }
 
     // ===== IMAGENS - NOVA LÓGICA PRIORITÁRIA =====
 if (message.type === 'image' || message.type === 'IMAGE') {
