@@ -214,7 +214,7 @@
       </div>
     </div>
 
-    <button class="btn" id="connectBtn" onclick="connect()">Iniciar Sessão</button>
+    <button class="btn" id="connectBtn">Iniciar Sessão</button>
 
     <div class="qr-wrapper">
       <div class="qr-placeholder" id="qrPlaceholder">
@@ -254,6 +254,8 @@
     const sessionInput  = document.getElementById('sessionInput');
     const emailInput    = document.getElementById('emailInput');
     const connectBtn    = document.getElementById('connectBtn');
+
+    connectBtn.addEventListener('click', connect);
     const qrImg         = document.getElementById('qrImg');
     const qrPlaceholder = document.getElementById('qrPlaceholder');
     const spinner       = document.getElementById('spinner');
