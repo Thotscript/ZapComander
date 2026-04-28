@@ -31,7 +31,47 @@ export const DDI_TO_TIMEZONE = {
 };
 
 export const PUPPETEER_ARGS = [
-  '--mute-audio'
+  '--mute-audio',
+
+  // Necessário quando roda como root
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+
+  // Reduz uso de memória/compartilhamento em VPS/Docker
+  '--disable-dev-shm-usage',
+
+  // Desabilita recursos gráficos desnecessários
+  '--disable-gpu',
+  '--disable-software-rasterizer',
+
+  // Desabilita extensões e serviços em segundo plano
+  '--disable-extensions',
+  '--disable-default-apps',
+  '--disable-sync',
+  '--disable-translate',
+  '--disable-background-networking',
+  '--disable-component-update',
+  '--disable-client-side-phishing-detection',
+  '--safebrowsing-disable-auto-update',
+
+  // Reduz processos/recursos automáticos
+  '--no-first-run',
+  '--no-default-browser-check',
+  '--metrics-recording-only',
+  '--disable-popup-blocking',
+  '--disable-notifications',
+
+  // Reduz recursos visuais
+  '--hide-scrollbars',
+  '--disable-infobars',
+
+  // Desabilita features que consomem recursos
+  '--disable-features=Translate,BackForwardCache,AcceptCHFrame,MediaRouter,OptimizationHints',
+
+  // Útil em servidores sem interface gráfica
+  '--disable-background-timer-throttling',
+  '--disable-renderer-backgrounding',
+  '--disable-backgrounding-occluded-windows'
 ];
 
 export const myTokenStore = new wppconnect.tokenStore.FileTokenStore({ path: TOKEN_DIR });
