@@ -20,6 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
+// USE_HTTPS=false desativa TLS no Node quando ele roda atrás de um proxy (ex: Apache/Nginx)
+const useHttps = isProduction && process.env.USE_HTTPS !== 'false';
 
 [SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR, TEMP_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -28,12 +30,16 @@ const isProduction = process.env.NODE_ENV === 'production';
 const app = express();
 
 let server;
-if (isProduction) {
+if (useHttps) {
   const { default: httpsOptions } = await import('./config/https.js');
   server = https.createServer(httpsOptions, app);
+  console.log('🔒 Servidor HTTPS (TLS direto)');
 } else {
   server = http.createServer(app);
-  console.log('⚠️  Modo desenvolvimento — servidor HTTP sem TLS');
+  console.log(isProduction
+    ? '🔁 Servidor HTTP — TLS delegado ao proxy reverso'
+    : '⚠️  Modo desenvolvimento — servidor HTTP sem TLS'
+  );
 }
 
 initWss(server);
