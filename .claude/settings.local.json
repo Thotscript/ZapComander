@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const p = require\\('./node_modules/@wppconnect-team/wppconnect/package.json'\\); console.log\\('wppconnect:', p.version\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/@wppconnect-team/wppconnect/node_modules/puppeteer/package.json'\\); console.log\\('puppeteer interno:', p.version\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/@wppconnect-team/wppconnect/node_modules/puppeteer-core/package.json'\\); console.log\\('puppeteer-core interno:', p.version\\)\")",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
