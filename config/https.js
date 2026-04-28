@@ -2,8 +2,8 @@ import fs from 'fs';
 import tls from 'tls';
 import { constants } from 'crypto';
 
-const MAIN_KEY  = '/etc/letsencrypt/live/verbai.com.br/privkey.pem';
-const MAIN_CERT = '/etc/letsencrypt/live/verbai.com.br/fullchain.pem';
+const MAIN_KEY  = '/etc/letsencrypt/live/zapbot.botcomander.com.br/privkey.pem';
+const MAIN_CERT = '/etc/letsencrypt/live/zapbot.botcomander.com.br/fullchain.pem';
 
 const DOMAIN_CERTS = {
   'vcard.thebroker.vip': {

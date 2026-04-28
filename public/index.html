@@ -1,65 +1,419 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autenticação via QR Code</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Broker VIP — Autenticação</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d0d0f;
+      color: #e8e8ea;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 24px;
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #b0a06e;
+    }
+
+    .card {
+      background: #18181c;
+      border: 1px solid #2a2a30;
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .card h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #e8e8ea;
+      text-align: center;
+    }
+
+    .fields {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      gap: 10px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #888;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .field input {
+      background: #0d0d0f;
+      border: 1px solid #2a2a30;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      color: #e8e8ea;
+      outline: none;
+      transition: border-color .2s;
+      width: 100%;
+    }
+    .field input:focus { border-color: #b0a06e; }
+    .field input::placeholder { color: #444; }
+    .field input:disabled { opacity: 0.5; }
+
+    .btn {
+      background: #b0a06e;
+      color: #0d0d0f;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 0;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      letter-spacing: 0.03em;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .qr-wrapper {
+      width: 252px;
+      height: 252px;
+      background: #fff;
+      border-radius: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: visible;
+      position: relative;
+    }
+
+    .qr-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: none;
+    }
+
+    .qr-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      color: #999;
+      font-size: 0.78rem;
+      text-align: center;
+      padding: 16px;
+    }
+
+    .qr-placeholder svg { opacity: 0.2; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.8rem;
+      padding: 5px 14px;
+      border-radius: 20px;
+      background: #1e1e22;
+      border: 1px solid #2a2a30;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.gray   { background: #555; }
+    .dot.yellow { background: #f0c040; animation: pulse 1.4s ease-in-out infinite; }
+    .dot.green  { background: #40c070; }
+    .dot.red    { background: #e04040; animation: pulse 1.4s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+
+    .hint {
+      font-size: 0.76rem;
+      color: #555;
+      text-align: center;
+      line-height: 1.5;
+      min-height: 1.1em;
+    }
+    .hint.error { color: #e06060; }
+
+    .success-overlay {
+      position: absolute;
+      inset: 0;
+      background: #fff;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #222;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 0;
+    }
+    .success-overlay svg { color: #40c070; }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #b0a06e44;
+      border-top-color: #b0a06e;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-    <h1>Escaneie o QR Code para autenticar</h1>
-    <img id="qrCodeImg" src="" alt="QR Code" width="250">
-    <p id="status">Aguardando QR Code...</p>
 
-    <script>
+  <span class="logo">The Broker VIP</span>
 
-        
-        const sessionName = ""
-        const NGROK_URL = "https://d53e-2804-14c-55-80ac-4eb5-766d-cf11-ef8c.ngrok-free.app" //Troque pelo seu domínio ngrok
-        const socketUrl = NGROK_URL.replace("https", "wss"); // Transforma HTTPS em WSS
-        let socket;
+  <div class="card">
+    <h1>Autenticação WhatsApp</h1>
 
-        function connectWebSocket() {
-            socket = new WebSocket(socketUrl);
+    <div class="fields">
+      <div class="field">
+        <label for="sessionInput">Número / Sessão</label>
+        <input id="sessionInput" type="text" placeholder="5511999999999" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="emailInput">E-mail</label>
+        <input id="emailInput" type="email" placeholder="seu@email.com" autocomplete="off" />
+      </div>
+    </div>
 
-            socket.onopen = () => {
-                console.log('📡 Conectado ao WebSocket.');
-                socket.send(JSON.stringify({ type: 'requestQR', sessionName })); // Solicita QR ao conectar
-            };
+    <button class="btn" id="connectBtn" onclick="connect()">Iniciar Sessão</button>
 
-            socket.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
+    <div class="qr-wrapper">
+      <div class="qr-placeholder" id="qrPlaceholder">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <path d="M14 14h2v2h-2zM18 14h2v2h-2zM16 16h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/>
+        </svg>
+        <div class="spinner" id="spinner"></div>
+        <span id="placeholderText">Preencha os campos<br>e clique em Iniciar</span>
+      </div>
+      <img id="qrImg" alt="QR Code WhatsApp" />
+      <div class="success-overlay" id="successOverlay">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Autenticado!
+      </div>
+    </div>
 
-                    if (data.type === 'qr' && data.sessionName === sessionName) {
-                        document.getElementById('status').innerText = 'QR Code recebido! Escaneie para autenticar.';
-                        document.getElementById('qrCodeImg').src = `${NGROK_URL}${data.qrPath}`; // Caminho correto do ngrok
-                    }
+    <div class="status-badge">
+      <span class="dot gray" id="dot"></span>
+      <span id="statusText">Aguardando</span>
+    </div>
 
-                    if (data.type === 'error' && data.sessionName === sessionName) {
-                        document.getElementById('error').innerText = `Erro: ${data.error}`;
-                        if (data.error === "Auto Close Called") {
-                            console.log("🚫 Fechando a página devido ao erro 'Auto Close Called'");
-                            window.close(); // Fecha a aba do navegador
-                        }
-                    }
+    <p class="hint" id="hint">Informe o número e o e-mail para iniciar.</p>
+  </div>
 
-                } catch (error) {
-                    console.error('❌ Erro ao processar mensagem:', error);
-                }
-            };
+  <script>
+    let socket        = null;
+    let currentSession = '';
+    let reconnectTimer = null;
+    let sessionStarted = false;
 
-            socket.onerror = (error) => {
-                console.error('⚠️ Erro no WebSocket:', error);
-            };
+    const sessionInput  = document.getElementById('sessionInput');
+    const emailInput    = document.getElementById('emailInput');
+    const connectBtn    = document.getElementById('connectBtn');
+    const qrImg         = document.getElementById('qrImg');
+    const qrPlaceholder = document.getElementById('qrPlaceholder');
+    const spinner       = document.getElementById('spinner');
+    const placeholderText = document.getElementById('placeholderText');
+    const successOverlay  = document.getElementById('successOverlay');
+    const dot           = document.getElementById('dot');
+    const statusText    = document.getElementById('statusText');
+    const hint          = document.getElementById('hint');
 
-            socket.onclose = () => {
-                console.log('❌ Conexão com WebSocket fechada. Tentando reconectar...');
-                document.getElementById('status').innerText = 'Conexão perdida. Tentando reconectar...';
-                setTimeout(connectWebSocket, 3000); // Tenta reconectar após 3 segundos
-            };
+    function setStatus(color, label, hintMsg, isError) {
+      dot.className = 'dot ' + color;
+      statusText.textContent = label;
+      hint.textContent = hintMsg ?? '';
+      hint.className = 'hint' + (isError ? ' error' : '');
+    }
+
+    function setLoading(active) {
+      spinner.style.display = active ? 'block' : 'none';
+      placeholderText.style.display = active ? 'none' : 'block';
+    }
+
+    function showQR(src) {
+      qrPlaceholder.style.display = 'none';
+      successOverlay.style.display = 'none';
+      qrImg.style.display = 'block';
+      qrImg.src = src;
+    }
+
+    function showSuccess() {
+      qrImg.style.display = 'none';
+      qrPlaceholder.style.display = 'none';
+      successOverlay.style.display = 'flex';
+    }
+
+    function resetQR() {
+      qrImg.style.display = 'none';
+      qrImg.src = '';
+      successOverlay.style.display = 'none';
+      qrPlaceholder.style.display = 'flex';
+      setLoading(false);
+    }
+
+    function setInputsDisabled(v) {
+      sessionInput.disabled = v;
+      emailInput.disabled   = v;
+      connectBtn.disabled   = v;
+    }
+
+    function wsUrl() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${proto}//${location.host}`;
+    }
+
+    async function connect() {
+      const session = sessionInput.value.trim();
+      const email   = emailInput.value.trim();
+
+      if (!session) { setStatus('gray', 'Aguardando', 'Informe o número / nome da sessão.', true); return; }
+      if (!email)   { setStatus('gray', 'Aguardando', 'Informe o e-mail.', true); return; }
+
+      if (socket)        { socket.close(); socket = null; }
+      if (reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
+
+      currentSession = session;
+      sessionStarted = false;
+      setInputsDisabled(true);
+      resetQR();
+      setLoading(true);
+      setStatus('yellow', 'Conectando...', 'Abrindo conexão com o servidor...');
+
+      // Abre WebSocket antes do POST para já estar ouvindo o broadcast do QR
+      openSocket();
+
+      // Chama o endpoint de login
+      try {
+        const res  = await fetch('/auth/login', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ sessionName: session, email })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          const msg = data.error || data.message || `Erro ${res.status}`;
+          setStatus('red', 'Erro', msg, true);
+          setInputsDisabled(false);
+          setLoading(false);
+          currentSession = '';
+          if (socket) { socket.close(); socket = null; }
+          return;
         }
 
-        connectWebSocket();
-    </script>
+        sessionStarted = true;
+
+        // Exibe QR da resposta HTTP caso o WS ainda não tenha recebido
+        if (data.qrCodeFile && qrImg.style.display !== 'block') {
+          showQR(data.qrCodeFile);
+          setStatus('yellow', 'QR recebido', 'Abra o WhatsApp → Aparelhos conectados → Conectar aparelho');
+        }
+
+      } catch (err) {
+        setStatus('red', 'Erro de rede', 'Não foi possível alcançar o servidor.', true);
+        setInputsDisabled(false);
+        setLoading(false);
+        currentSession = '';
+        if (socket) { socket.close(); socket = null; }
+      }
+    }
+
+    function openSocket() {
+      socket = new WebSocket(wsUrl());
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ type: 'requestQR', sessionName: currentSession }));
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'qr' && data.sessionName === currentSession) {
+            showQR(data.qrPath);
+            setLoading(false);
+            setStatus('yellow', 'QR recebido', 'Abra o WhatsApp → Aparelhos conectados → Conectar aparelho');
+          }
+
+          if (data.type === 'authenticated' && data.sessionName === currentSession) {
+            showSuccess();
+            setStatus('green', 'Autenticado', 'Sessão conectada com sucesso.');
+            setInputsDisabled(false);
+            currentSession = '';
+            if (socket) { socket.close(); socket = null; }
+          }
+
+          if (data.type === 'error' && data.sessionName === currentSession) {
+            setStatus('red', 'Erro', data.error || 'Erro desconhecido.', true);
+            if (data.error === 'Auto Close Called') {
+              resetQR();
+              setInputsDisabled(false);
+              currentSession = '';
+            }
+          }
+        } catch (e) {
+          console.error('WS parse error:', e);
+        }
+      };
+
+      socket.onerror = () => {
+        setStatus('red', 'Erro WS', 'Falha na conexão WebSocket.');
+      };
+
+      socket.onclose = () => {
+        // Só tenta reconectar enquanto a sessão estiver ativa (aguardando QR)
+        if (currentSession && sessionStarted) {
+          reconnectTimer = setTimeout(() => {
+            if (currentSession) openSocket();
+          }, 4000);
+        }
+      };
+    }
+  </script>
 </body>
 </html>

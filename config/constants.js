@@ -11,6 +11,7 @@ export const TOKEN_DIR = process.env.NODE_ENV === 'production'
 
 export const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
 export const QR_CODES_DIR     = path.join(__dirname, '..', 'public', 'qrcodes');
+export const TEMP_DIR         = path.join(__dirname, '..', 'temp');
 export const AUDIO_DIR        = path.join(__dirname, '..', 'audios');
 
 export const DDI_TO_TIMEZONE = {

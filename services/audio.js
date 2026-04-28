@@ -40,6 +40,12 @@ const __dirname  = path.dirname(__filename);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const WHISPER_MODEL  = process.env.WHISPER_MODEL || 'small';
 
+// Controla para onde a transcrição é enviada:
+//   'self'   → envia para o próprio número da sessão (myNumber) — padrão
+//   'sender' → envia de volta para quem enviou o áudio (comportamento anterior)
+// Futuramente: 'from_message' → extrai o número de dentro do texto da mensagem
+const TRANSCRIPTION_DESTINATION = process.env.TRANSCRIPTION_DESTINATION || 'self';
+
 export async function processAudio(sessionName, message) {
   const session = SESSIONS.get(sessionName);
   if (!session) return;
@@ -54,66 +60,70 @@ export async function processAudio(sessionName, message) {
   const sessionSafe  = sessionName.replace(/\W/g, '');
   const inputPath    = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}.ogg`);
   const denoisedPath = path.join(AUDIO_DIR, `${sessionSafe}_${message.id}_clean.ogg`);
-  let buffer = await client.decryptFile(message);
-
-  await new Promise((resolve, reject) => {
-    const stream = fs.createWriteStream(inputPath);
-    stream.write(buffer, err => err ? reject(err) : resolve());
-    stream.end();
-  });
-  buffer = null;
 
   try {
+    let buffer = await client.decryptFile(message);
     await new Promise((resolve, reject) => {
-      const proc = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
-      proc.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg code ${code}`)));
-      proc.on('error', reject);
+      const stream = fs.createWriteStream(inputPath);
+      stream.write(buffer, err => err ? reject(err) : resolve());
+      stream.end();
     });
-  } catch {
-    console.warn('FFmpeg falhou, usando arquivo original.');
-    fs.copyFileSync(inputPath, denoisedPath);
-  }
+    buffer = null;
 
-  const duration = await getAudioDuration(denoisedPath);
-  console.log(`⏱️  Duração: ${parseFloat(duration.toFixed(2))}s`);
-
-  let transcript = '';
-  try {
-    console.log('🎙️  Transcrevendo com Whisper local...');
-    transcript = await transcreverComWhisperLocal(denoisedPath);
-    console.log('✅ Whisper local concluído.');
-  } catch (localErr) {
-    console.warn('⚠️ Whisper local falhou, usando API OpenAI:', localErr.message);
     try {
-      const formData = new FormData();
-      formData.append('file', fs.createReadStream(denoisedPath));
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'pt');
-      const resp = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
-        headers: { ...formData.getHeaders(), Authorization: `Bearer ${OPENAI_API_KEY}` },
-        timeout: 30000
+      await new Promise((resolve, reject) => {
+        const proc = spawn('ffmpeg', ['-i', inputPath, '-af', 'afftdn', '-y', denoisedPath]);
+        proc.on('close', code => code === 0 ? resolve() : reject(new Error(`FFmpeg code ${code}`)));
+        proc.on('error', reject);
       });
-      transcript = resp.data.text?.trim() || '';
-    } catch (apiErr) {
-      console.error('Falha na transcrição (API OpenAI):', apiErr.message);
+    } catch {
+      console.warn('FFmpeg falhou, usando arquivo original.');
+      fs.copyFileSync(inputPath, denoisedPath);
     }
-  }
 
-  if (!transcript) {
-    await client.sendText(message.from, 'Não consegui transcrever o áudio.', { quotedMsg: message.id });
-    return;
-  }
+    const duration = await getAudioDuration(denoisedPath);
+    console.log(`⏱️  Duração: ${parseFloat(duration.toFixed(2))}s`);
 
-  await client.sendText(message.from, transcript, { quotedMsg: message.id });
-  console.log(`✅ Transcrição enviada para ${senderName}`);
+    let transcript = '';
+    try {
+      console.log('🎙️  Transcrevendo com Whisper local...');
+      transcript = await transcreverComWhisperLocal(denoisedPath);
+      console.log('✅ Whisper local concluído.');
+    } catch (localErr) {
+      console.warn('⚠️ Whisper local falhou, usando API OpenAI:', localErr.message);
+      try {
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(denoisedPath));
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'pt');
+        const resp = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+          headers: { ...formData.getHeaders(), Authorization: `Bearer ${OPENAI_API_KEY}` },
+          timeout: 30000
+        });
+        transcript = resp.data.text?.trim() || '';
+      } catch (apiErr) {
+        console.error('Falha na transcrição (API OpenAI):', apiErr.message);
+      }
+    }
 
-  for (const p of [inputPath, denoisedPath]) {
-    try { if (fs.existsSync(p)) await fs.promises.unlink(p); } catch {}
-  }
+    const transcriptTarget = TRANSCRIPTION_DESTINATION === 'self' ? myNumber : message.from;
 
-  try {
-    await saveSessionLog({ email, sessaoNumero: sessionName, whatsappNumero: message.from });
-  } catch (err) {
-    console.error('Erro ao gravar log de sessão:', err.message);
+    if (!transcript) {
+      await client.sendText(transcriptTarget, 'Não consegui transcrever o áudio.', { quotedMsg: message.id });
+      return;
+    }
+
+    await client.sendText(transcriptTarget, transcript, { quotedMsg: message.id });
+    console.log(`✅ Transcrição enviada para ${TRANSCRIPTION_DESTINATION === 'self' ? 'si mesmo (myNumber)' : senderName}`);
+
+    try {
+      await saveSessionLog({ email, sessaoNumero: sessionName, whatsappNumero: message.from });
+    } catch (err) {
+      console.error('Erro ao gravar log de sessão:', err.message);
+    }
+  } finally {
+    for (const p of [inputPath, denoisedPath]) {
+      try { if (fs.existsSync(p)) await fs.promises.unlink(p); } catch {}
+    }
   }
 }

@@ -7,7 +7,7 @@ import { broadcastSessionAuthenticated } from '../ws/websocket.js';
 import { criarOuIgnorarSessao, atualizarStatusSessao } from '../db/sessions.js';
 import { criarOuIgnorarUsuario } from '../db/usuarios.js';
 import { enqueueProcessing } from '../utils/helpers.js';
-import { myTokenStore, TOKEN_DIR, QR_CODES_DIR, PUPPETEER_ARGS } from '../config/constants.js';
+import { myTokenStore, TOKEN_DIR, TEMP_DIR, PUPPETEER_ARGS } from '../config/constants.js';
 import pool from '../db/index.js';
 
 export async function cleanupSession(sessionName) {
@@ -24,8 +24,12 @@ export async function cleanupSession(sessionName) {
     SESSIONS.delete(sessionName);
     console.log(`🔴 Sessão ${sessionName} encerrada.`);
   }
-  const qrPath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
-  if (fs.existsSync(qrPath)) fs.unlinkSync(qrPath);
+  try {
+    const prefix = `qrcode_${sessionName}_`;
+    fs.readdirSync(TEMP_DIR)
+      .filter(f => f.startsWith(prefix))
+      .forEach(f => { try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch {} });
+  } catch {}
   const sessionPath = path.join(TOKEN_DIR, sessionName);
   setTimeout(() => {
     if (fs.existsSync(sessionPath)) {

@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import ffmpeg from 'fluent-ffmpeg';
-import { DDI_TO_TIMEZONE, QR_CODES_DIR } from '../config/constants.js';
+import { DDI_TO_TIMEZONE, TEMP_DIR } from '../config/constants.js';
 import { processingQueues } from '../state.js';
 
 export function extractPhoneNumberInfo(sender) {
@@ -34,7 +34,17 @@ export function enqueueProcessing(sessionName, fn) {
 export function saveQRCode(base64Qr, sessionName) {
   const matches = base64Qr.match(/^data:image\/png;base64,(.+)$/);
   if (!matches) throw new Error('QR Code inválido');
-  const qrFilePath = path.join(QR_CODES_DIR, `qrcode_${sessionName}.png`);
+
+  // Remove arquivos QR anteriores desta sessão para não acumular
+  try {
+    const prefix = `qrcode_${sessionName}_`;
+    fs.readdirSync(TEMP_DIR)
+      .filter(f => f.startsWith(prefix))
+      .forEach(f => { try { fs.unlinkSync(path.join(TEMP_DIR, f)); } catch {} });
+  } catch {}
+
+  const filename   = `qrcode_${sessionName}_${Date.now()}.png`;
+  const qrFilePath = path.join(TEMP_DIR, filename);
   return new Promise((resolve, reject) => {
     fs.writeFile(qrFilePath, Buffer.from(matches[1], 'base64'), err =>
       err ? reject(err) : resolve(qrFilePath)

@@ -37,10 +37,11 @@ router.post('/auth/login', async (req, res) => {
       deviceName: 'The Broker VIP',
       catchQR: async base64Qr => {
         const qrFilePath = await saveQRCode(base64Qr, sessionName);
-        const base       = process.env.BASE_URL || 'https://verbai.com.br:8443';
-        const qrCodeURL  = `${base}/qrcodes/${path.basename(qrFilePath)}`;
+        const basename   = path.basename(qrFilePath);
+        const base       = process.env.BASE_URL || 'https://zapbot.botcomander.com.br';
+        const qrCodeURL  = `${base}/temp/${basename}`;
         if (!responseSent) { responseSent = true; res.json({ qrCodeFile: qrCodeURL }); }
-        broadcastQR(sessionName);
+        broadcastQR(sessionName, `/temp/${basename}`);
       },
       statusFind: status => {
         console.log(`[statusFind:${sessionName}]`, status);

@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import helmet from 'helmet';
 import { fileURLToPath } from 'url';
-import { TOKEN_DIR, SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR } from './config/constants.js';
+import { TOKEN_DIR, SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR, TEMP_DIR } from './config/constants.js';
 import { initWss, setupWebSocket } from './ws/websocket.js';
 import { restoreSessions } from './services/session.js';
 import authRouter from './routes/auth.js';
@@ -21,7 +21,7 @@ const __dirname  = path.dirname(__filename);
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-[SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR].forEach(dir => {
+[SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR, TOKEN_DIR, TEMP_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -47,26 +47,43 @@ server.on('clientError', (err, socket) => {
   socket.destroy();
 });
 
-app.use(cors());
+const PROD_ORIGINS = [
+  'https://thebroker.vip',
+  'https://zapbot.botcomander.com.br',
+  ...(process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : [])
+];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // sem origin = curl / same-origin / requisições internas → ok
+    if (!origin) return cb(null, true);
+    // qualquer localhost em dev → ok
+    if (!isProduction && /^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+    // origens de produção → ok
+    if (PROD_ORIGINS.includes(origin)) return cb(null, true);
+    cb(null, false);
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
 app.use(helmet({
-  contentSecurityPolicy: {
+  contentSecurityPolicy: isProduction ? {
     directives: {
-      defaultSrc: ["'self'", 'https://verbai.com.br:8443'],
-      imgSrc:     ["'self'", 'data:', 'https://verbai.com.br:8443'],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://verbai.com.br:8443']
+      defaultSrc: ["'self'", 'https://zapbot.botcomander.com.br'],
+      imgSrc:     ["'self'", 'data:', 'https://zapbot.botcomander.com.br'],
+      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://zapbot.botcomander.com.br'],
+      connectSrc: ["'self'", 'wss://zapbot.botcomander.com.br']
     }
-  }
+  } : false
 }));
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || 'https://thebroker.vip');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
 app.use('/qrcodes', express.static(QR_CODES_DIR));
+app.use('/temp', express.static(TEMP_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 app.use(authRouter);
 app.use(devicesRouter);
