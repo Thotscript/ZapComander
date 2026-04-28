@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 export const TOKEN_DIR = process.env.NODE_ENV === 'production'
-  ? '/root/wpptalk_server/tokens'
+  ? '/home/jurandir/ZapComander/tokens'
   : path.join(__dirname, '..', 'tokens');
 
 export const SESSION_LOGS_DIR = path.join(TOKEN_DIR, 'sessions_logs');
