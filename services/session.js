@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import wppconnect from '@wppconnect-team/wppconnect';
-import { SESSIONS, RESTARTING_SESSIONS } from '../state.js';
+import { SESSIONS, RESTARTING_SESSIONS, processingQueues } from '../state.js';
 import { processAudio } from './audio.js';
 import { broadcastSessionAuthenticated } from '../ws/websocket.js';
 import { criarOuIgnorarSessao, atualizarStatusSessao } from '../db/sessions.js';
@@ -22,6 +22,7 @@ export async function cleanupSession(sessionName) {
       console.warn(`Erro ao fechar sessão ${sessionName}:`, err.message);
     }
     SESSIONS.delete(sessionName);
+    processingQueues.delete(sessionName);
     console.log(`🔴 Sessão ${sessionName} encerrada.`);
   }
   try {
