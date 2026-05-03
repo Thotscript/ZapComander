@@ -2,17 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import OpenAI from 'openai';
 import { SESSIONS } from '../state.js';
 
 const __filename  = fileURLToPath(import.meta.url);
 const __dirname   = path.dirname(__filename);
 export const AGENTS_FILE = path.join(__dirname, '..', 'data', 'agents.json');
-
-const openai = new OpenAI({
-  apiKey:  'ollama',
-  baseURL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434/v1',
-});
 
 export function loadAgents() {
   try { return JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf8')); }
@@ -82,17 +76,22 @@ export async function runAgent(sessionName, from, messageText) {
       JSON.stringify(payload, null, 2),
     ].join('\n');
 
-    const completion = await openai.chat.completions.create({
-      model:       process.env.OLLAMA_MODEL || 'qwen2.5:1.5b',
-      messages:    [
+    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const model   = process.env.OLLAMA_MODEL    || 'qwen:0.5b';
+
+    console.log(`🧠 Chamando Ollama | modelo: ${model} | ${baseUrl}`);
+
+    const llmRes = await axios.post(`${baseUrl}/api/chat`, {
+      model,
+      messages: [
         { role: 'system', content: systemContent },
         { role: 'user',   content: messageText   },
       ],
-      max_tokens:  900,
-      temperature: 0.7,
-    });
+      stream:  false,
+      options: { temperature: 0.7, num_predict: 600 },
+    }, { timeout: 120_000 });
 
-    const reply = completion.choices[0].message.content.trim();
+    const reply = llmRes.data?.message?.content?.trim();
     await session.client.sendText(from, reply);
     console.log(`✅ Agente "${agent.name}" respondeu para ${from}`);
     return true;
