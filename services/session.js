@@ -7,6 +7,7 @@ import { broadcastSessionAuthenticated } from '../ws/websocket.js';
 import { criarOuIgnorarSessao, atualizarStatusSessao } from '../db/sessions.js';
 import { criarOuIgnorarUsuario } from '../db/usuarios.js';
 import { enqueueProcessing } from '../utils/helpers.js';
+import { runAgent } from './agentProcessor.js';
 import { myTokenStore, TOKEN_DIR, TEMP_DIR, PUPPETEER_ARGS } from '../config/constants.js';
 import pool from '../db/index.js';
 
@@ -75,6 +76,11 @@ export function attachMessageListener(client, sessionName) {
 
       if (message.type === 'ptt' || message.type === 'audio') {
         enqueueProcessing(sessionName, () => processAudio(sessionName, message));
+      }
+
+      if (message.type === 'chat') {
+        const text = (message.body || '').trim();
+        if (text) enqueueProcessing(sessionName, () => runAgent(sessionName, message.from, text));
       }
     } catch (err) {
       console.error(`Erro ao processar mensagem na sessão ${sessionName}:`, err);
