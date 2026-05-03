@@ -34,19 +34,19 @@ export function writeAgents(agents) {
 ───────────────────────────────────────────────────────────── */
 const activeConversations = new Map();
 
-// Limpeza periódica de conversas expiradas (a cada 5 min)
+// Limpeza periódica de conversas expiradas (verifica a cada 1 min)
 setInterval(() => {
   const now    = Date.now();
   const agents = loadAgents();
   for (const [key, conv] of activeConversations.entries()) {
-    const agent       = agents.find(a => a.id === conv.agentId);
-    const timeoutMs   = (parseInt(agent?.sessionTimeout) || 15) * 60_000;
+    const agent     = agents.find(a => a.id === conv.agentId);
+    const timeoutMs = (parseInt(agent?.sessionTimeout) || 5) * 60_000;
     if (now - conv.lastActivity > timeoutMs) {
       activeConversations.delete(key);
       console.log(`⏰ Conversa expirada por inatividade: ${key}`);
     }
   }
-}, 5 * 60_000);
+}, 60_000);
 
 function matchesKeywords(keywords, text) {
   const lower = text.toLowerCase();
@@ -159,17 +159,24 @@ export async function runAgent(sessionName, from, messageText) {
 
     const payload = extractByPath(endpointResponse, agent.responsePath);
 
-    // ── Monta prompt e chama Ollama ───────────────────────
-    // System: instruções do agente + regra de grounding
+    // ── Monta prompt e chama OpenAI ──────────────────────
+    const endKwList = (agent.endKeywords || '')
+      .split(',').map(k => k.trim()).filter(Boolean);
+
+    const quitInstruction = endKwList.length
+      ? `Quando o usuário demonstrar satisfação, agradecimento ou usar qualquer uma destas palavras de encerramento: ${endKwList.join(', ')} — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`
+      : `Quando perceber que a conversa chegou ao fim (agradecimento, despedida, satisfação) — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`;
+
     const systemContent = [
       agent.prompt.trim(),
       '',
       'REGRA: Responda EXCLUSIVAMENTE com base nos dados JSON fornecidos abaixo.',
       'Não invente, não acrescente informações externas, não cite fontes que não estejam nos dados.',
       'Se a informação não estiver nos dados, diga apenas que não possui essa informação.',
+      '',
+      quitInstruction,
     ].join('\n');
 
-    // User: dados + pergunta — modelos pequenos seguem o turno user com mais fidelidade
     const userContent = [
       'Dados disponíveis:',
       '```json',
@@ -192,11 +199,21 @@ export async function runAgent(sessionName, from, messageText) {
       max_tokens:  600,
     });
 
-    const reply = completion.choices[0].message.content.trim();
-    if (!reply) throw new Error('Resposta vazia do LLM');
+    const rawReply = completion.choices[0].message.content.trim();
+    if (!rawReply) throw new Error('Resposta vazia do LLM');
+
+    // Detecta \quit interno — strip antes de enviar ao usuário
+    const shouldQuit = /\\quit\s*$/im.test(rawReply);
+    const reply      = rawReply.replace(/\n?\\quit\s*$/im, '').trim();
 
     await session.client.sendText(from, reply);
     console.log(`✅ Agente "${agent.name}" respondeu para ${from}`);
+
+    if (shouldQuit) {
+      // LLM sinalizou fim — encerra sem enviar mensagem extra
+      activeConversations.delete(convKey);
+      console.log(`🔚 [${sessionName}] Conversa encerrada via \\quit do LLM`);
+    }
     return true;
   } catch (err) {
     console.error(`❌ Erro no agente "${agent.name}":`, err.message);

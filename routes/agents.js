@@ -4,6 +4,15 @@ import { loadAgents, writeAgents, runAgent } from '../services/agentProcessor.js
 
 const router = Router();
 
+const RESERVED_KEYWORDS = ['\\quit', '\\q', '\\exit', '\\stop', '\\end', '/quit', '/exit', '/stop'];
+
+function sanitizeEndKeywords(raw) {
+  return (raw || '').split(',')
+    .map(k => k.trim())
+    .filter(k => k && !RESERVED_KEYWORDS.includes(k.toLowerCase()))
+    .join(', ');
+}
+
 /* ── seed test agent if store is empty ── */
 const TEST_AGENT = {
   id:              'test_imoveis_001',
@@ -112,6 +121,7 @@ router.post('/api/agents', (req, res) => {
   const agent  = { ...req.body, updatedAt: now };
   if (!agent.id)        agent.id        = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   if (!agent.createdAt) agent.createdAt = now;
+  agent.endKeywords = sanitizeEndKeywords(agent.endKeywords);
   agents.push(agent);
   writeAgents(agents);
   res.status(201).json(agent);
@@ -121,7 +131,9 @@ router.put('/api/agents/:id', (req, res) => {
   const agents = loadAgents();
   const idx    = agents.findIndex(a => a.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Agente não encontrado' });
-  agents[idx] = { ...agents[idx], ...req.body, id: req.params.id, updatedAt: new Date().toISOString() };
+  const updated = { ...agents[idx], ...req.body, id: req.params.id, updatedAt: new Date().toISOString() };
+  updated.endKeywords = sanitizeEndKeywords(updated.endKeywords);
+  agents[idx] = updated;
   writeAgents(agents);
   res.json(agents[idx]);
 });

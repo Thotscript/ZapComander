@@ -1033,6 +1033,14 @@
     }
 
     /* ── SAVE ── */
+    const RESERVED_KW = ['\\quit', '\\q', '\\exit', '\\stop', '\\end', '/quit', '/exit', '/stop'];
+    function sanitizeEndKeywords(val) {
+      const cleaned = val.split(',').map(k => k.trim()).filter(k => k && !RESERVED_KW.includes(k.toLowerCase()));
+      const removed = val.split(',').map(k => k.trim()).filter(k => k && RESERVED_KW.includes(k.toLowerCase()));
+      if (removed.length) alert(`As seguintes palavras são reservadas e foram removidas: ${removed.join(', ')}`);
+      return cleaned.join(', ');
+    }
+
     async function saveAgent() {
       const name     = document.getElementById('f-name').value.trim();
       const endpoint = document.getElementById('f-endpoint').value.trim();
@@ -1052,7 +1060,7 @@
         method:          document.getElementById('f-method').value,
         requestTemplate: document.getElementById('f-request').value.trim(),
         responsePath:    document.getElementById('f-path').value.trim(),
-        endKeywords:     document.getElementById('f-endKeywords').value.trim(),
+        endKeywords:     sanitizeEndKeywords(document.getElementById('f-endKeywords').value.trim()),
         maxTurns:        parseInt(document.getElementById('f-maxTurns').value) || 0,
         endMessage:      document.getElementById('f-endMessage').value.trim(),
         sessionTimeout:  parseInt(document.getElementById('f-sessionTimeout').value) || 15,
