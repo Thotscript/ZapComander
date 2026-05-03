@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Broker VIP — Autenticação</title>
+  <title>The Broker VIP — Painel</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -13,11 +13,125 @@
       color: #e8e8ea;
       min-height: 100vh;
       display: flex;
+      flex-direction: row;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 220px;
+      min-height: 100vh;
+      background: #111115;
+      border-right: 1px solid #1e1e26;
+      display: flex;
+      flex-direction: column;
+      transition: width .22s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .sidebar.collapsed { width: 56px; }
+
+    .sidebar-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 12px;
+      border-bottom: 1px solid #1e1e26;
+      min-height: 54px;
+      gap: 8px;
+    }
+
+    .sidebar-logo {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #b0a06e;
+      white-space: nowrap;
+      overflow: hidden;
+      opacity: 1;
+      transition: opacity .15s, width .22s;
+    }
+    .sidebar.collapsed .sidebar-logo { opacity: 0; width: 0; }
+
+    .sidebar-toggle {
+      background: none;
+      border: 1px solid #2a2a30;
+      border-radius: 7px;
+      width: 30px;
+      height: 30px;
+      min-width: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: #707080;
+      transition: color .15s, background .15s;
+    }
+    .sidebar-toggle:hover { color: #e8e8ea; background: #1e1e24; }
+
+    .sidebar-nav {
+      padding: 10px 7px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 9px;
+      border-radius: 8px;
+      border: none;
+      background: none;
+      color: #707080;
+      font-size: 0.86rem;
+      font-weight: 500;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: color .15s, background .15s;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .nav-item:hover { color: #e8e8ea; background: #1a1a22; }
+    .nav-item.active {
+      color: #e8e8ea;
+      background: #1e1e26;
+      border-left: 2px solid #b0a06e;
+      padding-left: 7px;
+    }
+    .nav-item svg { flex-shrink: 0; }
+
+    .nav-label {
+      overflow: hidden;
+      white-space: nowrap;
+      opacity: 1;
+      transition: opacity .12s;
+    }
+    .sidebar.collapsed .nav-label { opacity: 0; pointer-events: none; }
+
+    /* ── MAIN ── */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 100vh;
+    }
+
+    .content-section { display: none; }
+    .content-section.active { display: flex; }
+
+    /* ── SESSIONS SECTION ── */
+    #section-sessions {
+      min-height: 100vh;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 24px;
-      padding: 24px;
+      padding: 40px 24px;
     }
 
     .logo {
@@ -41,25 +155,10 @@
       gap: 20px;
     }
 
-    .card h1 {
-      font-size: 1.15rem;
-      font-weight: 600;
-      color: #e8e8ea;
-      text-align: center;
-    }
+    .card h1 { font-size: 1.15rem; font-weight: 600; color: #e8e8ea; text-align: center; }
 
-    .fields {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-      gap: 10px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
+    .fields { display: flex; flex-direction: column; width: 100%; gap: 10px; }
+    .field  { display: flex; flex-direction: column; gap: 5px; }
 
     .field label {
       font-size: 0.75rem;
@@ -68,7 +167,6 @@
       letter-spacing: 0.04em;
       text-transform: uppercase;
     }
-
     .field input {
       background: #0d0d0f;
       border: 1px solid #2a2a30;
@@ -89,20 +187,19 @@
       color: #0d0d0f;
       border: none;
       border-radius: 8px;
-      padding: 11px 0;
+      padding: 11px 20px;
       font-size: 0.9rem;
       font-weight: 700;
       cursor: pointer;
-      width: 100%;
       letter-spacing: 0.03em;
       transition: opacity .15s;
     }
+    .btn-full { width: 100%; }
     .btn:hover { opacity: 0.85; }
     .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .qr-wrapper {
-      width: 252px;
-      height: 252px;
+      width: 252px; height: 252px;
       background: #fff;
       border-radius: 0;
       display: flex;
@@ -111,13 +208,7 @@
       overflow: visible;
       position: relative;
     }
-
-    .qr-wrapper img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: none;
-    }
+    .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; display: none; }
 
     .qr-placeholder {
       display: flex;
@@ -129,7 +220,6 @@
       text-align: center;
       padding: 16px;
     }
-
     .qr-placeholder svg { opacity: 0.2; }
 
     .status-badge {
@@ -143,29 +233,14 @@
       border: 1px solid #2a2a30;
     }
 
-    .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .dot.gray   { background: #555; }
     .dot.yellow { background: #f0c040; animation: pulse 1.4s ease-in-out infinite; }
     .dot.green  { background: #40c070; }
     .dot.red    { background: #e04040; animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.35; }
-    }
-
-    .hint {
-      font-size: 0.76rem;
-      color: #555;
-      text-align: center;
-      line-height: 1.5;
-      min-height: 1.1em;
-    }
+    .hint { font-size: 0.76rem; color: #555; text-align: center; line-height: 1.5; min-height: 1.1em; }
     .hint.error { color: #e06060; }
 
     .success-overlay {
@@ -185,8 +260,7 @@
     .success-overlay svg { color: #40c070; }
 
     .spinner {
-      width: 28px;
-      height: 28px;
+      width: 28px; height: 28px;
       border: 3px solid #b0a06e44;
       border-top-color: #b0a06e;
       border-radius: 50%;
@@ -194,107 +268,738 @@
       display: none;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── AGENTS SECTION ── */
+    #section-agents {
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .agents-container {
+      padding: 36px 40px;
+      max-width: 980px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .agents-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .agents-header h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #f0f0f2;
+      letter-spacing: -0.02em;
+    }
+    .agents-header p { font-size: 0.84rem; color: #606070; margin-top: 4px; }
+
+    /* Agent grid */
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 14px;
+    }
+
+    .agent-card {
+      background: #18181c;
+      border: 1px solid #2a2a30;
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: border-color .2s;
+    }
+    .agent-card:hover { border-color: #3a3a44; }
+
+    .agent-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .agent-name { font-size: 0.93rem; font-weight: 700; color: #e8e8ea; }
+    .agent-desc { font-size: 0.78rem; color: #606070; line-height: 1.5; margin-top: 2px; }
+
+    .agent-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 20px;
+      flex-shrink: 0;
+    }
+    .agent-status.active   { background: rgba(64,192,112,.12); color: #40c070; border: 1px solid rgba(64,192,112,.2); }
+    .agent-status.inactive { background: rgba(80,80,90,.1);    color: #606070; border: 1px solid #2a2a30; }
+
+    .agent-endpoint {
+      font-size: 0.72rem;
+      color: #505060;
+      font-family: 'SF Mono','Fira Code',monospace;
+      background: #0d0d14;
+      border: 1px solid #1a1a24;
+      border-radius: 6px;
+      padding: 5px 9px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .agent-keywords { display: flex; flex-wrap: wrap; gap: 5px; }
+    .keyword-tag {
+      font-size: 0.68rem;
+      background: rgba(176,160,110,.1);
+      border: 1px solid rgba(176,160,110,.2);
+      color: #b0a06e;
+      border-radius: 5px;
+      padding: 2px 7px;
+    }
+
+    .agent-actions {
+      display: flex;
+      gap: 7px;
+      padding-top: 4px;
+      border-top: 1px solid #1e1e26;
+    }
+
+    .btn-ghost {
+      background: none;
+      border: 1px solid #2a2a30;
+      border-radius: 7px;
+      padding: 7px 12px;
+      font-size: 0.78rem;
+      color: #707080;
+      cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+      white-space: nowrap;
+    }
+    .btn-ghost:hover         { color: #e8e8ea; border-color: #3a3a44; background: #1a1a22; }
+    .btn-ghost.danger:hover  { color: #e06060; border-color: rgba(224,96,96,.3); background: rgba(224,96,96,.05); }
+    .btn-ghost.flex-grow { flex: 1; }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: #505060;
+    }
+    .empty-state svg { margin-bottom: 16px; opacity: 0.25; }
+    .empty-state h3 { font-size: 1rem; font-weight: 600; color: #606070; margin-bottom: 8px; }
+    .empty-state p  { font-size: 0.84rem; line-height: 1.65; }
+
+    /* ── AGENT FORM ── */
+    .form-back-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+    .form-back-bar h1 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #f0f0f2;
+      letter-spacing: -0.02em;
+    }
+
+    .form-panel {
+      background: #18181c;
+      border: 1px solid #2a2a30;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .form-body {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .form-field { display: flex; flex-direction: column; gap: 7px; }
+    .form-field.full { grid-column: 1 / -1; }
+
+    .form-field > label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #808090;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .form-field > label span {
+      color: #505060;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.7rem;
+      margin-left: 5px;
+    }
+
+    .form-input {
+      background: #0d0d14;
+      border: 1px solid #1e1e28;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.87rem;
+      color: #e8e8ea;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      width: 100%;
+      font-family: inherit;
+    }
+    .form-input:focus { border-color: #b0a06e; box-shadow: 0 0 0 3px rgba(176,160,110,.08); }
+    .form-input::placeholder { color: #2e2e3e; }
+    .form-input.mono { font-family: 'SF Mono','Fira Code','Consolas',monospace; font-size: 0.81rem; }
+    textarea.form-input { resize: vertical; min-height: 110px; line-height: 1.6; }
+    textarea.form-input.tall { min-height: 160px; }
+    select.form-input { cursor: pointer; }
+
+    .form-hint {
+      font-size: 0.71rem;
+      color: #4a4a5a;
+      line-height: 1.5;
+    }
+    .form-hint code {
+      color: #b0a06e;
+      background: #1a1a20;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: 'SF Mono','Fira Code','Consolas',monospace;
+    }
+
+    .section-divider {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #404050;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1a1a22;
+      margin-bottom: 14px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0 0;
+      border-top: 1px solid #1e1e26;
+    }
+    .toggle-info { display: flex; flex-direction: column; gap: 2px; }
+    .toggle-label { font-size: 0.87rem; font-weight: 600; color: #e8e8ea; }
+    .toggle-desc  { font-size: 0.76rem; color: #606070; }
+
+    .toggle-switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: #2a2a36;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .toggle-switch input:checked + .toggle-track { background: #40c070; }
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: white;
+      top: 3px; left: 3px;
+      transition: transform .2s;
+    }
+    .toggle-switch input:checked + .toggle-track::after { transform: translateX(18px); }
+
+    .form-footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 18px 28px;
+      border-top: 1px solid #1e1e26;
+      background: #0f0f14;
+    }
+
+    .btn-save {
+      background: #b0a06e;
+      color: #0d0d0f;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 26px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn-save:hover { opacity: 0.85; }
+
+    @media (max-width: 640px) {
+      .agents-container { padding: 24px 16px; }
+      .form-row { grid-template-columns: 1fr; }
+      .agents-header { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
 
-  <span class="logo">The Broker VIP</span>
-
-  <div class="card">
-    <h1>Autenticação WhatsApp</h1>
-
-    <div class="fields">
-      <div class="field">
-        <label for="sessionInput">Número / Sessão</label>
-        <input id="sessionInput" type="text" placeholder="5511999999999" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label for="emailInput">E-mail</label>
-        <input id="emailInput" type="email" placeholder="seu@email.com" autocomplete="off" />
-      </div>
-    </div>
-
-    <button class="btn" id="connectBtn">Iniciar Sessão</button>
-
-    <div class="qr-wrapper">
-      <div class="qr-placeholder" id="qrPlaceholder">
-        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
-          <rect x="3" y="3" width="7" height="7" rx="1"/>
-          <rect x="14" y="3" width="7" height="7" rx="1"/>
-          <rect x="3" y="14" width="7" height="7" rx="1"/>
-          <path d="M14 14h2v2h-2zM18 14h2v2h-2zM16 16h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/>
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <span class="sidebar-logo">The Broker VIP</span>
+      <button class="sidebar-toggle" id="sidebarToggle" title="Ocultar/mostrar menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
         </svg>
-        <div class="spinner" id="spinner"></div>
-        <span id="placeholderText">Preencha os campos<br>e clique em Iniciar</span>
-      </div>
-      <img id="qrImg" alt="QR Code WhatsApp" />
-      <div class="success-overlay" id="successOverlay">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-             stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-section="sessions">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.37 2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.96a16 16 0 0 0 6 6l.95-.95a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
         </svg>
-        Autenticado!
+        <span class="nav-label">Autenticar Sessões</span>
+      </button>
+
+      <button class="nav-item" data-section="agents">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="3"/>
+          <path d="M6.5 20a6 6 0 0 1 11 0"/>
+          <path d="M20 13a8 8 0 1 0-16 0"/>
+          <line x1="12" y1="13" x2="12" y2="16"/>
+        </svg>
+        <span class="nav-label">Configurar Agentes</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- SESSÕES -->
+    <section class="content-section active" id="section-sessions">
+      <span class="logo">The Broker VIP</span>
+
+      <div class="card">
+        <h1>Autenticação WhatsApp</h1>
+
+        <div class="fields">
+          <div class="field">
+            <label for="sessionInput">Número / Sessão</label>
+            <input id="sessionInput" type="text" placeholder="5511999999999" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="emailInput">E-mail</label>
+            <input id="emailInput" type="email" placeholder="seu@email.com" autocomplete="off" />
+          </div>
+        </div>
+
+        <button class="btn btn-full" id="connectBtn">Iniciar Sessão</button>
+
+        <div class="qr-wrapper">
+          <div class="qr-placeholder" id="qrPlaceholder">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+              <rect x="3" y="3" width="7" height="7" rx="1"/>
+              <rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/>
+              <path d="M14 14h2v2h-2zM18 14h2v2h-2zM16 16h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/>
+            </svg>
+            <div class="spinner" id="spinner"></div>
+            <span id="placeholderText">Preencha os campos<br>e clique em Iniciar</span>
+          </div>
+          <img id="qrImg" alt="QR Code WhatsApp" />
+          <div class="success-overlay" id="successOverlay">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Autenticado!
+          </div>
+        </div>
+
+        <div class="status-badge">
+          <span class="dot gray" id="dot"></span>
+          <span id="statusText">Aguardando</span>
+        </div>
+
+        <p class="hint" id="hint">Informe o número e o e-mail para iniciar.</p>
       </div>
-    </div>
+    </section>
 
-    <div class="status-badge">
-      <span class="dot gray" id="dot"></span>
-      <span id="statusText">Aguardando</span>
-    </div>
+    <!-- AGENTES -->
+    <section class="content-section" id="section-agents">
+      <div class="agents-container">
 
-    <p class="hint" id="hint">Informe o número e o e-mail para iniciar.</p>
-  </div>
+        <!-- LIST VIEW -->
+        <div id="agentsListView">
+          <div class="agents-header">
+            <div>
+              <h1>Configurar Agentes</h1>
+              <p>Crie agentes com prompts e endpoints configuráveis para automatizar respostas</p>
+            </div>
+            <button class="btn" id="newAgentBtn">+ Novo Agente</button>
+          </div>
+          <div id="agentsList"></div>
+        </div>
+
+        <!-- FORM VIEW -->
+        <div id="agentsFormView" style="display:none">
+          <div class="form-back-bar">
+            <button class="btn-ghost" id="backToListBtn">← Voltar</button>
+            <h1 id="formTitle">Novo Agente</h1>
+          </div>
+
+          <div class="form-panel">
+            <div class="form-body">
+
+              <!-- Identidade -->
+              <div class="form-row">
+                <div class="form-field">
+                  <label>Nome do Agente <span>* obrigatório</span></label>
+                  <input id="f-name" type="text" class="form-input" placeholder="ex: Agente Imobiliário" />
+                </div>
+                <div class="form-field">
+                  <label>Descrição</label>
+                  <input id="f-desc" type="text" class="form-input" placeholder="ex: Lista imóveis disponíveis" />
+                </div>
+              </div>
+
+              <div class="form-field full">
+                <label>Palavras-chave de Ativação <span>use * para ativar em todas as mensagens</span></label>
+                <input id="f-keywords" type="text" class="form-input" placeholder="casa, apartamento, imóvel, *" />
+                <p class="form-hint">Separadas por vírgula. O agente é acionado quando a mensagem contiver qualquer uma dessas palavras. Use <code>*</code> para responder a tudo.</p>
+              </div>
+
+              <!-- Endpoint -->
+              <div>
+                <div class="section-divider">Endpoint de Dados</div>
+
+                <div class="form-row">
+                  <div class="form-field">
+                    <label>URL do Endpoint <span>* obrigatório</span></label>
+                    <input id="f-endpoint" type="url" class="form-input" placeholder="https://api.exemplo.com/dados" />
+                  </div>
+                  <div class="form-field">
+                    <label>Método HTTP</label>
+                    <select id="f-method" class="form-input">
+                      <option value="GET">GET</option>
+                      <option value="POST" selected>POST</option>
+                      <option value="PUT">PUT</option>
+                      <option value="PATCH">PATCH</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-field full" style="margin-top:14px">
+                  <label>Template da Requisição (JSON) <span>opcional para GET</span></label>
+                  <textarea id="f-request" class="form-input mono" placeholder='{
+  "query": "{{message}}",
+  "session": "{{session}}",
+  "limit": 5
+}'></textarea>
+                  <p class="form-hint">
+                    Use <code>{{message}}</code> para inserir o texto da mensagem recebida e
+                    <code>{{session}}</code> para o número da sessão ativa.
+                  </p>
+                </div>
+
+                <div class="form-field full" style="margin-top:14px">
+                  <label>Caminho da Resposta <span>notação de ponto — deixe vazio para usar a resposta inteira</span></label>
+                  <input id="f-path" type="text" class="form-input mono" placeholder="ex: data.imoveis  ou  results.items" />
+                  <p class="form-hint">
+                    Se o endpoint retorna <code>{"data":{"imoveis":[...]}}</code>, insira <code>data.imoveis</code>.
+                    O valor extraído será passado como contexto ao prompt do agente.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Prompt -->
+              <div>
+                <div class="section-divider">Inteligência do Agente (Prompt)</div>
+
+                <div class="form-field full" style="margin-top:2px">
+                  <label>Prompt do Sistema <span>* obrigatório — instrui a IA como formatar a resposta</span></label>
+                  <textarea id="f-prompt" class="form-input tall" placeholder="Você é um assistente de uma imobiliária. Com base no JSON de imóveis disponíveis abaixo, responda de forma clara e amigável ao cliente no WhatsApp. Destaque até 3 opções mais relevantes, incluindo preço, localização e características principais. Seja conciso e use emojis adequados."></textarea>
+                  <p class="form-hint">
+                    O JSON retornado pelo endpoint é automaticamente anexado a este prompt antes do envio à IA.
+                    A IA usará os dados para gerar a resposta ao usuário no WhatsApp.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Toggle ativo -->
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <span class="toggle-label">Agente ativo</span>
+                  <span class="toggle-desc">Quando inativo, o agente não intercepta mensagens</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="f-active" checked />
+                  <span class="toggle-track"></span>
+                </label>
+              </div>
+
+            </div>
+
+            <div class="form-footer">
+              <button class="btn-ghost" id="cancelFormBtn">Cancelar</button>
+              <button class="btn-save" id="saveAgentBtn">Salvar Agente</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
 
   <script>
-    let socket        = null;
+    /* ── SIDEBAR ── */
+    const sidebar = document.getElementById('sidebar');
+    document.getElementById('sidebarToggle').addEventListener('click', () => {
+      sidebar.classList.toggle('collapsed');
+    });
+
+    /* ── NAVEGAÇÃO ── */
+    document.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+        document.getElementById('section-' + btn.dataset.section).classList.add('active');
+      });
+    });
+
+    /* ── AGENTS CRUD ── */
+    const AGENTS_KEY = 'zapbot_agents_v1';
+    let editingId = null;
+
+    function loadAgents() {
+      try { return JSON.parse(localStorage.getItem(AGENTS_KEY) || '[]'); }
+      catch { return []; }
+    }
+
+    function persistAgents(list) {
+      localStorage.setItem(AGENTS_KEY, JSON.stringify(list));
+    }
+
+    function genId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    function esc(s) {
+      return String(s || '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    /* ── RENDER LIST ── */
+    function renderList() {
+      const agents = loadAgents();
+      const el = document.getElementById('agentsList');
+
+      if (!agents.length) {
+        el.innerHTML = `
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+              <circle cx="12" cy="8" r="3"/><path d="M6.5 20a6 6 0 0 1 11 0"/>
+              <path d="M20 13a8 8 0 1 0-16 0"/><line x1="12" y1="13" x2="12" y2="16"/>
+            </svg>
+            <h3>Nenhum agente configurado</h3>
+            <p>Crie seu primeiro agente para automatizar respostas<br>usando IA e endpoints externos de dados.</p>
+          </div>`;
+        return;
+      }
+
+      el.innerHTML = `<div class="agents-grid">${agents.map(agentCard).join('')}</div>`;
+
+      el.querySelectorAll('[data-edit]').forEach(b =>
+        b.addEventListener('click', () => openForm(b.dataset.edit)));
+      el.querySelectorAll('[data-delete]').forEach(b =>
+        b.addEventListener('click', () => deleteAgent(b.dataset.delete)));
+      el.querySelectorAll('[data-toggle]').forEach(b =>
+        b.addEventListener('click', () => toggleActive(b.dataset.toggle)));
+    }
+
+    function agentCard(a) {
+      const kws = (a.keywords || '').split(',').map(k => k.trim()).filter(Boolean);
+      const kwHTML = kws.slice(0,5).map(k => `<span class="keyword-tag">${esc(k)}</span>`).join('')
+        + (kws.length > 5 ? `<span class="keyword-tag">+${kws.length-5}</span>` : '');
+
+      return `
+        <div class="agent-card">
+          <div class="agent-card-top">
+            <div>
+              <div class="agent-name">${esc(a.name)}</div>
+              ${a.description ? `<div class="agent-desc">${esc(a.description)}</div>` : ''}
+            </div>
+            <span class="agent-status ${a.active ? 'active' : 'inactive'}">
+              ${a.active ? '● Ativo' : '○ Inativo'}
+            </span>
+          </div>
+          <div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method)} ${esc(a.endpoint)}</div>
+          ${kwHTML ? `<div class="agent-keywords">${kwHTML}</div>` : ''}
+          <div class="agent-actions">
+            <button class="btn-ghost flex-grow" data-edit="${a.id}">Editar</button>
+            <button class="btn-ghost" data-toggle="${a.id}">${a.active ? 'Desativar' : 'Ativar'}</button>
+            <button class="btn-ghost danger" data-delete="${a.id}">Excluir</button>
+          </div>
+        </div>`;
+    }
+
+    /* ── OPEN FORM ── */
+    function openForm(id) {
+      editingId = id || null;
+      const a = id ? loadAgents().find(x => x.id === id) : null;
+
+      document.getElementById('formTitle').textContent = a ? 'Editar Agente' : 'Novo Agente';
+      document.getElementById('f-name').value     = a?.name            || '';
+      document.getElementById('f-desc').value     = a?.description     || '';
+      document.getElementById('f-keywords').value = a?.keywords        || '';
+      document.getElementById('f-endpoint').value = a?.endpoint        || '';
+      document.getElementById('f-method').value   = a?.method          || 'POST';
+      document.getElementById('f-request').value  = a?.requestTemplate || '{\n  "query": "{{message}}"\n}';
+      document.getElementById('f-path').value     = a?.responsePath    || '';
+      document.getElementById('f-prompt').value   = a?.prompt          || '';
+      document.getElementById('f-active').checked = a ? a.active : true;
+
+      document.getElementById('agentsListView').style.display = 'none';
+      document.getElementById('agentsFormView').style.display = '';
+    }
+
+    /* ── CLOSE FORM ── */
+    function closeForm() {
+      editingId = null;
+      document.getElementById('agentsFormView').style.display = 'none';
+      document.getElementById('agentsListView').style.display = '';
+      renderList();
+    }
+
+    /* ── SAVE ── */
+    function saveAgent() {
+      const name     = document.getElementById('f-name').value.trim();
+      const endpoint = document.getElementById('f-endpoint').value.trim();
+      const prompt   = document.getElementById('f-prompt').value.trim();
+
+      if (!name)     return alert('Informe o nome do agente.');
+      if (!endpoint) return alert('Informe a URL do endpoint.');
+      if (!prompt)   return alert('Informe o prompt do sistema.');
+
+      const agents = loadAgents();
+      const now = new Date().toISOString();
+      const existing = editingId ? agents.find(x => x.id === editingId) : null;
+
+      const updated = {
+        id:              editingId || genId(),
+        name,
+        description:     document.getElementById('f-desc').value.trim(),
+        keywords:        document.getElementById('f-keywords').value.trim(),
+        endpoint,
+        method:          document.getElementById('f-method').value,
+        requestTemplate: document.getElementById('f-request').value.trim(),
+        responsePath:    document.getElementById('f-path').value.trim(),
+        prompt,
+        active:          document.getElementById('f-active').checked,
+        createdAt:       existing?.createdAt || now,
+        updatedAt:       now,
+      };
+
+      if (editingId) {
+        const idx = agents.findIndex(x => x.id === editingId);
+        if (idx !== -1) agents[idx] = updated; else agents.push(updated);
+      } else {
+        agents.push(updated);
+      }
+
+      persistAgents(agents);
+      closeForm();
+    }
+
+    /* ── DELETE / TOGGLE ── */
+    function deleteAgent(id) {
+      if (!confirm('Excluir este agente?')) return;
+      persistAgents(loadAgents().filter(a => a.id !== id));
+      renderList();
+    }
+
+    function toggleActive(id) {
+      const agents = loadAgents();
+      const a = agents.find(x => x.id === id);
+      if (a) { a.active = !a.active; persistAgents(agents); }
+      renderList();
+    }
+
+    /* ── BINDINGS ── */
+    document.getElementById('newAgentBtn').addEventListener('click', () => openForm(null));
+    document.getElementById('saveAgentBtn').addEventListener('click', saveAgent);
+    document.getElementById('cancelFormBtn').addEventListener('click', closeForm);
+    document.getElementById('backToListBtn').addEventListener('click', closeForm);
+
+    renderList();
+
+    /* ── WHATSAPP AUTH (lógica original intacta) ── */
+    let socket         = null;
     let currentSession = '';
     let reconnectTimer = null;
     let sessionStarted = false;
 
-    const sessionInput  = document.getElementById('sessionInput');
-    const emailInput    = document.getElementById('emailInput');
-    const connectBtn    = document.getElementById('connectBtn');
-
-    connectBtn.addEventListener('click', connect);
-    const qrImg         = document.getElementById('qrImg');
-    const qrPlaceholder = document.getElementById('qrPlaceholder');
-    const spinner       = document.getElementById('spinner');
+    const sessionInput    = document.getElementById('sessionInput');
+    const emailInput      = document.getElementById('emailInput');
+    const connectBtn      = document.getElementById('connectBtn');
+    const qrImg           = document.getElementById('qrImg');
+    const qrPlaceholder   = document.getElementById('qrPlaceholder');
+    const spinner         = document.getElementById('spinner');
     const placeholderText = document.getElementById('placeholderText');
     const successOverlay  = document.getElementById('successOverlay');
-    const dot           = document.getElementById('dot');
-    const statusText    = document.getElementById('statusText');
-    const hint          = document.getElementById('hint');
+    const dot             = document.getElementById('dot');
+    const statusText      = document.getElementById('statusText');
+    const hint            = document.getElementById('hint');
+
+    connectBtn.addEventListener('click', connect);
 
     function setStatus(color, label, hintMsg, isError) {
-      dot.className = 'dot ' + color;
+      dot.className      = 'dot ' + color;
       statusText.textContent = label;
-      hint.textContent = hintMsg ?? '';
-      hint.className = 'hint' + (isError ? ' error' : '');
+      hint.textContent   = hintMsg ?? '';
+      hint.className     = 'hint' + (isError ? ' error' : '');
     }
 
     function setLoading(active) {
-      spinner.style.display = active ? 'block' : 'none';
-      placeholderText.style.display = active ? 'none' : 'block';
+      spinner.style.display       = active ? 'block' : 'none';
+      placeholderText.style.display = active ? 'none'  : 'block';
     }
 
     function showQR(src) {
-      qrPlaceholder.style.display = 'none';
+      qrPlaceholder.style.display  = 'none';
       successOverlay.style.display = 'none';
-      qrImg.style.display = 'block';
-      qrImg.src = src;
+      qrImg.style.display          = 'block';
+      qrImg.src                    = src;
     }
 
     function showSuccess() {
-      qrImg.style.display = 'none';
-      qrPlaceholder.style.display = 'none';
+      qrImg.style.display          = 'none';
+      qrPlaceholder.style.display  = 'none';
       successOverlay.style.display = 'flex';
     }
 
     function resetQR() {
-      qrImg.style.display = 'none';
-      qrImg.src = '';
+      qrImg.style.display          = 'none';
+      qrImg.src                    = '';
       successOverlay.style.display = 'none';
-      qrPlaceholder.style.display = 'flex';
+      qrPlaceholder.style.display  = 'flex';
       setLoading(false);
     }
 
@@ -326,10 +1031,8 @@
       setLoading(true);
       setStatus('yellow', 'Conectando...', 'Abrindo conexão com o servidor...');
 
-      // Abre WebSocket antes do POST para já estar ouvindo o broadcast do QR
       openSocket();
 
-      // Chama o endpoint de login
       try {
         const res  = await fetch('/auth/login', {
           method:  'POST',
@@ -350,7 +1053,6 @@
 
         sessionStarted = true;
 
-        // Exibe QR da resposta HTTP caso o WS ainda não tenha recebido
         if (data.qrCodeFile && qrImg.style.display !== 'block') {
           showQR(data.qrCodeFile);
           setStatus('yellow', 'QR recebido', 'Abra o WhatsApp → Aparelhos conectados → Conectar aparelho');
@@ -408,7 +1110,6 @@
       };
 
       socket.onclose = () => {
-        // Só tenta reconectar enquanto a sessão estiver ativa (aguardando QR)
         if (currentSession && sessionStarted) {
           reconnectTimer = setTimeout(() => {
             if (currentSession) openSocket();
