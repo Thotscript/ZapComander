@@ -2,7 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import OpenAI from 'openai';
 import { SESSIONS } from '../state.js';
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const __filename  = fileURLToPath(import.meta.url);
 const __dirname   = path.dirname(__filename);
@@ -171,22 +174,20 @@ export async function runAgent(sessionName, from, messageText) {
       `Pergunta: ${messageText}`,
     ].join('\n');
 
-    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    const model   = process.env.OLLAMA_MODEL    || 'qwen2.5:1.5b';
+    const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
+    console.log(`🧠 OpenAI | modelo: ${model}`);
 
-    console.log(`🧠 Ollama | modelo: ${model}`);
-
-    const llmRes = await axios.post(`${baseUrl}/api/chat`, {
+    const completion = await openai.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: systemContent },
         { role: 'user',   content: userContent   },
       ],
-      stream:  false,
-      options: { temperature: 0.3, num_predict: 600 },
-    }, { timeout: 120_000 });
+      temperature: 0.3,
+      max_tokens:  600,
+    });
 
-    const reply = llmRes.data?.message?.content?.trim();
+    const reply = completion.choices[0].message.content.trim();
     if (!reply) throw new Error('Resposta vazia do LLM');
 
     await session.client.sendText(from, reply);
