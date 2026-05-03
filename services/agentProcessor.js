@@ -152,15 +152,27 @@ export async function runAgent(sessionName, from, messageText) {
     const payload = extractByPath(endpointResponse, agent.responsePath);
 
     // ── Monta prompt e chama Ollama ───────────────────────
+    // System: instruções do agente + regra de grounding
     const systemContent = [
       agent.prompt.trim(),
       '',
-      '— Dados recebidos do sistema —',
+      'REGRA: Responda EXCLUSIVAMENTE com base nos dados JSON fornecidos abaixo.',
+      'Não invente, não acrescente informações externas, não cite fontes que não estejam nos dados.',
+      'Se a informação não estiver nos dados, diga apenas que não possui essa informação.',
+    ].join('\n');
+
+    // User: dados + pergunta — modelos pequenos seguem o turno user com mais fidelidade
+    const userContent = [
+      'Dados disponíveis:',
+      '```json',
       JSON.stringify(payload, null, 2),
+      '```',
+      '',
+      `Pergunta: ${messageText}`,
     ].join('\n');
 
     const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    const model   = process.env.OLLAMA_MODEL    || 'qwen:0.5b';
+    const model   = process.env.OLLAMA_MODEL    || 'qwen2.5:1.5b';
 
     console.log(`🧠 Ollama | modelo: ${model}`);
 
@@ -168,10 +180,10 @@ export async function runAgent(sessionName, from, messageText) {
       model,
       messages: [
         { role: 'system', content: systemContent },
-        { role: 'user',   content: messageText   },
+        { role: 'user',   content: userContent   },
       ],
       stream:  false,
-      options: { temperature: 0.7, num_predict: 600 },
+      options: { temperature: 0.3, num_predict: 600 },
     }, { timeout: 120_000 });
 
     const reply = llmRes.data?.message?.content?.trim();
