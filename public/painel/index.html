@@ -880,6 +880,31 @@
                     <input id="f-sessionTimeout" type="number" min="1" class="form-input" placeholder="15" value="15" />
                     <p class="form-hint">Minutos sem resposta do usuário para encerrar a sessão automaticamente.</p>
                   </div>
+                  <div class="form-field">
+                    <label>Limite de Resultados <span>responseLimit — padrão 0 (todos)</span></label>
+                    <input id="f-responseLimit" type="number" min="0" class="form-input" placeholder="0" value="0" />
+                    <p class="form-hint">Quantos itens do JSON enviar ao LLM. Use 1 para mostrar apenas o primeiro resultado.</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Campos obrigatórios (coleta multi-turno) -->
+              <div class="form-section">
+                <h4 class="section-title">Campos para Coletar</h4>
+                <div class="form-grid">
+                  <div class="form-field" style="grid-column: 1/-1">
+                    <label>Campos Obrigatórios <span>JSON — coletados em conversa antes de chamar o endpoint</span></label>
+                    <textarea id="f-requiredFields" class="form-textarea" rows="8" placeholder='[
+  {"name":"checkin","question":"📅 Qual a data de entrada? (ex: 10/07/2025)","extractType":"date"},
+  {"name":"checkout","question":"📅 Qual a data de saída?","extractType":"date"},
+  {"name":"min_bedrooms_number","question":"🛏️ Quantos quartos você precisa?","extractType":"number"},
+  {"name":"resort_area_id","question":"🏘️ Qual condomínio? (ex: SOLTERRA, WINDSOR)","extractType":"uppercase"}
+]'></textarea>
+                    <p class="form-hint">
+                      Use <code>{{checkin}}</code>, <code>{{checkout}}</code>, etc. no Request Template abaixo.<br>
+                      <b>extractType:</b> <code>date</code> (DD/MM/YYYY), <code>number</code> (dígitos), <code>uppercase</code> (texto em maiúsculo), <code>text</code> (literal).
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -1017,10 +1042,13 @@
       document.getElementById('f-path').value           = a?.responsePath    || '';
       document.getElementById('f-prompt').value         = a?.prompt          || '';
       document.getElementById('f-endKeywords').value    = a?.endKeywords     || '';
-      document.getElementById('f-maxTurns').value       = a?.maxTurns        ?? 0;
-      document.getElementById('f-endMessage').value     = a?.endMessage      || '';
-      document.getElementById('f-sessionTimeout').value = a?.sessionTimeout  ?? 15;
-      document.getElementById('f-active').checked       = a ? a.active : true;
+      document.getElementById('f-maxTurns').value        = a?.maxTurns        ?? 0;
+      document.getElementById('f-endMessage').value      = a?.endMessage      || '';
+      document.getElementById('f-sessionTimeout').value  = a?.sessionTimeout  ?? 15;
+      document.getElementById('f-responseLimit').value   = a?.responseLimit   ?? 0;
+      document.getElementById('f-requiredFields').value  = a?.requiredFields
+        ? JSON.stringify(a.requiredFields, null, 2) : '';
+      document.getElementById('f-active').checked        = a ? a.active : true;
       document.getElementById('agentsListView').style.display = 'none';
       document.getElementById('agentsFormView').style.display = '';
     }
@@ -1053,6 +1081,16 @@
       btn.disabled = true;
       btn.textContent = 'Salvando...';
 
+      // Valida e parseia requiredFields
+      let requiredFields = [];
+      const rfRaw = document.getElementById('f-requiredFields').value.trim();
+      if (rfRaw) {
+        try { requiredFields = JSON.parse(rfRaw); }
+        catch { return alert('Campos para Coletar contém JSON inválido. Verifique a formatação.'); }
+        if (!Array.isArray(requiredFields))
+          return alert('Campos para Coletar deve ser um array JSON (começar com [).');
+      }
+
       const payload = {
         name, prompt, endpoint,
         description:     document.getElementById('f-desc').value.trim(),
@@ -1064,6 +1102,8 @@
         maxTurns:        parseInt(document.getElementById('f-maxTurns').value) || 0,
         endMessage:      document.getElementById('f-endMessage').value.trim(),
         sessionTimeout:  parseInt(document.getElementById('f-sessionTimeout').value) || 15,
+        responseLimit:   parseInt(document.getElementById('f-responseLimit').value) || 0,
+        requiredFields,
         active:          document.getElementById('f-active').checked,
       };
 

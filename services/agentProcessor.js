@@ -59,6 +59,29 @@ function matchesAgent(agent, text) {
   return matchesKeywords(agent.keywords, text);
 }
 
+/* Extrai um valor do texto com base no tipo esperado do campo */
+function extractFieldValue(type, text) {
+  const t = text.trim();
+  switch (type) {
+    case 'date': {
+      const m = t.match(/\b(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/);
+      if (!m) return null;
+      const parts = m[1].replace(/-/g, '/').split('/');
+      if (parts.length === 2)
+        return `${parts[0].padStart(2,'0')}/${parts[1].padStart(2,'0')}/${new Date().getFullYear()}`;
+      return m[1].replace(/-/g, '/');
+    }
+    case 'number': {
+      const m = t.match(/\b(\d+)\b/);
+      return m ? m[1] : null;
+    }
+    case 'uppercase':
+      return t ? t.toUpperCase() : null;
+    default:
+      return t || null;
+  }
+}
+
 function extractByPath(obj, dotPath) {
   if (!dotPath || !dotPath.trim()) return obj;
   return dotPath.trim().split('.').reduce((acc, k) => acc?.[k], obj) ?? obj;
@@ -82,6 +105,7 @@ export async function runAgent(sessionName, from, messageText) {
   const existing = activeConversations.get(convKey);
 
   let agent;
+  let isNewConversation = false;
 
   if (existing) {
     // ── Conversa em andamento ──────────────────────────────
@@ -124,11 +148,14 @@ export async function runAgent(sessionName, from, messageText) {
     }
 
     activeConversations.set(convKey, {
-      agentId:      agent.id,
-      turns:        1,
-      startedAt:    Date.now(),
-      lastActivity: Date.now(),
+      agentId:         agent.id,
+      turns:           1,
+      startedAt:       Date.now(),
+      lastActivity:    Date.now(),
+      collectedFields: {},
+      awaitingField:   null,
     });
+    isNewConversation = true;
     console.log(`🆕 [${sessionName}] Nova conversa com ${from} | agente: ${agent.name}`);
   }
 
@@ -136,6 +163,45 @@ export async function runAgent(sessionName, from, messageText) {
   if (!session?.client) {
     console.warn(`⚠️  [${sessionName}] Sessão ausente no SESSIONS map.`);
     return false;
+  }
+
+  // ── Coleta de campos obrigatórios (multi-turno) ───────────
+  const requiredFields = Array.isArray(agent.requiredFields) ? agent.requiredFields : [];
+  const conv = activeConversations.get(convKey);
+
+  if (requiredFields.length > 0) {
+    if (isNewConversation) {
+      // Tenta extrair date/number da mensagem inicial (ex: "3 quartos de 10/07 a 17/07")
+      for (const f of requiredFields) {
+        if (['date', 'number'].includes(f.extractType) && !conv.collectedFields[f.name]) {
+          const v = extractFieldValue(f.extractType, messageText);
+          if (v !== null) conv.collectedFields[f.name] = v;
+        }
+      }
+    } else if (conv.awaitingField) {
+      const fDef = requiredFields.find(f => f.name === conv.awaitingField);
+      if (fDef) {
+        const v = extractFieldValue(fDef.extractType || 'text', messageText);
+        if (v !== null) {
+          conv.collectedFields[conv.awaitingField] = v;
+          conv.awaitingField = null;
+          console.log(`📋 Campo "${fDef.name}" = ${v}`);
+        } else {
+          // Não conseguiu extrair — repergunta
+          await session.client.sendText(from, fDef.question);
+          return true;
+        }
+      }
+    }
+
+    // Verifica se ainda há campos pendentes
+    const missing = requiredFields.find(f => !conv.collectedFields[f.name]);
+    if (missing) {
+      conv.awaitingField = missing.name;
+      await session.client.sendText(from, missing.question);
+      return true;
+    }
+    console.log(`✅ Todos os campos coletados:`, JSON.stringify(conv.collectedFields));
   }
 
   console.log(`🤖 Agente "${agent.name}" processando | "${messageText.slice(0, 60)}"`);
@@ -150,14 +216,21 @@ export async function runAgent(sessionName, from, messageText) {
       endpointResponse = data;
     } else {
       let bodyStr = agent.requestTemplate || '{}';
+      const fields = conv?.collectedFields || {};
       bodyStr = bodyStr
         .replace(/\{\{message\}\}/g, messageText.replace(/\\/g, '\\\\').replace(/"/g, '\\"'))
-        .replace(/\{\{session\}\}/g, sessionName);
+        .replace(/\{\{session\}\}/g, sessionName)
+        .replace(/\{\{(\w+)\}\}/g, (_, k) =>
+          String(fields[k] ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+        );
       const { data } = await axios({ method, url: agent.endpoint, data: JSON.parse(bodyStr), timeout: 10_000 });
       endpointResponse = data;
     }
 
-    const payload = extractByPath(endpointResponse, agent.responsePath);
+    let payload = extractByPath(endpointResponse, agent.responsePath);
+    // Limita itens enviados ao LLM (ex: responseLimit: 1 mostra só o primeiro)
+    const responseLimit = parseInt(agent.responseLimit) || 0;
+    if (responseLimit > 0 && Array.isArray(payload)) payload = payload.slice(0, responseLimit);
 
     // ── Monta prompt e chama OpenAI ──────────────────────
     const endKwList = (agent.endKeywords || '')
