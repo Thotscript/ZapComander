@@ -853,6 +853,36 @@
                 </div>
               </div>
 
+              <!-- Controle de conversa -->
+              <div>
+                <div class="section-divider">Controle de Conversa</div>
+
+                <div class="form-row" style="margin-top:14px">
+                  <div class="form-field">
+                    <label>Palavras de Encerramento <span>encerram a sessão do bot</span></label>
+                    <input id="f-endKeywords" type="text" class="form-input" placeholder="obrigado, tchau, encerrar, ok, parar" />
+                    <p class="form-hint">Quando o usuário enviar qualquer uma dessas palavras, o bot encerra a interação e envia a mensagem de despedida.</p>
+                  </div>
+                  <div class="form-field">
+                    <label>Máximo de Turnos <span>0 = ilimitado</span></label>
+                    <input id="f-maxTurns" type="number" min="0" class="form-input" placeholder="0" value="0" />
+                    <p class="form-hint">Após atingir este número de trocas, o bot encerra automaticamente e envia a mensagem de despedida.</p>
+                  </div>
+                </div>
+
+                <div class="form-row" style="margin-top:14px">
+                  <div class="form-field">
+                    <label>Mensagem de Encerramento</label>
+                    <input id="f-endMessage" type="text" class="form-input" placeholder="Fico por aqui! Se precisar é só chamar. 😊" />
+                  </div>
+                  <div class="form-field">
+                    <label>Timeout de Inatividade <span>minutos — padrão 15</span></label>
+                    <input id="f-sessionTimeout" type="number" min="1" class="form-input" placeholder="15" value="15" />
+                    <p class="form-hint">Minutos sem resposta do usuário para encerrar a sessão automaticamente.</p>
+                  </div>
+                </div>
+              </div>
+
               <!-- Toggle ativo -->
               <div class="toggle-row">
                 <div class="toggle-info">
@@ -978,15 +1008,19 @@
         try { const all = await apiFetch('/api/agents'); a = all.find(x => x.id === id); } catch {}
       }
       document.getElementById('formTitle').textContent = a ? 'Editar Agente' : 'Novo Agente';
-      document.getElementById('f-name').value     = a?.name            || '';
-      document.getElementById('f-desc').value     = a?.description     || '';
-      document.getElementById('f-keywords').value = a?.keywords        || '';
-      document.getElementById('f-endpoint').value = a?.endpoint        || '';
-      document.getElementById('f-method').value   = a?.method          || 'POST';
-      document.getElementById('f-request').value  = a?.requestTemplate || '{\n  "query": "{{message}}"\n}';
-      document.getElementById('f-path').value     = a?.responsePath    || '';
-      document.getElementById('f-prompt').value   = a?.prompt          || '';
-      document.getElementById('f-active').checked = a ? a.active : true;
+      document.getElementById('f-name').value           = a?.name            || '';
+      document.getElementById('f-desc').value           = a?.description     || '';
+      document.getElementById('f-keywords').value       = a?.keywords        || '';
+      document.getElementById('f-endpoint').value       = a?.endpoint        || '';
+      document.getElementById('f-method').value         = a?.method          || 'POST';
+      document.getElementById('f-request').value        = a?.requestTemplate || '{\n  "query": "{{message}}"\n}';
+      document.getElementById('f-path').value           = a?.responsePath    || '';
+      document.getElementById('f-prompt').value         = a?.prompt          || '';
+      document.getElementById('f-endKeywords').value    = a?.endKeywords     || '';
+      document.getElementById('f-maxTurns').value       = a?.maxTurns        ?? 0;
+      document.getElementById('f-endMessage').value     = a?.endMessage      || '';
+      document.getElementById('f-sessionTimeout').value = a?.sessionTimeout  ?? 15;
+      document.getElementById('f-active').checked       = a ? a.active : true;
       document.getElementById('agentsListView').style.display = 'none';
       document.getElementById('agentsFormView').style.display = '';
     }
@@ -1018,6 +1052,10 @@
         method:          document.getElementById('f-method').value,
         requestTemplate: document.getElementById('f-request').value.trim(),
         responsePath:    document.getElementById('f-path').value.trim(),
+        endKeywords:     document.getElementById('f-endKeywords').value.trim(),
+        maxTurns:        parseInt(document.getElementById('f-maxTurns').value) || 0,
+        endMessage:      document.getElementById('f-endMessage').value.trim(),
+        sessionTimeout:  parseInt(document.getElementById('f-sessionTimeout').value) || 15,
         active:          document.getElementById('f-active').checked,
       };
 
