@@ -91,6 +91,14 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login', 'index.html'));
+});
+
+app.get('/painel', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'painel', 'index.html'));
+});
+
 app.use(authRouter);
 app.use(devicesRouter);
 app.use(messagesRouter);
