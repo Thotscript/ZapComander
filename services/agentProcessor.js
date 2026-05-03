@@ -40,11 +40,19 @@ function extractByPath(obj, dotPath) {
 
 export async function runAgent(sessionName, from, messageText) {
   const agents = loadAgents();
-  const agent  = agents.find(a => matchesAgent(a, messageText));
-  if (!agent) return false;
+  console.log(`🔍 [${sessionName}] ${agents.length} agente(s) carregado(s) | mensagem: "${messageText.slice(0, 60)}"`);
+
+  const agent = agents.find(a => matchesAgent(a, messageText));
+  if (!agent) {
+    console.log(`⏭️  [${sessionName}] Nenhum agente correspondeu às palavras-chave.`);
+    return false;
+  }
 
   const session = SESSIONS.get(sessionName);
-  if (!session?.client) return false;
+  if (!session?.client) {
+    console.warn(`⚠️  [${sessionName}] Sessão não encontrada no SESSIONS map.`);
+    return false;
+  }
 
   console.log(`🤖 Agente "${agent.name}" acionado | sessão ${sessionName} | "${messageText.slice(0, 60)}"`);
 

@@ -63,23 +63,27 @@ export function attachMessageListener(client, sessionName) {
       const session = SESSIONS.get(sessionName);
       if (!session) return;
 
+      // Tenta popular myNumber se ainda não tiver
       if (!session.myNumber) {
         try {
           const wid = await client.getWid();
           if (wid) session.myNumber = wid;
         } catch {}
       }
-      if (!session.myNumber) return;
 
-      if (message.from === session.myNumber) return;
+      // fromMe é mais confiável que comparar string — usa os dois como fallback
+      const isSelf = message.fromMe === true ||
+                     (session.myNumber && message.from === session.myNumber);
+      if (isSelf) return;
       if (message.isGroupMsg) return;
 
       if (message.type === 'ptt' || message.type === 'audio') {
         enqueueProcessing(sessionName, () => processAudio(sessionName, message));
       }
 
-      if (message.type === 'chat') {
-        const text = (message.body || '').trim();
+      if (message.type === 'chat' && message.body) {
+        const text = message.body.trim();
+        console.log(`💬 [${sessionName}] texto de ${message.from}: "${text.slice(0, 80)}"`);
         if (text) enqueueProcessing(sessionName, () => runAgent(sessionName, message.from, text));
       }
     } catch (err) {

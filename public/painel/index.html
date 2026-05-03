@@ -199,13 +199,16 @@
     .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .qr-wrapper {
-      width: 252px; height: 252px;
+      width: 268px;
+      height: 268px;
       background: #fff;
-      border-radius: 0;
+      padding: 16px;
+      border-radius: 6px;
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: visible;
+      overflow: hidden;
       position: relative;
     }
     .qr-wrapper img { width: 100%; height: 100%; object-fit: contain; display: none; }
