@@ -5,7 +5,12 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { SESSIONS } from '../state.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy — evita instanciar antes do dotenv.config() rodar no server.js
+let _openai = null;
+function getOpenAI() {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 const __filename  = fileURLToPath(import.meta.url);
 const __dirname   = path.dirname(__filename);
@@ -177,7 +182,7 @@ export async function runAgent(sessionName, from, messageText) {
     const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
     console.log(`🧠 OpenAI | modelo: ${model}`);
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model,
       messages: [
         { role: 'system', content: systemContent },
