@@ -63,13 +63,22 @@ function matchesAgent(agent, text) {
 function extractFieldValue(type, text) {
   const t = text.trim();
   switch (type) {
-    case 'date': {
+    case 'date':
+    case 'date_us': {
       const m = t.match(/\b(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/);
       if (!m) return null;
       const parts = m[1].replace(/-/g, '/').split('/');
-      if (parts.length === 2)
-        return `${parts[0].padStart(2,'0')}/${parts[1].padStart(2,'0')}/${new Date().getFullYear()}`;
-      return m[1].replace(/-/g, '/');
+      let day, month, year;
+      if (parts.length === 2) {
+        [day, month] = parts;
+        year = String(new Date().getFullYear());
+      } else {
+        [day, month, year] = parts;
+      }
+      day   = day.padStart(2, '0');
+      month = month.padStart(2, '0');
+      // date_us → converte DD/MM/YYYY (BR) para MM/DD/YYYY (US/Streamline)
+      return type === 'date_us' ? `${month}/${day}/${year}` : `${day}/${month}/${year}`;
     }
     case 'number': {
       const m = t.match(/\b(\d+)\b/);
