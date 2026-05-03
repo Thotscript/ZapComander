@@ -246,7 +246,9 @@ export async function runAgent(sessionName, from, messageText) {
         return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       });
 
+      console.log(`📤 POST → ${agent.endpoint}\n${bodyStr}`);
       const { data } = await axios({ method, url: agent.endpoint, data: JSON.parse(bodyStr), timeout: 10_000 });
+      console.log(`📥 Resposta endpoint:\n${JSON.stringify(data, null, 2).slice(0, 2000)}`);
       endpointResponse = data;
     }
 
