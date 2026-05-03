@@ -217,12 +217,26 @@ export async function runAgent(sessionName, from, messageText) {
     } else {
       let bodyStr = agent.requestTemplate || '{}';
       const fields = conv?.collectedFields || {};
+
+      // 1. Substitui {{message}} e {{session}}
       bodyStr = bodyStr
         .replace(/\{\{message\}\}/g, messageText.replace(/\\/g, '\\\\').replace(/"/g, '\\"'))
-        .replace(/\{\{session\}\}/g, sessionName)
-        .replace(/\{\{(\w+)\}\}/g, (_, k) =>
-          String(fields[k] ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-        );
+        .replace(/\{\{session\}\}/g, sessionName);
+
+      // 2. "{{field}}" — contexto string → devolve "" se vazio
+      bodyStr = bodyStr.replace(/"{{(\w+)}}"/g, (_, k) => {
+        const v = fields[k];
+        if (v == null || v === '') return '""';
+        return `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      });
+
+      // 3. {{field}} — contexto numérico (sem aspas) → devolve 0 se vazio
+      bodyStr = bodyStr.replace(/\{\{(\w+)\}\}/g, (_, k) => {
+        const v = fields[k];
+        if (v == null || v === '') return '0';
+        return String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      });
+
       const { data } = await axios({ method, url: agent.endpoint, data: JSON.parse(bodyStr), timeout: 10_000 });
       endpointResponse = data;
     }
