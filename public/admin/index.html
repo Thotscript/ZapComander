@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZapBot — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0e;
+      color: #e8e8ea;
+      min-height: 100vh;
+    }
+
+    /* ── LOGIN ── */
+    #loginScreen {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 24px;
+    }
+    #loginScreen::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(176,160,110,0.07) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .login-card {
+      background: #13131a;
+      border: 1px solid #1e1e28;
+      border-radius: 20px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+    .login-card h1 { font-size: 1.3rem; font-weight: 700; color: #f0f0f2; }
+    .login-card p  { font-size: 0.84rem; color: #505060; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 0.72rem; font-weight: 600; color: #707080; letter-spacing: .06em; text-transform: uppercase; }
+    .field input {
+      background: #0d0d14;
+      border: 1px solid #1e1e28;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.92rem;
+      color: #e8e8ea;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .field input:focus { border-color: #b0a06e; box-shadow: 0 0 0 3px rgba(176,160,110,.08); }
+    .field input::placeholder { color: #333340; }
+
+    .btn-gold {
+      background: #b0a06e;
+      color: #0a0a0e;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 0;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity .15s;
+    }
+    .btn-gold:hover     { opacity: .88; }
+    .btn-gold:disabled  { opacity: .45; cursor: not-allowed; }
+
+    .error-msg {
+      font-size: 0.8rem;
+      color: #e06060;
+      background: rgba(224,96,96,.08);
+      border: 1px solid rgba(224,96,96,.2);
+      border-radius: 8px;
+      padding: 9px 13px;
+      display: none;
+    }
+
+    /* ── DASHBOARD ── */
+    #dashboard { display: none; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 32px;
+      background: #111115;
+      border-bottom: 1px solid #1e1e26;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .topbar-brand { font-size: 0.8rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #b0a06e; }
+    .topbar-right { display: flex; align-items: center; gap: 16px; }
+    .topbar-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: #505060;
+      background: #0f0f16;
+      border: 1px solid #1a1a24;
+      border-radius: 20px;
+      padding: 4px 11px;
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: #40c070; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .btn-sm {
+      background: none;
+      border: 1px solid #2a2a30;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      color: #707080;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-sm:hover { color: #e8e8ea; border-color: #3a3a44; }
+
+    .page { padding: 32px; max-width: 1200px; margin: 0 auto; }
+
+    /* ── SUMMARY CARDS ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      margin-bottom: 36px;
+    }
+    .card {
+      background: #13131a;
+      border: 1px solid #1e1e28;
+      border-radius: 14px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .card-label { font-size: 0.7rem; font-weight: 600; color: #505060; letter-spacing: .07em; text-transform: uppercase; }
+    .card-value { font-size: 1.9rem; font-weight: 700; color: #f0f0f2; letter-spacing: -.02em; line-height: 1; }
+    .card-sub   { font-size: 0.72rem; color: #404050; }
+    .card.gold  .card-value { color: #b0a06e; }
+    .card.green .card-value { color: #40c070; }
+
+    /* ── TABLES ── */
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #505060;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-input {
+      background: #0d0d14;
+      border: 1px solid #1e1e28;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      color: #e8e8ea;
+      outline: none;
+      width: 220px;
+      transition: border-color .2s;
+    }
+    .search-input:focus { border-color: #b0a06e; }
+    .search-input::placeholder { color: #333340; }
+
+    .table-wrap {
+      background: #13131a;
+      border: 1px solid #1e1e28;
+      border-radius: 14px;
+      overflow: hidden;
+      margin-bottom: 36px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #505060;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      background: #0f0f16;
+      border-bottom: 1px solid #1e1e28;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    thead th:hover { color: #b0a06e; }
+    thead th .sort-icon { margin-left: 4px; opacity: .4; }
+    thead th.sorted .sort-icon { opacity: 1; color: #b0a06e; }
+
+    tbody tr { border-bottom: 1px solid #1a1a22; transition: background .12s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #16161e; }
+
+    td { padding: 12px 16px; font-size: 0.83rem; color: #c0c0cc; white-space: nowrap; }
+    td.email { font-size: 0.8rem; color: #e8e8ea; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+    td.mono   { font-family: 'SF Mono','Fira Code','Consolas',monospace; font-size: 0.78rem; }
+    td.num    { text-align: right; font-variant-numeric: tabular-nums; }
+    td.dim    { color: #404050; font-size: 0.75rem; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 20px;
+    }
+    .pill.online  { background: rgba(64,192,112,.12); color: #40c070; border: 1px solid rgba(64,192,112,.2); }
+    .pill.offline { background: rgba(80,80,90,.1);    color: #505060; border: 1px solid #1e1e28; }
+    .pill.free    { background: rgba(80,80,90,.1);    color: #606070; border: 1px solid #1e1e28; }
+    .pill.pro     { background: rgba(176,160,110,.1); color: #b0a06e; border: 1px solid rgba(176,160,110,.2); }
+
+    .bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 110px; }
+    .bar-bg   { flex: 1; height: 4px; background: #1e1e28; border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: #b0a06e; border-radius: 4px; transition: width .4s; }
+    .bar-label { font-size: 0.72rem; color: #606070; min-width: 38px; text-align: right; }
+
+    .spinner-wrap { display: flex; align-items: center; justify-content: center; padding: 60px; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid #1e1e28;
+      border-top-color: #b0a06e;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 700px) {
+      .page { padding: 16px; }
+      .topbar { padding: 12px 16px; }
+      .cards { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="loginScreen">
+    <div class="login-card">
+      <div>
+        <h1>Painel Administrativo</h1>
+        <p style="margin-top:6px">Acesso restrito. Informe a chave de administrador.</p>
+      </div>
+      <div class="field">
+        <label>Chave de Acesso</label>
+        <input id="keyInput" type="password" placeholder="••••••••••••" />
+      </div>
+      <div class="error-msg" id="loginError"></div>
+      <button class="btn-gold" id="loginBtn">Entrar</button>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+    <div class="topbar">
+      <span class="topbar-brand">Admin — ZapBot</span>
+      <div class="topbar-right">
+        <div class="topbar-badge">
+          <span class="badge-dot"></span>
+          <span id="lastRefresh">—</span>
+        </div>
+        <button class="btn-sm" id="refreshBtn">↻ Atualizar</button>
+        <button class="btn-sm" id="logoutAdminBtn">Sair</button>
+      </div>
+    </div>
+
+    <div class="page" id="pageContent">
+      <div class="spinner-wrap"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.protocol === 'file:'
+      ? 'https://zapbot.botcomander.com.br'
+      : '';
+
+    let adminKey = sessionStorage.getItem('admin_key') || '';
+
+    /* ── LOGIN ── */
+    if (adminKey) loadDashboard();
+
+    document.getElementById('keyInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    });
+
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      const key = document.getElementById('keyInput').value.trim();
+      if (!key) return;
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.textContent = 'Verificando...';
+      const ok = await fetchStats(key);
+      if (ok) {
+        adminKey = key;
+        sessionStorage.setItem('admin_key', key);
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('dashboard').style.display = 'block';
+      } else {
+        const err = document.getElementById('loginError');
+        err.textContent = 'Chave inválida ou servidor indisponível.';
+        err.style.display = 'block';
+      }
+      btn.disabled = false;
+      btn.textContent = 'Entrar';
+    });
+
+    document.getElementById('logoutAdminBtn').addEventListener('click', () => {
+      sessionStorage.removeItem('admin_key');
+      location.reload();
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+
+    /* ── DATA ── */
+    let cachedData = null;
+
+    async function fetchStats(key) {
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/stats`, {
+          headers: { 'x-admin-key': key }
+        });
+        if (!res.ok) return false;
+        cachedData = await res.json();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function loadDashboard() {
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      document.getElementById('pageContent').innerHTML =
+        '<div class="spinner-wrap"><div class="spinner"></div></div>';
+
+      const ok = await fetchStats(adminKey);
+      if (!ok) {
+        sessionStorage.removeItem('admin_key');
+        location.reload();
+        return;
+      }
+
+      const now = new Date().toLocaleTimeString('pt-BR');
+      document.getElementById('lastRefresh').textContent = `Atualizado às ${now}`;
+      render(cachedData);
+    }
+
+    /* ── RENDER ── */
+    function fmt(sec) {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      if (m >= 60) return `${(m/60).toFixed(1)}h`;
+      if (m > 0)   return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function esc(s) {
+      return String(s ?? '')
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    function render(data) {
+      const { summary, users, bySession } = data;
+      const maxSec = Math.max(...users.map(u => Number(u.total_segundos)), 1);
+
+      document.getElementById('pageContent').innerHTML = `
+
+        <!-- SUMMARY -->
+        <div class="cards">
+          <div class="card">
+            <div class="card-label">Usuários</div>
+            <div class="card-value">${summary.total_usuarios}</div>
+            <div class="card-sub">cadastrados</div>
+          </div>
+          <div class="card green">
+            <div class="card-label">Online agora</div>
+            <div class="card-value">${summary.usuarios_online}</div>
+            <div class="card-sub">sessões ativas</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Sessões</div>
+            <div class="card-value">${summary.total_sessoes}</div>
+            <div class="card-sub">números conectados</div>
+          </div>
+          <div class="card gold">
+            <div class="card-label">Minutos transcritos</div>
+            <div class="card-value">${summary.total_minutos.toLocaleString('pt-BR')}</div>
+            <div class="card-sub">total acumulado</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Transcrições</div>
+            <div class="card-value">${summary.total_transcricoes.toLocaleString('pt-BR')}</div>
+            <div class="card-sub">áudios processados</div>
+          </div>
+        </div>
+
+        <!-- USERS TABLE -->
+        <div class="section-title">
+          <span>Usuários</span>
+          <input class="search-input" id="searchUsers" placeholder="Filtrar por email..." />
+        </div>
+        <div class="table-wrap">
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th data-col="email">Email <span class="sort-icon">↕</span></th>
+                <th data-col="plano">Plano <span class="sort-icon">↕</span></th>
+                <th data-col="status">Status <span class="sort-icon">↕</span></th>
+                <th data-col="total_sessoes" class="num">Sessões <span class="sort-icon">↕</span></th>
+                <th data-col="total_agentes" class="num">Bots <span class="sort-icon">↕</span></th>
+                <th data-col="total_transcricoes" class="num">Transcrições <span class="sort-icon">↕</span></th>
+                <th>Minutos transcritos</th>
+                <th data-col="criado_em">Cadastro <span class="sort-icon">↕</span></th>
+              </tr>
+            </thead>
+            <tbody id="usersTbody"></tbody>
+          </table>
+        </div>
+
+        <!-- BY SESSION TABLE -->
+        <div class="section-title">
+          <span>Por número / sessão</span>
+          <input class="search-input" id="searchSessions" placeholder="Filtrar por número ou email..." />
+        </div>
+        <div class="table-wrap">
+          <table id="sessionsTable">
+            <thead>
+              <tr>
+                <th data-col="email">Email <span class="sort-icon">↕</span></th>
+                <th data-col="sessao_numero">Número <span class="sort-icon">↕</span></th>
+                <th data-col="status">Status <span class="sort-icon">↕</span></th>
+                <th data-col="total_transcricoes" class="num">Transcrições <span class="sort-icon">↕</span></th>
+                <th>Minutos transcritos</th>
+                <th data-col="ultimo_acesso">Último acesso <span class="sort-icon">↕</span></th>
+              </tr>
+            </thead>
+            <tbody id="sessionsTbody"></tbody>
+          </table>
+        </div>
+      `;
+
+      renderUserRows(users, maxSec);
+      renderSessionRows(bySession, Math.max(...bySession.map(s => Number(s.duracao_segundos)), 1));
+      bindTableSort('usersTable',   users,     maxSec,   renderUserRows);
+      bindTableSort('sessionsTable',bySession, Math.max(...bySession.map(s=>Number(s.duracao_segundos)),1), renderSessionRows);
+      bindSearch('searchUsers',   'usersTbody',   users,     maxSec,   renderUserRows);
+      bindSearch('searchSessions','sessionsTbody',bySession, Math.max(...bySession.map(s=>Number(s.duracao_segundos)),1), renderSessionRows);
+    }
+
+    function renderUserRows(rows, maxSec) {
+      const tbody = document.getElementById('usersTbody');
+      if (!tbody) return;
+      if (!rows.length) { tbody.innerHTML = `<tr><td colspan="8" class="dim" style="padding:28px;text-align:center">Nenhum usuário encontrado</td></tr>`; return; }
+      tbody.innerHTML = rows.map(u => {
+        const sec  = Number(u.total_segundos);
+        const pct  = Math.round((sec / maxSec) * 100);
+        const mins = (sec / 60).toFixed(1);
+        return `<tr>
+          <td class="email">${esc(u.email)}</td>
+          <td><span class="pill ${u.plano === 'pro' ? 'pro' : 'free'}">${esc(u.plano)}</span></td>
+          <td><span class="pill ${u.online ? 'online' : 'offline'}">${u.online ? '● Online' : '○ Offline'}</span></td>
+          <td class="num">${u.total_sessoes}</td>
+          <td class="num">${u.total_agentes}</td>
+          <td class="num">${Number(u.total_transcricoes).toLocaleString('pt-BR')}</td>
+          <td>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+              <span class="bar-label">${mins}m</span>
+            </div>
+          </td>
+          <td class="dim">${esc(u.criado_em)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    const STATUS_COLORS = { CONNECTED:'online', MAIN:'online', OFFLINE:'offline', DISCONNECTED:'offline', CLOSE:'offline', UNPAIRED:'offline', CONFLICT:'offline' };
+
+    function renderSessionRows(rows, maxSec) {
+      const tbody = document.getElementById('sessionsTbody');
+      if (!tbody) return;
+      if (!rows.length) { tbody.innerHTML = `<tr><td colspan="6" class="dim" style="padding:28px;text-align:center">Nenhuma sessão com dados de transcrição</td></tr>`; return; }
+      tbody.innerHTML = rows.map(s => {
+        const sec  = Number(s.duracao_segundos);
+        const pct  = Math.round((sec / maxSec) * 100);
+        const mins = (sec / 60).toFixed(1);
+        const cls  = STATUS_COLORS[s.status] || 'offline';
+        const statusLabel = s.status || '—';
+        return `<tr>
+          <td class="email">${esc(s.email)}</td>
+          <td class="mono">${esc(s.sessao_numero)}</td>
+          <td><span class="pill ${cls}">${esc(statusLabel)}</span></td>
+          <td class="num">${Number(s.total_transcricoes).toLocaleString('pt-BR')}</td>
+          <td>
+            <div class="bar-wrap">
+              <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
+              <span class="bar-label">${mins}m</span>
+            </div>
+          </td>
+          <td class="dim">${esc(s.ultimo_acesso)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    /* ── SORT ── */
+    function bindTableSort(tableId, originalRows, maxSec, renderFn) {
+      const table = document.getElementById(tableId);
+      if (!table) return;
+      let sortCol = null, sortAsc = true;
+      table.querySelectorAll('thead th[data-col]').forEach(th => {
+        th.addEventListener('click', () => {
+          const col = th.dataset.col;
+          if (sortCol === col) sortAsc = !sortAsc;
+          else { sortCol = col; sortAsc = false; }
+          table.querySelectorAll('thead th').forEach(t => t.classList.remove('sorted'));
+          th.classList.add('sorted');
+          th.querySelector('.sort-icon').textContent = sortAsc ? '↑' : '↓';
+          const sorted = [...originalRows].sort((a, b) => {
+            let va = a[col], vb = b[col];
+            if (va == null) va = ''; if (vb == null) vb = '';
+            const na = parseFloat(va), nb = parseFloat(vb);
+            if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
+            return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+          });
+          renderFn(sorted, maxSec);
+        });
+      });
+    }
+
+    /* ── SEARCH ── */
+    function bindSearch(inputId, tbodyId, rows, maxSec, renderFn) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      input.addEventListener('input', () => {
+        const q = input.value.toLowerCase();
+        const filtered = q
+          ? rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)))
+          : rows;
+        renderFn(filtered, maxSec);
+      });
+    }
+  </script>
+
+</body>
+</html>

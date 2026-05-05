@@ -1,7 +1,6 @@
 import db from './index.js';
 import { DateTime } from 'luxon';
 
-// Copiado diretamente do seu server.js
 const DDI_TO_TIMEZONE = {
   '1':   'America/New_York',
   '44':  'Europe/London',
@@ -18,43 +17,30 @@ const DDI_TO_TIMEZONE = {
   '86':  'Asia/Shanghai'
 };
 
-/**
- * Extrai DDI e timezone de uma string "5511999999999@c.us"
- * (mesma lógica do seu server.js)
- */
 function extractPhoneNumberInfo(sender) {
-  const raw   = sender.split('@')[0].replace(/[^\d]/g, '');
-  let ddi     = null;
-  let timezone= null;
-
-  for (let len of [3, 2, 1]) {
+  const raw = sender.split('@')[0].replace(/[^\d]/g, '');
+  for (const len of [3, 2, 1]) {
     const code = raw.slice(0, len);
-    if (DDI_TO_TIMEZONE[code]) {
-      ddi      = code;
-      timezone = DDI_TO_TIMEZONE[code];
-      break;
-    }
+    if (DDI_TO_TIMEZONE[code]) return { ddi: code, timezone: DDI_TO_TIMEZONE[code] };
   }
-
-  return { ddi, timezone };
+  return { ddi: null, timezone: null };
 }
 
-export async function saveSessionLog({ email, sessaoNumero, whatsappNumero }) {
-  // 1) extrai o timezone do whatsappNumero
+export async function saveSessionLog({ email, sessaoNumero, whatsappNumero, duracao = 0 }) {
   const { timezone } = extractPhoneNumberInfo(whatsappNumero);
-
-  // 2) formata o timestamp no fuso certo
   const ultimoAcessoLocal = timezone
     ? DateTime.now().setZone(timezone).toFormat('yyyy-MM-dd HH:mm:ss')
     : DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss');
 
-  // 3) grava usando SESSAO_NUMERO = sessaoNumero
+  const duracaoInt = Math.max(0, Math.round(duracao));
+
   const sql = `
-    INSERT INTO logs_sessao (email, sessao_numero, ultimo_acesso)
-    VALUES (?, ?, ?)
+    INSERT INTO logs_sessao (email, sessao_numero, ultimo_acesso, duracao_segundos, total_transcricoes)
+    VALUES (?, ?, ?, ?, 1)
     ON DUPLICATE KEY UPDATE
-      sessao_numero = VALUES(sessao_numero),
-      ultimo_acesso = VALUES(ultimo_acesso)
+      ultimo_acesso      = VALUES(ultimo_acesso),
+      duracao_segundos   = duracao_segundos + VALUES(duracao_segundos),
+      total_transcricoes = total_transcricoes + 1
   `;
-  await db.query(sql, [email, sessaoNumero, ultimoAcessoLocal]);
+  await db.query(sql, [email, sessaoNumero, ultimoAcessoLocal, duracaoInt]);
 }

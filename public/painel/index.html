@@ -1146,7 +1146,7 @@
       const el = document.getElementById('agentsList');
       el.innerHTML = '<p style="color:#505060;font-size:.82rem;padding:16px 0">Carregando agentes...</p>';
       try {
-        const agents = await apiFetch('/api/agents');
+        const agents = await apiFetch(`/api/agents?email=${encodeURIComponent(userEmail)}`);
         if (!agents.length) {
           el.innerHTML = `
             <div class="empty-state">
@@ -1201,7 +1201,7 @@
       editingId = id || null;
       let a = null;
       if (id) {
-        try { const all = await apiFetch('/api/agents'); a = all.find(x => x.id === id); } catch {}
+        try { const all = await apiFetch(`/api/agents?email=${encodeURIComponent(userEmail)}`); a = all.find(x => x.id === id); } catch {}
       }
       document.getElementById('formTitle').textContent = a ? 'Editar Agente' : 'Novo Agente';
       document.getElementById('f-name').value           = a?.name            || '';
@@ -1280,9 +1280,9 @@
 
       try {
         if (editingId) {
-          await apiFetch(`/api/agents/${editingId}`, { method: 'PUT', body: payload });
+          await apiFetch(`/api/agents/${editingId}?email=${encodeURIComponent(userEmail)}`, { method: 'PUT', body: payload });
         } else {
-          await apiFetch('/api/agents', { method: 'POST', body: payload });
+          await apiFetch(`/api/agents?email=${encodeURIComponent(userEmail)}`, { method: 'POST', body: payload });
         }
         closeForm();
       } catch (err) {
@@ -1297,7 +1297,7 @@
     async function deleteAgent(id) {
       if (!confirm('Excluir este agente?')) return;
       try {
-        await apiFetch(`/api/agents/${id}`, { method: 'DELETE' });
+        await apiFetch(`/api/agents/${id}?email=${encodeURIComponent(userEmail)}`, { method: 'DELETE' });
         renderList();
       } catch (err) { alert('Erro ao excluir: ' + err.message); }
     }
@@ -1305,9 +1305,9 @@
     async function toggleActive(id, btn) {
       btn && (btn.disabled = true);
       try {
-        const all = await apiFetch('/api/agents');
+        const all = await apiFetch(`/api/agents?email=${encodeURIComponent(userEmail)}`);
         const a   = all.find(x => x.id === id);
-        if (a) await apiFetch(`/api/agents/${id}`, { method: 'PUT', body: { ...a, active: !a.active } });
+        if (a) await apiFetch(`/api/agents/${id}?email=${encodeURIComponent(userEmail)}`, { method: 'PUT', body: { ...a, active: !a.active } });
         renderList();
       } catch (err) { alert('Erro: ' + err.message); }
     }
@@ -1323,7 +1323,7 @@
       const dot   = document.getElementById('testDot');
       const label = document.getElementById('testSessionLabel');
       try {
-        const sessions = await apiFetch('/api/sessions/active');
+        const sessions = await apiFetch(`/api/sessions/active?email=${encodeURIComponent(userEmail)}`);
         if (sessions.length) {
           dot.className   = 'dot green';
           label.textContent = sessions[0].name + (sessions[0].myNumber ? ` · ${sessions[0].myNumber}` : '');
@@ -1349,7 +1349,7 @@
       result.textContent = 'Executando...';
 
       try {
-        const data = await apiFetch('/api/agents/test-run', { method: 'POST', body: { message } });
+        const data = await apiFetch('/api/agents/test-run', { method: 'POST', body: { message, email: userEmail } });
         if (data.success) {
           result.className = 'test-result ok';
           result.textContent = `✅ Resposta enviada via sessão "${data.session}" para ${data.to}`;

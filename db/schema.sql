@@ -37,10 +37,12 @@ CREATE TABLE IF NOT EXISTS sessoes (
 -- ------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS logs_sessao (
-  id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email          VARCHAR(255)    NOT NULL,
-  sessao_numero  VARCHAR(100)    NOT NULL,
-  ultimo_acesso  DATETIME        NOT NULL,
+  id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  email               VARCHAR(255)    NOT NULL,
+  sessao_numero       VARCHAR(100)    NOT NULL,
+  ultimo_acesso       DATETIME        NOT NULL,
+  duracao_segundos    INT             NOT NULL DEFAULT 0,
+  total_transcricoes  INT             NOT NULL DEFAULT 0,
   PRIMARY KEY (id),
   UNIQUE KEY uq_log_email_sessao (email, sessao_numero),
   CONSTRAINT fk_logs_sessao_sessao
@@ -48,6 +50,10 @@ CREATE TABLE IF NOT EXISTS logs_sessao (
     REFERENCES sessoes (numero)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Para tabelas já existentes, execute manualmente:
+-- ALTER TABLE logs_sessao ADD COLUMN duracao_segundos INT NOT NULL DEFAULT 0;
+-- ALTER TABLE logs_sessao ADD COLUMN total_transcricoes INT NOT NULL DEFAULT 0;
 
 -- ------------------------------------------------------------
 

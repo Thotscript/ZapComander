@@ -117,7 +117,7 @@ export async function processAudio(sessionName, message) {
     console.log(`✅ Transcrição enviada para ${TRANSCRIPTION_DESTINATION === 'self' ? 'si mesmo (myNumber)' : senderName}`);
 
     try {
-      await saveSessionLog({ email, sessaoNumero: sessionName, whatsappNumero: message.from });
+      await saveSessionLog({ email, sessaoNumero: sessionName, whatsappNumero: message.from, duracao: duration });
     } catch (err) {
       console.error('Erro ao gravar log de sessão:', err.message);
     }

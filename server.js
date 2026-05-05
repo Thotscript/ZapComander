@@ -17,6 +17,7 @@ import devicesRouter from './routes/devices.js';
 import messagesRouter from './routes/messages.js';
 import agentsRouter from './routes/agents.js';
 import usuariosRouter from './routes/usuarios.js';
+import adminRouter from './routes/admin.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -101,11 +102,16 @@ app.get('/painel', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'painel', 'index.html'));
 });
 
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'index.html'));
+});
+
 app.use(authRouter);
 app.use(devicesRouter);
 app.use(messagesRouter);
 app.use(agentsRouter);
 app.use(usuariosRouter);
+app.use(adminRouter);
 
 setupWebSocket();
 

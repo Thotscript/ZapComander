@@ -5,42 +5,46 @@ import axios from 'axios';
 import OpenAI from 'openai';
 import { SESSIONS } from '../state.js';
 
-// Lazy — evita instanciar antes do dotenv.config() rodar no server.js
 let _openai = null;
 function getOpenAI() {
   if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   return _openai;
 }
 
-const __filename  = fileURLToPath(import.meta.url);
-const __dirname   = path.dirname(__filename);
-export const AGENTS_FILE = path.join(__dirname, '..', 'data', 'agents.json');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
-export function loadAgents() {
-  try { return JSON.parse(fs.readFileSync(AGENTS_FILE, 'utf8')); }
+const AGENTS_DIR = path.join(__dirname, '..', 'data', 'agents');
+
+function agentsFile(email) {
+  const safe = email.replace(/[^a-z0-9._-]/gi, '_');
+  return path.join(AGENTS_DIR, `${safe}.json`);
+}
+
+export function loadAgents(email) {
+  if (!email) return [];
+  try { return JSON.parse(fs.readFileSync(agentsFile(email), 'utf8')); }
   catch { return []; }
 }
 
-export function writeAgents(agents) {
-  const dir = path.dirname(AGENTS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(AGENTS_FILE, JSON.stringify(agents, null, 2), 'utf8');
+export function writeAgents(email, agents) {
+  if (!fs.existsSync(AGENTS_DIR)) fs.mkdirSync(AGENTS_DIR, { recursive: true });
+  fs.writeFileSync(agentsFile(email), JSON.stringify(agents, null, 2), 'utf8');
 }
 
 /* ─────────────────────────────────────────────────────────────
    ESTADO DE CONVERSAS ATIVAS
    Chave: `${sessionName}::${from}`
-   Valor: { agentId, turns, startedAt, lastActivity }
+   Valor: { agentId, email, turns, startedAt, lastActivity, collectedFields, awaitingField }
 ───────────────────────────────────────────────────────────── */
 const activeConversations = new Map();
 
-// Limpeza periódica de conversas expiradas (verifica a cada 1 min)
 setInterval(() => {
-  const now    = Date.now();
-  const agents = loadAgents();
+  const now = Date.now();
   for (const [key, conv] of activeConversations.entries()) {
+    const agents    = loadAgents(conv.email);
     const agent     = agents.find(a => a.id === conv.agentId);
-    const timeoutMs = (parseInt(agent?.sessionTimeout) || 5) * 60_000;
+    const timeoutMs = (parseInt(agent?.sessionTimeout) || 15) * 60_000;
     if (now - conv.lastActivity > timeoutMs) {
       activeConversations.delete(key);
       console.log(`⏰ Conversa expirada por inatividade: ${key}`);
@@ -59,7 +63,6 @@ function matchesAgent(agent, text) {
   return matchesKeywords(agent.keywords, text);
 }
 
-/* Extrai um valor do texto com base no tipo esperado do campo */
 function extractFieldValue(type, text) {
   const t = text.trim();
   switch (type) {
@@ -69,15 +72,10 @@ function extractFieldValue(type, text) {
       if (!m) return null;
       const parts = m[1].replace(/-/g, '/').split('/');
       let day, month, year;
-      if (parts.length === 2) {
-        [day, month] = parts;
-        year = String(new Date().getFullYear());
-      } else {
-        [day, month, year] = parts;
-      }
+      if (parts.length === 2) { [day, month] = parts; year = String(new Date().getFullYear()); }
+      else                     { [day, month, year] = parts; }
       day   = day.padStart(2, '0');
       month = month.padStart(2, '0');
-      // date_us → converte DD/MM/YYYY (BR) para MM/DD/YYYY (US/Streamline)
       return type === 'date_us' ? `${month}/${day}/${year}` : `${day}/${month}/${year}`;
     }
     case 'number': {
@@ -96,9 +94,11 @@ function extractByPath(obj, dotPath) {
   return dotPath.trim().split('.').reduce((acc, k) => acc?.[k], obj) ?? obj;
 }
 
-async function sendAndClose(client, from, agentId, convKey, reason) {
-  const agent  = loadAgents().find(a => a.id === agentId);
-  const endMsg = agent?.endMessage?.trim() ||
+async function sendAndClose(client, from, convKey, reason) {
+  const conv    = activeConversations.get(convKey);
+  const agents  = loadAgents(conv?.email);
+  const agent   = agents.find(a => a.id === conv?.agentId);
+  const endMsg  = agent?.endMessage?.trim() ||
     'Fico por aqui! Se precisar de mais alguma coisa é só chamar. 😊';
   activeConversations.delete(convKey);
   console.log(`🔚 Conversa encerrada (${reason}): ${convKey}`);
@@ -109,45 +109,40 @@ async function sendAndClose(client, from, agentId, convKey, reason) {
    FUNÇÃO PRINCIPAL
 ───────────────────────────────────────────────────────────── */
 export async function runAgent(sessionName, from, messageText) {
+  const email    = SESSIONS.get(sessionName)?.email;
   const convKey  = `${sessionName}::${from}`;
-  const agents   = loadAgents();
+  const agents   = loadAgents(email);
   const existing = activeConversations.get(convKey);
 
   let agent;
   let isNewConversation = false;
 
   if (existing) {
-    // ── Conversa em andamento ──────────────────────────────
     agent = agents.find(a => a.id === existing.agentId && a.active);
 
     if (!agent) {
-      // Agente foi desativado/excluído durante a conversa
       activeConversations.delete(convKey);
       return false;
     }
 
-    // Verifica palavra de encerramento
     if (agent.endKeywords && matchesKeywords(agent.endKeywords, messageText)) {
       const session = SESSIONS.get(sessionName);
-      if (session?.client) await sendAndClose(session.client, from, agent.id, convKey, 'palavra de encerramento');
+      if (session?.client) await sendAndClose(session.client, from, convKey, 'palavra de encerramento');
       return true;
     }
 
-    // Atualiza contadores
     existing.turns++;
     existing.lastActivity = Date.now();
 
-    // Verifica limite de turnos
     const maxTurns = parseInt(agent.maxTurns) || 0;
     if (maxTurns > 0 && existing.turns > maxTurns) {
       const session = SESSIONS.get(sessionName);
-      if (session?.client) await sendAndClose(session.client, from, agent.id, convKey, `máximo de ${maxTurns} turnos`);
+      if (session?.client) await sendAndClose(session.client, from, convKey, `máximo de ${maxTurns} turnos`);
       return true;
     }
 
     console.log(`🔄 [${sessionName}] Turno ${existing.turns} com ${from} | agente: ${agent.name}`);
   } else {
-    // ── Nova conversa — verifica keywords ─────────────────
     console.log(`🔍 [${sessionName}] ${agents.length} agente(s) | mensagem: "${messageText.slice(0, 60)}"`);
 
     agent = agents.find(a => matchesAgent(a, messageText));
@@ -158,6 +153,7 @@ export async function runAgent(sessionName, from, messageText) {
 
     activeConversations.set(convKey, {
       agentId:         agent.id,
+      email,
       turns:           1,
       startedAt:       Date.now(),
       lastActivity:    Date.now(),
@@ -174,13 +170,11 @@ export async function runAgent(sessionName, from, messageText) {
     return false;
   }
 
-  // ── Coleta de campos obrigatórios (multi-turno) ───────────
   const requiredFields = Array.isArray(agent.requiredFields) ? agent.requiredFields : [];
   const conv = activeConversations.get(convKey);
 
   if (requiredFields.length > 0) {
     if (isNewConversation) {
-      // Tenta extrair date/number da mensagem inicial (ex: "3 quartos de 10/07 a 17/07")
       for (const f of requiredFields) {
         if (['date', 'number'].includes(f.extractType) && !conv.collectedFields[f.name]) {
           const v = extractFieldValue(f.extractType, messageText);
@@ -196,14 +190,12 @@ export async function runAgent(sessionName, from, messageText) {
           conv.awaitingField = null;
           console.log(`📋 Campo "${fDef.name}" = ${v}`);
         } else {
-          // Não conseguiu extrair — repergunta
           await session.client.sendText(from, fDef.question);
           return true;
         }
       }
     }
 
-    // Verifica se ainda há campos pendentes
     const missing = requiredFields.find(f => !conv.collectedFields[f.name]);
     if (missing) {
       conv.awaitingField = missing.name;
@@ -216,7 +208,6 @@ export async function runAgent(sessionName, from, messageText) {
   console.log(`🤖 Agente "${agent.name}" processando | "${messageText.slice(0, 60)}"`);
 
   try {
-    // ── Chama endpoint de dados ────────────────────────────
     const method = (agent.method || 'GET').toUpperCase();
     let endpointResponse;
 
@@ -227,19 +218,16 @@ export async function runAgent(sessionName, from, messageText) {
       let bodyStr = agent.requestTemplate || '{}';
       const fields = conv?.collectedFields || {};
 
-      // 1. Substitui {{message}} e {{session}}
       bodyStr = bodyStr
         .replace(/\{\{message\}\}/g, messageText.replace(/\\/g, '\\\\').replace(/"/g, '\\"'))
         .replace(/\{\{session\}\}/g, sessionName);
 
-      // 2. "{{field}}" — contexto string → devolve "" se vazio
       bodyStr = bodyStr.replace(/"{{(\w+)}}"/g, (_, k) => {
         const v = fields[k];
         if (v == null || v === '') return '""';
         return `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
       });
 
-      // 3. {{field}} — contexto numérico (sem aspas) → devolve 0 se vazio
       bodyStr = bodyStr.replace(/\{\{(\w+)\}\}/g, (_, k) => {
         const v = fields[k];
         if (v == null || v === '') return '0';
@@ -253,14 +241,10 @@ export async function runAgent(sessionName, from, messageText) {
     }
 
     let payload = extractByPath(endpointResponse, agent.responsePath);
-    // Limita itens enviados ao LLM (ex: responseLimit: 1 mostra só o primeiro)
     const responseLimit = parseInt(agent.responseLimit) || 0;
     if (responseLimit > 0 && Array.isArray(payload)) payload = payload.slice(0, responseLimit);
 
-    // ── Monta prompt e chama OpenAI ──────────────────────
-    const endKwList = (agent.endKeywords || '')
-      .split(',').map(k => k.trim()).filter(Boolean);
-
+    const endKwList = (agent.endKeywords || '').split(',').map(k => k.trim()).filter(Boolean);
     const quitInstruction = endKwList.length
       ? `Quando o usuário demonstrar satisfação, agradecimento ou usar qualquer uma destas palavras de encerramento: ${endKwList.join(', ')} — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`
       : `Quando perceber que a conversa chegou ao fim (agradecimento, despedida, satisfação) — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`;
@@ -300,7 +284,6 @@ export async function runAgent(sessionName, from, messageText) {
     const rawReply = completion.choices[0].message.content.trim();
     if (!rawReply) throw new Error('Resposta vazia do LLM');
 
-    // Detecta \quit interno — strip antes de enviar ao usuário
     const shouldQuit = /\\quit\s*$/im.test(rawReply);
     const reply      = rawReply.replace(/\n?\\quit\s*$/im, '').trim();
 
@@ -308,14 +291,12 @@ export async function runAgent(sessionName, from, messageText) {
     console.log(`✅ Agente "${agent.name}" respondeu para ${from}`);
 
     if (shouldQuit) {
-      // LLM sinalizou fim — encerra sem enviar mensagem extra
       activeConversations.delete(convKey);
       console.log(`🔚 [${sessionName}] Conversa encerrada via \\quit do LLM`);
     }
     return true;
   } catch (err) {
     console.error(`❌ Erro no agente "${agent.name}":`, err.message);
-    // Remove conversa em caso de erro para não travar o usuário
     activeConversations.delete(convKey);
     return false;
   }
