@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Broker VIP — Painel</title>
+  <title>ZapBot — Painel</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -753,7 +753,7 @@
   <!-- ── SIDEBAR ── -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
-      <span class="sidebar-logo">The Broker VIP</span>
+      <span class="sidebar-logo">ZapBot</span>
       <button class="sidebar-toggle" id="sidebarToggle" title="Ocultar/mostrar menu">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
           <line x1="3" y1="6"  x2="21" y2="6"/>
@@ -813,7 +813,7 @@
 
     <!-- SESSÕES -->
     <section class="content-section active" id="section-sessions">
-      <span class="logo">The Broker VIP</span>
+      <span class="logo">ZapBot</span>
 
       <div class="card">
         <h1>Autenticação WhatsApp</h1>
@@ -822,10 +822,6 @@
           <div class="field">
             <label for="sessionInput">Número / Sessão</label>
             <input id="sessionInput" type="text" placeholder="5511999999999" autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="emailInput">E-mail</label>
-            <input id="emailInput" type="email" placeholder="seu@email.com" autocomplete="off" />
           </div>
         </div>
 
@@ -1095,8 +1091,6 @@
     if (userEmail) {
       document.getElementById('userEmailLabel').textContent = userEmail;
       document.getElementById('userAvatar').textContent     = userEmail[0].toUpperCase();
-      const emailInput = document.getElementById('emailInput');
-      if (emailInput) emailInput.value = userEmail;
     }
 
     /* ── LOGOUT ── */
@@ -1428,7 +1422,6 @@
     let sessionStarted = false;
 
     const sessionInput    = document.getElementById('sessionInput');
-    const emailInput      = document.getElementById('emailInput');
     const connectBtn      = document.getElementById('connectBtn');
     const qrImg           = document.getElementById('qrImg');
     const qrPlaceholder   = document.getElementById('qrPlaceholder');
@@ -1476,7 +1469,6 @@
 
     function setInputsDisabled(v) {
       sessionInput.disabled = v;
-      emailInput.disabled   = v;
       connectBtn.disabled   = v;
     }
 
@@ -1487,10 +1479,10 @@
 
     async function connect() {
       const session = sessionInput.value.trim();
-      const email   = emailInput.value.trim();
+      const email   = userEmail;
 
       if (!session) { setStatus('gray', 'Aguardando', 'Informe o número / nome da sessão.', true); return; }
-      if (!email)   { setStatus('gray', 'Aguardando', 'Informe o e-mail.', true); return; }
+      if (!email)   { location.href = '/login'; return; }
 
       if (socket)        { socket.close(); socket = null; }
       if (reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
