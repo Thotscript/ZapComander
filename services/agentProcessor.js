@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import OpenAI from 'openai';
 import { SESSIONS } from '../state.js';
+import { retrieveContext, RAG_GUARDRAIL } from './ragProcessor.js';
 
 let _openai = null;
 function getOpenAI() {
@@ -208,6 +209,36 @@ export async function runAgent(sessionName, from, messageText) {
   console.log(`🤖 Agente "${agent.name}" processando | "${messageText.slice(0, 60)}"`);
 
   try {
+    if (agent.ragEnabled) {
+      const chunks = await retrieveContext(
+        email, sessionName, agent.id, messageText, Number(agent.ragTopK) || 5
+      );
+      if (!chunks.length) {
+        const noDataMsg = (agent.ragNoDataMessage || '').trim()
+          || 'Não encontrei essa informação na base de conhecimento.';
+        await session.client.sendText(from, noDataMsg);
+        return true;
+      }
+      const contextBlock = chunks
+        .map((c, i) => `[Fonte: ${c.source} — trecho ${i + 1}]\n${c.text}`)
+        .join('\n\n---\n\n');
+      const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
+      const completion = await getOpenAI().chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: RAG_GUARDRAIL },
+          { role: 'user',   content: `CONTEXTO DISPONÍVEL:\n\n${contextBlock}\n\n---\n\nPERGUNTA: ${messageText}` },
+        ],
+        temperature: 0.1,
+        max_tokens:  600,
+      });
+      const reply = (completion.choices[0].message.content || '').trim();
+      if (!reply) throw new Error('Resposta vazia do LLM');
+      await session.client.sendText(from, reply);
+      console.log(`✅ Agente RAG "${agent.name}" respondeu para ${from}`);
+      return true;
+    }
+
     const method = (agent.method || 'GET').toUpperCase();
     let endpointResponse;
 

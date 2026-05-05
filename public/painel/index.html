@@ -746,6 +746,78 @@
       .sessions-container { padding: 24px 16px; }
       .sessions-header { flex-direction: column; }
     }
+
+    /* ── RAG ── */
+    .rag-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(100,160,240,.12);
+      color: #64a0f0;
+      border: 1px solid rgba(100,160,240,.2);
+      margin-right: 5px;
+    }
+
+    .upload-zone {
+      border: 2px dashed #2a2a36;
+      border-radius: 10px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      font-size: 0.84rem;
+      color: #606070;
+      line-height: 1.9;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #b0a06e;
+      background: rgba(176,160,110,.04);
+      color: #b0a06e;
+    }
+
+    .rag-doc-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #0f0f14;
+      border: 1px solid #1e1e28;
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+    .rag-doc-info  { flex: 1; overflow: hidden; }
+    .rag-doc-name  { font-size: 0.83rem; color: #d0d0d8; font-family: 'SF Mono','Fira Code',monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rag-doc-meta  { font-size: 0.71rem; color: #505060; margin-top: 2px; }
+
+    .rag-stats {
+      display: flex;
+      gap: 20px;
+      padding: 14px 16px;
+      background: #0f0f14;
+      border: 1px solid #1e1e28;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .rag-stat       { display: flex; flex-direction: column; gap: 2px; }
+    .rag-stat-value { font-size: 1.25rem; font-weight: 700; color: #b0a06e; }
+    .rag-stat-label { font-size: 0.71rem; color: #505060; }
+
+    .btn-link {
+      background: none;
+      border: none;
+      color: #b0a06e;
+      cursor: pointer;
+      font-size: inherit;
+      padding: 0;
+      text-decoration: underline;
+      font-family: inherit;
+    }
+    .btn-link:hover { opacity: 0.8; }
   </style>
 </head>
 <body>
@@ -1052,6 +1124,34 @@
                 </div>
               </div>
 
+              <!-- RAG -->
+              <div>
+                <div class="section-divider">Base de Conhecimento (RAG)</div>
+                <div class="toggle-row" style="border-top:none;padding-top:0">
+                  <div class="toggle-info">
+                    <span class="toggle-label">Ativar modo RAG</span>
+                    <span class="toggle-desc">Consulta base interna de documentos — endpoint externo não é necessário</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="f-ragEnabled" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+                <div id="ragFormFields" style="display:none;margin-top:14px">
+                  <div class="form-row">
+                    <div class="form-field">
+                      <label>Trechos por consulta <span>padrão: 5</span></label>
+                      <input id="f-ragTopK" type="number" min="1" max="20" class="form-input" placeholder="5" value="5" />
+                    </div>
+                    <div class="form-field">
+                      <label>Mensagem sem resultados</label>
+                      <input id="f-ragNoDataMessage" type="text" class="form-input" placeholder="Não encontrei essa informação na base de conhecimento." />
+                    </div>
+                  </div>
+                  <p class="form-hint" style="margin-top:8px">Após salvar, use o botão <b>RAG</b> no card do agente para enviar documentos.</p>
+                </div>
+              </div>
+
               <!-- Toggle ativo -->
               <div class="toggle-row">
                 <div class="toggle-info">
@@ -1069,6 +1169,60 @@
             <div class="form-footer">
               <button class="btn-ghost" id="cancelFormBtn">Cancelar</button>
               <button class="btn-save" id="saveAgentBtn">Salvar Agente</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- RAG VIEW -->
+        <div id="agentsRagView" style="display:none">
+          <div class="form-back-bar">
+            <button class="btn-ghost" id="ragBackBtn">← Voltar</button>
+            <h1>RAG: <span id="ragAgentName"></span></h1>
+          </div>
+
+          <div class="form-panel" style="margin-bottom:20px">
+            <div class="form-body">
+              <div class="form-field">
+                <label>Sessão WhatsApp <span>a base é organizada por número/sessão</span></label>
+                <select id="ragSessionSelect" class="form-input">
+                  <option value="">Selecione uma sessão...</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div id="ragContent" style="display:none">
+            <div class="rag-stats" id="ragStatsEl"></div>
+
+            <div class="form-panel" style="margin-bottom:20px">
+              <div class="form-body">
+                <div class="section-divider">Adicionar Documentos</div>
+                <div class="upload-zone" id="uploadZone">
+                  <input type="file" id="ragFileInput" accept=".txt,.md,.csv,.json,.html" multiple style="display:none" />
+                  Arraste arquivos aqui ou
+                  <button class="btn-link" type="button" id="ragFilePickBtn">selecione do computador</button><br>
+                  <span style="font-size:0.74rem;color:#404050">.txt · .md · .csv · .json · .html — máx. 2 MB por arquivo</span>
+                </div>
+                <div id="ragUploadProgress" style="margin-top:10px"></div>
+              </div>
+            </div>
+
+            <div class="form-panel" style="margin-bottom:20px">
+              <div class="form-body">
+                <div class="section-divider">Documentos na Base</div>
+                <div id="ragDocsList"><p style="color:#505060;font-size:.82rem">Nenhum documento ainda.</p></div>
+              </div>
+            </div>
+
+            <div class="form-panel">
+              <div class="form-body">
+                <div class="section-divider">Testar Consulta</div>
+                <div class="test-input-row">
+                  <input id="ragQueryInput" type="text" class="form-input" placeholder="Digite uma pergunta para testar a base..." />
+                  <button class="btn-run" id="ragTestBtn">Consultar</button>
+                </div>
+                <div id="ragTestResult" class="test-result" style="display:none"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1160,6 +1314,8 @@
           b.addEventListener('click', () => deleteAgent(b.dataset.delete)));
         el.querySelectorAll('[data-toggle]').forEach(b =>
           b.addEventListener('click', () => toggleActive(b.dataset.toggle, b)));
+        el.querySelectorAll('[data-rag]').forEach(b =>
+          b.addEventListener('click', () => openRag(b.dataset.rag, b.dataset.ragName)));
       } catch (err) {
         el.innerHTML = `<p style="color:#e06060;font-size:.82rem;padding:16px 0">Erro ao carregar agentes: ${esc(err.message)}</p>`;
       }
@@ -1169,6 +1325,9 @@
       const kws = (a.keywords || '').split(',').map(k => k.trim()).filter(Boolean);
       const kwHTML = kws.slice(0,5).map(k => `<span class="keyword-tag">${esc(k)}</span>`).join('')
         + (kws.length > 5 ? `<span class="keyword-tag">+${kws.length-5}</span>` : '');
+      const endpointLine = a.ragEnabled
+        ? `<div class="agent-endpoint"><span class="rag-badge">RAG</span>Base de Conhecimento Interna</div>`
+        : `<div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method)} ${esc(a.endpoint)}</div>`;
       return `
         <div class="agent-card">
           <div class="agent-card-top">
@@ -1180,10 +1339,11 @@
               ${a.active ? '● Ativo' : '○ Inativo'}
             </span>
           </div>
-          <div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method)} ${esc(a.endpoint)}</div>
+          ${endpointLine}
           ${kwHTML ? `<div class="agent-keywords">${kwHTML}</div>` : ''}
           <div class="agent-actions">
             <button class="btn-ghost flex-grow" data-edit="${a.id}">Editar</button>
+            ${a.ragEnabled ? `<button class="btn-ghost" data-rag="${esc(a.id)}" data-rag-name="${esc(a.name)}">RAG</button>` : ''}
             <button class="btn-ghost" data-toggle="${a.id}">${a.active ? 'Desativar' : 'Ativar'}</button>
             <button class="btn-ghost danger" data-delete="${a.id}">Excluir</button>
           </div>
@@ -1213,7 +1373,11 @@
       document.getElementById('f-responseLimit').value   = a?.responseLimit   ?? 0;
       document.getElementById('f-requiredFields').value  = a?.requiredFields
         ? JSON.stringify(a.requiredFields, null, 2) : '';
-      document.getElementById('f-active').checked        = a ? a.active : true;
+      document.getElementById('f-active').checked             = a ? a.active : true;
+      document.getElementById('f-ragEnabled').checked          = a?.ragEnabled || false;
+      document.getElementById('f-ragTopK').value               = a?.ragTopK ?? 5;
+      document.getElementById('f-ragNoDataMessage').value      = a?.ragNoDataMessage || '';
+      document.getElementById('ragFormFields').style.display   = a?.ragEnabled ? '' : 'none';
       document.getElementById('agentsListView').style.display = 'none';
       document.getElementById('agentsFormView').style.display = '';
     }
@@ -1235,12 +1399,13 @@
     }
 
     async function saveAgent() {
-      const name     = document.getElementById('f-name').value.trim();
-      const endpoint = document.getElementById('f-endpoint').value.trim();
-      const prompt   = document.getElementById('f-prompt').value.trim();
-      if (!name)     return alert('Informe o nome do agente.');
-      if (!endpoint) return alert('Informe a URL do endpoint.');
-      if (!prompt)   return alert('Informe o prompt do sistema.');
+      const name       = document.getElementById('f-name').value.trim();
+      const endpoint   = document.getElementById('f-endpoint').value.trim();
+      const prompt     = document.getElementById('f-prompt').value.trim();
+      const ragEnabled = document.getElementById('f-ragEnabled').checked;
+      if (!name) return alert('Informe o nome do agente.');
+      if (!ragEnabled && !endpoint) return alert('Informe a URL do endpoint (ou ative o modo RAG).');
+      if (!ragEnabled && !prompt)   return alert('Informe o prompt do sistema.');
 
       const btn = document.getElementById('saveAgentBtn');
       btn.disabled = true;
@@ -1258,18 +1423,21 @@
 
       const payload = {
         name, prompt, endpoint,
-        description:     document.getElementById('f-desc').value.trim(),
-        keywords:        document.getElementById('f-keywords').value.trim(),
-        method:          document.getElementById('f-method').value,
-        requestTemplate: document.getElementById('f-request').value.trim(),
-        responsePath:    document.getElementById('f-path').value.trim(),
-        endKeywords:     sanitizeEndKeywords(document.getElementById('f-endKeywords').value.trim()),
-        maxTurns:        parseInt(document.getElementById('f-maxTurns').value) || 0,
-        endMessage:      document.getElementById('f-endMessage').value.trim(),
-        sessionTimeout:  parseInt(document.getElementById('f-sessionTimeout').value) || 15,
-        responseLimit:   parseInt(document.getElementById('f-responseLimit').value) || 0,
+        description:      document.getElementById('f-desc').value.trim(),
+        keywords:         document.getElementById('f-keywords').value.trim(),
+        method:           document.getElementById('f-method').value,
+        requestTemplate:  document.getElementById('f-request').value.trim(),
+        responsePath:     document.getElementById('f-path').value.trim(),
+        endKeywords:      sanitizeEndKeywords(document.getElementById('f-endKeywords').value.trim()),
+        maxTurns:         parseInt(document.getElementById('f-maxTurns').value) || 0,
+        endMessage:       document.getElementById('f-endMessage').value.trim(),
+        sessionTimeout:   parseInt(document.getElementById('f-sessionTimeout').value) || 15,
+        responseLimit:    parseInt(document.getElementById('f-responseLimit').value) || 0,
         requiredFields,
-        active:          document.getElementById('f-active').checked,
+        active:           document.getElementById('f-active').checked,
+        ragEnabled,
+        ragTopK:          parseInt(document.getElementById('f-ragTopK').value) || 5,
+        ragNoDataMessage: document.getElementById('f-ragNoDataMessage').value.trim(),
       };
 
       try {
@@ -1410,6 +1578,177 @@
       const mysessionsActive = document.getElementById('section-mysessions')?.classList.contains('active');
       if (mysessionsActive) renderSessions();
     }, 30_000);
+
+    /* ── RAG ── */
+    let ragCurrentAgentId = null;
+    let ragCurrentSession = '';
+
+    function openRag(agentId, agentName) {
+      ragCurrentAgentId = agentId;
+      ragCurrentSession = '';
+      document.getElementById('ragAgentName').textContent   = agentName;
+      document.getElementById('ragContent').style.display   = 'none';
+      document.getElementById('ragTestResult').style.display = 'none';
+      document.getElementById('ragUploadProgress').innerHTML = '';
+      document.getElementById('agentsListView').style.display = 'none';
+      document.getElementById('agentsRagView').style.display  = '';
+      loadRagSessions();
+    }
+
+    function closeRag() {
+      ragCurrentAgentId = null;
+      document.getElementById('agentsRagView').style.display  = 'none';
+      document.getElementById('agentsListView').style.display = '';
+    }
+
+    async function loadRagSessions() {
+      const sel = document.getElementById('ragSessionSelect');
+      sel.innerHTML = '<option value="">Carregando sessões...</option>';
+      try {
+        const sessions = await apiFetch(`/auth/sessions?email=${encodeURIComponent(userEmail)}`);
+        sel.innerHTML = '<option value="">Selecione uma sessão...</option>'
+          + sessions.map(s => `<option value="${esc(s.numero)}">${esc(s.numero)} — ${esc(s.status)}</option>`).join('');
+        if (sessions.length === 1) { sel.value = sessions[0].numero; onRagSessionChange(); }
+      } catch {
+        sel.innerHTML = '<option value="">Erro ao carregar sessões</option>';
+      }
+    }
+
+    async function onRagSessionChange() {
+      ragCurrentSession = document.getElementById('ragSessionSelect').value;
+      const content = document.getElementById('ragContent');
+      if (!ragCurrentSession) { content.style.display = 'none'; return; }
+      content.style.display = '';
+      await loadRagDocs();
+    }
+
+    async function loadRagDocs() {
+      if (!ragCurrentAgentId || !ragCurrentSession) return;
+      const q = `?email=${encodeURIComponent(userEmail)}&session=${encodeURIComponent(ragCurrentSession)}`;
+
+      try {
+        const stats = await apiFetch(`/api/rag/${ragCurrentAgentId}/stats${q}`);
+        document.getElementById('ragStatsEl').innerHTML = `
+          <div class="rag-stat"><span class="rag-stat-value">${stats.docs}</span><span class="rag-stat-label">Documentos</span></div>
+          <div class="rag-stat"><span class="rag-stat-value">${stats.chunks}</span><span class="rag-stat-label">Trechos indexados</span></div>`;
+      } catch { document.getElementById('ragStatsEl').innerHTML = ''; }
+
+      const docsEl = document.getElementById('ragDocsList');
+      docsEl.innerHTML = '<p style="color:#505060;font-size:.82rem">Carregando...</p>';
+      try {
+        const docs = await apiFetch(`/api/rag/${ragCurrentAgentId}/docs${q}`);
+        if (!docs.length) {
+          docsEl.innerHTML = '<p style="color:#505060;font-size:.82rem">Nenhum documento ainda. Envie arquivos acima.</p>';
+          return;
+        }
+        docsEl.innerHTML = docs.map(d => `
+          <div class="rag-doc-item">
+            <div class="rag-doc-info">
+              <div class="rag-doc-name" title="${esc(d.name)}">${esc(d.name)}</div>
+              <div class="rag-doc-meta">${d.chunks} trecho${d.chunks !== 1 ? 's' : ''} · ${esc((d.createdAt || '').slice(0,10))}</div>
+            </div>
+            <button class="btn-ghost danger" data-rag-delete="${esc(d.name)}">Excluir</button>
+          </div>`).join('');
+        docsEl.querySelectorAll('[data-rag-delete]').forEach(btn =>
+          btn.addEventListener('click', () => deleteRagDoc(btn.dataset.ragDelete)));
+      } catch (err) {
+        docsEl.innerHTML = `<p style="color:#e06060;font-size:.82rem">Erro: ${esc(err.message)}</p>`;
+      }
+    }
+
+    async function uploadRagFiles(files) {
+      if (!files.length) return;
+      const progress = document.getElementById('ragUploadProgress');
+      for (const file of files) {
+        if (file.size > 2 * 1024 * 1024) {
+          progress.innerHTML += `<p style="color:#e06060;font-size:.79rem">⚠️ ${esc(file.name)}: arquivo muito grande (máx 2 MB)</p>`;
+          continue;
+        }
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['txt','md','csv','json','html'].includes(ext)) {
+          progress.innerHTML += `<p style="color:#e06060;font-size:.79rem">⚠️ ${esc(file.name)}: formato não suportado</p>`;
+          continue;
+        }
+        const lineEl = document.createElement('p');
+        lineEl.style.cssText = 'font-size:.79rem;color:#707080;margin-top:4px';
+        lineEl.textContent   = `⏳ ${file.name} — processando...`;
+        progress.appendChild(lineEl);
+        try {
+          const text = await file.text();
+          const q    = `?email=${encodeURIComponent(userEmail)}&session=${encodeURIComponent(ragCurrentSession)}`;
+          const data = await apiFetch(`/api/rag/${ragCurrentAgentId}/upload${q}`, {
+            method: 'POST', body: { filename: file.name, text },
+          });
+          lineEl.style.color = '#40c070';
+          lineEl.textContent = `✅ ${file.name} — ${data.chunks} trechos indexados`;
+        } catch (err) {
+          lineEl.style.color = '#e06060';
+          lineEl.textContent = `❌ ${file.name}: ${err.message}`;
+        }
+      }
+      await loadRagDocs();
+    }
+
+    async function deleteRagDoc(filename) {
+      if (!confirm(`Excluir "${filename}" da base de conhecimento?`)) return;
+      const q = `?email=${encodeURIComponent(userEmail)}&session=${encodeURIComponent(ragCurrentSession)}&filename=${encodeURIComponent(filename)}`;
+      try {
+        await apiFetch(`/api/rag/${ragCurrentAgentId}/docs${q}`, { method: 'DELETE' });
+        await loadRagDocs();
+      } catch (err) { alert('Erro ao excluir: ' + err.message); }
+    }
+
+    document.getElementById('ragBackBtn').addEventListener('click', closeRag);
+    document.getElementById('ragSessionSelect').addEventListener('change', onRagSessionChange);
+    document.getElementById('ragFilePickBtn').addEventListener('click', () =>
+      document.getElementById('ragFileInput').click());
+    document.getElementById('ragFileInput').addEventListener('change', e => {
+      uploadRagFiles([...e.target.files]);
+      e.target.value = '';
+    });
+
+    const uploadZone = document.getElementById('uploadZone');
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      uploadRagFiles([...e.dataTransfer.files]);
+    });
+
+    document.getElementById('ragTestBtn').addEventListener('click', async () => {
+      const query  = document.getElementById('ragQueryInput').value.trim();
+      if (!query) return;
+      const result = document.getElementById('ragTestResult');
+      const btn    = document.getElementById('ragTestBtn');
+      btn.disabled = true; btn.textContent = '...';
+      result.style.display = ''; result.className = 'test-result'; result.textContent = 'Buscando...';
+      try {
+        const q      = `?email=${encodeURIComponent(userEmail)}&session=${encodeURIComponent(ragCurrentSession)}`;
+        const chunks = await apiFetch(`/api/rag/${ragCurrentAgentId}/query${q}`, {
+          method: 'POST', body: { query, topK: 3 },
+        });
+        if (!chunks.length) {
+          result.className  = 'test-result warn';
+          result.textContent = '⚠️ Nenhum trecho relevante encontrado.';
+        } else {
+          result.className = 'test-result ok';
+          result.innerHTML = chunks.map((c, i) =>
+            `<b>[${i+1}] ${esc(c.source)} (score: ${c.score.toFixed(3)})</b><br>`
+            + `<span style="color:#b8b8c0;font-size:.79rem">${esc(c.text.slice(0,300))}${c.text.length>300?'…':''}</span>`
+          ).join('<br><br>');
+        }
+      } catch (err) {
+        result.className  = 'test-result err';
+        result.textContent = `❌ ${err.message}`;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Consultar';
+      }
+    });
+
+    document.getElementById('f-ragEnabled').addEventListener('change', function () {
+      document.getElementById('ragFormFields').style.display = this.checked ? '' : 'none';
+    });
 
     /* ── INIT ── */
     renderList();

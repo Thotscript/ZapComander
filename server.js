@@ -18,6 +18,7 @@ import messagesRouter from './routes/messages.js';
 import agentsRouter from './routes/agents.js';
 import usuariosRouter from './routes/usuarios.js';
 import adminRouter from './routes/admin.js';
+import ragRouter from './routes/rag.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -112,6 +113,7 @@ app.use(messagesRouter);
 app.use(agentsRouter);
 app.use(usuariosRouter);
 app.use(adminRouter);
+app.use(ragRouter);
 
 setupWebSocket();
 
