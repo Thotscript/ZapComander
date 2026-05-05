@@ -20,7 +20,6 @@
       padding: 24px;
     }
 
-    /* Animated background gradient */
     body::before {
       content: '';
       position: fixed;
@@ -52,7 +51,6 @@
       color: #e8e8ea;
       letter-spacing: -0.02em;
     }
-
     .brand-name span { color: #25D366; }
 
     .card {
@@ -69,37 +67,35 @@
       z-index: 1;
     }
 
-    .card-header {
+    .card-header { display: flex; flex-direction: column; gap: 6px; }
+    .card-header h1 { font-size: 1.4rem; font-weight: 700; color: #f0f0f2; letter-spacing: -0.02em; }
+    .card-header p  { font-size: 0.88rem; color: #606070; line-height: 1.5; }
+
+    .tabs {
       display: flex;
-      flex-direction: column;
-      gap: 6px;
+      background: #0d0d14;
+      border: 1px solid #1e1e28;
+      border-radius: 10px;
+      padding: 4px;
+      gap: 4px;
     }
-
-    .card-header h1 {
-      font-size: 1.4rem;
-      font-weight: 700;
-      color: #f0f0f2;
-      letter-spacing: -0.02em;
+    .tab {
+      flex: 1;
+      padding: 8px 0;
+      font-size: 0.83rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      background: none;
+      color: #505060;
+      transition: background .15s, color .15s;
     }
+    .tab.active { background: #1e1e28; color: #e8e8ea; }
 
-    .card-header p {
-      font-size: 0.88rem;
-      color: #606070;
-      line-height: 1.5;
-    }
+    .fields { display: flex; flex-direction: column; gap: 14px; }
 
-    .fields {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
+    .field { display: flex; flex-direction: column; gap: 6px; }
     .field label {
       font-size: 0.75rem;
       font-weight: 600;
@@ -107,7 +103,6 @@
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
-
     .field input {
       background: #0d0d14;
       border: 1px solid #1e1e28;
@@ -119,10 +114,7 @@
       transition: border-color .2s, box-shadow .2s;
       width: 100%;
     }
-    .field input:focus {
-      border-color: #25D366;
-      box-shadow: 0 0 0 3px rgba(37,211,102,0.08);
-    }
+    .field input:focus { border-color: #25D366; box-shadow: 0 0 0 3px rgba(37,211,102,0.08); }
     .field input::placeholder { color: #333340; }
 
     .btn-primary {
@@ -141,38 +133,34 @@
       align-items: center;
       justify-content: center;
       gap: 8px;
-      text-decoration: none;
     }
-    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:hover  { opacity: 0.88; transform: translateY(-1px); }
     .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-    .divider {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #2a2a38;
-      font-size: 0.8rem;
-    }
-    .divider::before, .divider::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: #1e1e28;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .back-link {
+    .error-msg {
       font-size: 0.82rem;
-      color: #505060;
-      text-decoration: none;
-      transition: color .15s;
+      color: #e06060;
+      background: rgba(224,96,96,.08);
+      border: 1px solid rgba(224,96,96,.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: none;
+      line-height: 1.4;
     }
+    .success-msg {
+      font-size: 0.82rem;
+      color: #40c070;
+      background: rgba(64,192,112,.08);
+      border: 1px solid rgba(64,192,112,.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: none;
+      line-height: 1.4;
+    }
+
+    .footer-links { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .back-link { font-size: 0.82rem; color: #505060; text-decoration: none; transition: color .15s; }
     .back-link:hover { color: #25D366; }
 
     .badge {
@@ -186,19 +174,12 @@
       border-radius: 20px;
       padding: 5px 12px;
     }
-
     .badge-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
+      width: 6px; height: 6px; border-radius: 50%;
       background: #25D366;
       animation: pulse 2s ease-in-out infinite;
     }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
   </style>
 </head>
 <body>
@@ -214,8 +195,13 @@
 
   <div class="card">
     <div class="card-header">
-      <h1>Acessar painel</h1>
-      <p>Informe suas credenciais para conectar seu WhatsApp.</p>
+      <h1 id="cardTitle">Acessar painel</h1>
+      <p id="cardSubtitle">Informe suas credenciais para entrar.</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" id="tabLogin">Entrar</button>
+      <button class="tab" id="tabRegister">Criar conta</button>
     </div>
 
     <div class="fields">
@@ -229,12 +215,15 @@
       </div>
     </div>
 
-    <a href="/painel" class="btn-primary" id="enterBtn">
+    <div class="error-msg"   id="errorMsg"></div>
+    <div class="success-msg" id="successMsg"></div>
+
+    <button class="btn-primary" id="submitBtn">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/>
       </svg>
-      Entrar
-    </a>
+      <span id="submitLabel">Entrar</span>
+    </button>
 
     <div class="footer-links">
       <a href="/" class="back-link">← Voltar para o início</a>
@@ -245,6 +234,94 @@
     <span class="badge-dot"></span>
     Sistemas operacionais
   </div>
+
+  <script>
+    let mode = 'login';
+
+    const tabLogin    = document.getElementById('tabLogin');
+    const tabRegister = document.getElementById('tabRegister');
+    const cardTitle   = document.getElementById('cardTitle');
+    const cardSub     = document.getElementById('cardSubtitle');
+    const submitBtn   = document.getElementById('submitBtn');
+    const submitLabel = document.getElementById('submitLabel');
+    const errorMsg    = document.getElementById('errorMsg');
+    const successMsg  = document.getElementById('successMsg');
+
+    function clearMessages() {
+      errorMsg.style.display   = 'none';
+      successMsg.style.display = 'none';
+      errorMsg.textContent     = '';
+      successMsg.textContent   = '';
+    }
+
+    tabLogin.addEventListener('click', () => {
+      mode = 'login';
+      tabLogin.classList.add('active');
+      tabRegister.classList.remove('active');
+      cardTitle.textContent  = 'Acessar painel';
+      cardSub.textContent    = 'Informe suas credenciais para entrar.';
+      submitLabel.textContent = 'Entrar';
+      clearMessages();
+    });
+
+    tabRegister.addEventListener('click', () => {
+      mode = 'register';
+      tabRegister.classList.add('active');
+      tabLogin.classList.remove('active');
+      cardTitle.textContent  = 'Criar conta';
+      cardSub.textContent    = 'Crie sua conta para acessar o painel.';
+      submitLabel.textContent = 'Criar conta';
+      clearMessages();
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      clearMessages();
+      const email = document.getElementById('emailInput').value.trim();
+      const senha = document.getElementById('passwordInput').value;
+
+      if (!email) { showError('Informe seu e-mail.'); return; }
+      if (!senha)  { showError('Informe sua senha.');  return; }
+
+      submitBtn.disabled = true;
+      submitLabel.textContent = mode === 'login' ? 'Entrando...' : 'Criando conta...';
+
+      try {
+        const endpoint = mode === 'login' ? '/api/user/login' : '/api/user/register';
+        const res  = await fetch(endpoint, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ email, senha })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(data.error || `Erro ${res.status}`);
+          return;
+        }
+
+        if (mode === 'register') {
+          showSuccess('Conta criada! Agora faça login.');
+          tabLogin.click();
+          document.getElementById('passwordInput').value = '';
+        } else {
+          localStorage.setItem('zapbot_email', data.email);
+          location.href = '/painel';
+        }
+      } catch {
+        showError('Não foi possível conectar ao servidor.');
+      } finally {
+        submitBtn.disabled = false;
+        submitLabel.textContent = mode === 'login' ? 'Entrar' : 'Criar conta';
+      }
+    });
+
+    document.getElementById('passwordInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitBtn.click();
+    });
+
+    function showError(msg)   { errorMsg.textContent = msg;   errorMsg.style.display   = 'block'; }
+    function showSuccess(msg) { successMsg.textContent = msg; successMsg.style.display = 'block'; }
+  </script>
 
 </body>
 </html>

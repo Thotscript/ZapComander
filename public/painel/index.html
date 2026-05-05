@@ -637,6 +637,115 @@
       .agents-header { flex-direction: column; }
       .test-input-row { flex-direction: column; }
     }
+
+    /* ── SIDEBAR BOTTOM ── */
+    .sidebar-spacer { flex: 1; }
+    .sidebar-bottom {
+      padding: 10px 7px 14px;
+      border-top: 1px solid #1e1e26;
+    }
+    .sidebar-user {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 9px;
+      overflow: hidden;
+    }
+    .sidebar-user-avatar {
+      width: 26px; height: 26px;
+      min-width: 26px;
+      background: #25D366;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #0d0d0f;
+    }
+    .sidebar-user-email {
+      font-size: 0.72rem;
+      color: #606070;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      opacity: 1;
+      transition: opacity .12s;
+    }
+    .sidebar.collapsed .sidebar-user-email { opacity: 0; pointer-events: none; }
+
+    /* ── MY SESSIONS SECTION ── */
+    #section-mysessions { flex-direction: column; min-height: 100vh; }
+
+    .sessions-container {
+      padding: 36px 40px;
+      max-width: 980px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    .sessions-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .sessions-header h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #f0f0f2;
+      letter-spacing: -0.02em;
+    }
+    .sessions-header p { font-size: 0.84rem; color: #606070; margin-top: 4px; }
+
+    .sessions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .session-card {
+      background: #18181c;
+      border: 1px solid #2a2a30;
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color .2s;
+    }
+    .session-card:hover { border-color: #3a3a44; }
+
+    .session-number {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #e8e8ea;
+      font-family: 'SF Mono','Fira Code','Consolas',monospace;
+      word-break: break-all;
+    }
+
+    .session-updated { font-size: 0.71rem; color: #404050; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      width: fit-content;
+    }
+    .status-pill.connected { background: rgba(64,192,112,.12); color: #40c070; border: 1px solid rgba(64,192,112,.2); }
+    .status-pill.offline   { background: rgba(240,192,64,.10); color: #f0c040; border: 1px solid rgba(240,192,64,.2); }
+    .status-pill.error     { background: rgba(224,96,96,.10);  color: #e06060; border: 1px solid rgba(224,96,96,.2); }
+    .status-pill.unknown   { background: rgba(80,80,90,.10);   color: #606070; border: 1px solid #2a2a30; }
+
+    @media (max-width: 640px) {
+      .sessions-container { padding: 24px 16px; }
+      .sessions-header { flex-direction: column; }
+    }
   </style>
 </head>
 <body>
@@ -671,7 +780,32 @@
         </svg>
         <span class="nav-label">Configurar Agentes</span>
       </button>
+
+      <button class="nav-item" data-section="mysessions">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <path d="M8 21h8M12 17v4"/>
+        </svg>
+        <span class="nav-label">Minhas Sessões</span>
+      </button>
     </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar" id="userAvatar">?</div>
+        <span class="sidebar-user-email" id="userEmailLabel"></span>
+      </div>
+      <button class="nav-item" id="logoutBtn" style="color:#e06060">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+        <span class="nav-label">Sair</span>
+      </button>
+    </div>
   </aside>
 
   <!-- ── MAIN ── -->
@@ -724,6 +858,20 @@
         </div>
 
         <p class="hint" id="hint">Informe o número e o e-mail para iniciar.</p>
+      </div>
+    </section>
+
+    <!-- MINHAS SESSÕES -->
+    <section class="content-section" id="section-mysessions">
+      <div class="sessions-container">
+        <div class="sessions-header">
+          <div>
+            <h1>Minhas Sessões</h1>
+            <p id="sessionsSubtitle">Sessões WhatsApp vinculadas à sua conta</p>
+          </div>
+          <button class="btn" id="refreshSessionsBtn">↻ Atualizar</button>
+        </div>
+        <div id="sessionsList"></div>
       </div>
     </section>
 
@@ -935,6 +1083,24 @@
   </main>
 
   <script>
+    /* ── AUTH GUARD ── */
+    const userEmail = localStorage.getItem('zapbot_email');
+    if (!userEmail) { location.href = '/login'; }
+
+    /* ── USER INFO ── */
+    if (userEmail) {
+      document.getElementById('userEmailLabel').textContent = userEmail;
+      document.getElementById('userAvatar').textContent     = userEmail[0].toUpperCase();
+      const emailInput = document.getElementById('emailInput');
+      if (emailInput) emailInput.value = userEmail;
+    }
+
+    /* ── LOGOUT ── */
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('zapbot_email');
+      location.href = '/login';
+    });
+
     /* ── SIDEBAR ── */
     const sidebar = document.getElementById('sidebar');
     document.getElementById('sidebarToggle').addEventListener('click', () => {
@@ -942,12 +1108,13 @@
     });
 
     /* ── NAVEGAÇÃO ── */
-    document.querySelectorAll('.nav-item').forEach(btn => {
+    document.querySelectorAll('.nav-item[data-section]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.nav-item[data-section]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
         document.getElementById('section-' + btn.dataset.section).classList.add('active');
+        if (btn.dataset.section === 'mysessions') renderSessions();
       });
     });
 
@@ -1194,6 +1361,57 @@
         btn.textContent = 'Enviar';
       }
     });
+
+    /* ── MY SESSIONS ── */
+    const STATUS_MAP = {
+      CONNECTED:    ['connected', '● Conectado'],
+      MAIN:         ['connected', '● Conectado'],
+      OFFLINE:      ['offline',   '○ Offline'],
+      DISCONNECTED: ['error',     '✕ Desconectado'],
+      CLOSE:        ['error',     '✕ Fechado'],
+      UNPAIRED:     ['error',     '✕ Desemparelhado'],
+      CONFLICT:     ['error',     '✕ Conflito'],
+    };
+
+    function sessionCard(s) {
+      const [cls, label] = STATUS_MAP[s.status] || ['unknown', s.status || 'Desconhecido'];
+      return `
+        <div class="session-card">
+          <div class="session-number">${esc(s.numero)}</div>
+          <span class="status-pill ${cls}">${label}</span>
+          <div class="session-updated">Atualizado: ${esc(s.atualizado_em)}</div>
+        </div>`;
+    }
+
+    async function renderSessions() {
+      const el = document.getElementById('sessionsList');
+      if (!el) return;
+      el.innerHTML = '<p style="color:#505060;font-size:.82rem;padding:16px 0">Carregando sessões...</p>';
+      try {
+        const sessions = await apiFetch(`/auth/sessions?email=${encodeURIComponent(userEmail)}`);
+        if (!sessions.length) {
+          el.innerHTML = `
+            <div class="empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <path d="M8 21h8M12 17v4"/>
+              </svg>
+              <h3>Nenhuma sessão encontrada</h3>
+              <p>Vá em "Autenticar Sessões" para conectar um número de WhatsApp.</p>
+            </div>`;
+          return;
+        }
+        el.innerHTML = `<div class="sessions-grid">${sessions.map(sessionCard).join('')}</div>`;
+      } catch (err) {
+        el.innerHTML = `<p style="color:#e06060;font-size:.82rem;padding:16px 0">Erro ao carregar: ${esc(err.message)}</p>`;
+      }
+    }
+
+    document.getElementById('refreshSessionsBtn').addEventListener('click', renderSessions);
+    setInterval(() => {
+      const mysessionsActive = document.getElementById('section-mysessions')?.classList.contains('active');
+      if (mysessionsActive) renderSessions();
+    }, 30_000);
 
     /* ── INIT ── */
     renderList();

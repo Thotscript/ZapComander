@@ -125,4 +125,23 @@ router.get('/auth/statusfinder', async (req, res) => {
   }
 });
 
+router.get('/auth/sessions', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email é obrigatório' });
+  try {
+    const [rows] = await pool.query(
+      `SELECT numero, status,
+              DATE_FORMAT(criado_em,     '%d/%m/%Y %H:%i') AS criado_em,
+              DATE_FORMAT(atualizado_em, '%d/%m/%Y %H:%i') AS atualizado_em
+         FROM sessoes
+        WHERE usuario_email = ?
+        ORDER BY criado_em DESC`,
+      [email]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar sessões' });
+  }
+});
+
 export default router;

@@ -7,9 +7,13 @@ CREATE TABLE IF NOT EXISTS usuarios (
   email                  VARCHAR(255) NOT NULL,
   plano                  VARCHAR(50)  NOT NULL DEFAULT 'free',
   limite_minutos_mensal  INT          NOT NULL DEFAULT 0,
+  senha_hash             VARCHAR(255) DEFAULT NULL,
   criado_em              TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (email)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Para tabelas já existentes, execute manualmente:
+-- ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_hash VARCHAR(255) DEFAULT NULL;
 
 -- ------------------------------------------------------------
 

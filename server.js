@@ -16,6 +16,7 @@ import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import messagesRouter from './routes/messages.js';
 import agentsRouter from './routes/agents.js';
+import usuariosRouter from './routes/usuarios.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -104,6 +105,7 @@ app.use(authRouter);
 app.use(devicesRouter);
 app.use(messagesRouter);
 app.use(agentsRouter);
+app.use(usuariosRouter);
 
 setupWebSocket();
 
