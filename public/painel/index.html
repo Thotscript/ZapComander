@@ -366,7 +366,7 @@
 
     .agent-actions {
       display: flex;
-      gap: 7px;
+      gap: 6px;
       padding-top: 4px;
       border-top: 1px solid #1e1e26;
     }
@@ -385,6 +385,17 @@
     .btn-ghost:hover         { color: #e8e8ea; border-color: #3a3a44; background: #1a1a22; }
     .btn-ghost.danger:hover  { color: #e06060; border-color: rgba(224,96,96,.3); background: rgba(224,96,96,.05); }
     .btn-ghost.flex-grow { flex: 1; }
+
+    /* Inside agent cards all action buttons share space equally */
+    .agent-actions .btn-ghost {
+      flex: 1;
+      min-width: 0;
+      padding: 7px 4px;
+      text-align: center;
+      font-size: 0.74rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
 
     .empty-state {
       text-align: center;
