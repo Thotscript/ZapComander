@@ -104,6 +104,16 @@ export function attachStateListener(client, sessionName, email) {
         if (session) session.myNumber = wid;
       } catch {}
       try { await criarOuIgnorarSessao(sessionName, email); } catch {}
+
+      // Força o salvamento do token na pasta da sessão
+      try {
+        const token = await client.getSessionTokenBrowser();
+        await myTokenStore.setToken(sessionName, token);
+        console.log(`💾 Token salvo para ${sessionName}`);
+      } catch (err) {
+        console.warn(`⚠️ Erro ao salvar token de ${sessionName}:`, err.message);
+      }
+
       broadcastSessionAuthenticated(sessionName);
     } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
       console.warn(`⚠️ ${sessionName} → ${state}. Limpando...`);
@@ -157,6 +167,15 @@ export const restoreSession = async ({ sessionName, email }) => {
       await client.isConnected();
       myNumber = await client.getWid();
       await criarOuIgnorarSessao(sessionName, email);
+
+      // Força o salvamento do token ao restaurar sessão
+      try {
+        const token = await client.getSessionTokenBrowser();
+        await myTokenStore.setToken(sessionName, token);
+        console.log(`💾 Token restaurado e salvo para ${sessionName}`);
+      } catch (err) {
+        console.warn(`⚠️ Erro ao salvar token na restauração de ${sessionName}:`, err.message);
+      }
     } catch (err) {
       console.warn(`myNumber não obtido na restauração de ${sessionName}:`, err.message);
     }

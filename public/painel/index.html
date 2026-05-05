@@ -1083,6 +1083,10 @@
   </main>
 
   <script>
+    const API_BASE = window.location.protocol === 'file:'
+      ? 'https://zapbot.botcomander.com.br'
+      : '';
+
     /* ── AUTH GUARD ── */
     const userEmail = localStorage.getItem('zapbot_email');
     if (!userEmail) { location.href = '/login'; }
@@ -1128,7 +1132,7 @@
     }
 
     async function apiFetch(url, opts = {}) {
-      const r = await fetch(url, {
+      const r = await fetch(API_BASE + url, {
         headers: { 'Content-Type': 'application/json' },
         ...opts,
         ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
@@ -1501,7 +1505,7 @@
       openSocket();
 
       try {
-        const res  = await fetch('/auth/login', {
+        const res  = await fetch(API_BASE + '/auth/login', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ sessionName: session, email })
