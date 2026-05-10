@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { SESSIONS } from '../state.js';
 import { loadAgents, writeAgents, runAgent } from '../services/agentProcessor.js';
-import { refreshScheduler } from '../services/botScheduler.js';
+import { refreshScheduler, fireBotNow } from '../services/botScheduler.js';
 
 const router = Router();
 
@@ -75,6 +75,18 @@ router.delete('/api/agents/:id', (req, res) => {
   writeAgents(email, filtered);
   refreshScheduler();
   res.json({ success: true });
+});
+
+/* ── Disparo imediato do bot agendado ── */
+router.post('/api/agents/:id/fire', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email é obrigatório' });
+  try {
+    const result = await fireBotNow(req.params.id, email);
+    res.json({ success: true, contacts: result.contacts });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
 });
 
 /* ── Disparo de teste (somente sessões do usuário) ── */

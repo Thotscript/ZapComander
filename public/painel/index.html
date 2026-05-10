@@ -1433,6 +1433,8 @@ Observações: {{observacoes}}"></textarea>
           b.addEventListener('click', () => toggleActive(b.dataset.toggle, b)));
         el.querySelectorAll('[data-rag]').forEach(b =>
           b.addEventListener('click', () => openRag(b.dataset.rag, b.dataset.ragName)));
+        el.querySelectorAll('[data-fire]').forEach(b =>
+          b.addEventListener('click', () => fireAgentNow(b.dataset.fire, b)));
       } catch (err) {
         el.innerHTML = `<p style="color:#e06060;font-size:.82rem;padding:16px 0">Erro ao carregar agentes: ${esc(err.message)}</p>`;
       }
@@ -1463,6 +1465,7 @@ Observações: {{observacoes}}"></textarea>
           <div class="agent-actions">
             <button class="btn-ghost flex-grow" data-edit="${a.id}">Editar</button>
             ${a.ragEnabled ? `<button class="btn-ghost" data-rag="${esc(a.id)}" data-rag-name="${esc(a.name)}">RAG</button>` : ''}
+            ${a.scheduledBot?.enabled ? `<button class="btn-ghost btn-fire" data-fire="${esc(a.id)}">⏰ Disparar</button>` : ''}
             <button class="btn-ghost" data-toggle="${a.id}">${a.active ? 'Desativar' : 'Ativar'}</button>
             <button class="btn-ghost danger" data-delete="${a.id}">Excluir</button>
           </div>
@@ -1596,6 +1599,28 @@ Observações: {{observacoes}}"></textarea>
       } finally {
         btn.disabled = false;
         btn.textContent = 'Salvar Agente';
+      }
+    }
+
+    /* ── FIRE NOW ── */
+    async function fireAgentNow(id, btn) {
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const data = await apiFetch(`/api/agents/${id}/fire?email=${encodeURIComponent(userEmail)}`, { method: 'POST' });
+        if (data.success) {
+          btn.textContent = '✅ Enviado';
+          setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
+        } else {
+          alert('Erro: ' + data.error);
+          btn.textContent = original;
+          btn.disabled = false;
+        }
+      } catch (err) {
+        alert('Erro ao disparar: ' + err.message);
+        btn.textContent = original;
+        btn.disabled = false;
       }
     }
 
