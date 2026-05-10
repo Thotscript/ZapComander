@@ -535,6 +535,46 @@
     }
     .toggle-switch input:checked + .toggle-track::after { transform: translateX(18px); }
 
+    .cron-presets {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .cron-preset-label {
+      font-size: 0.72rem;
+      color: #505060;
+      margin-right: 2px;
+    }
+    .btn-cron-preset {
+      background: #1a1a22;
+      border: 1px solid #2e2e3a;
+      color: #9090a8;
+      font-size: 0.72rem;
+      padding: 3px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .btn-cron-preset:hover {
+      background: #25253a;
+      color: #c8b870;
+    }
+    .badge-scheduled {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #1a2a1a;
+      border: 1px solid #2a4a2a;
+      color: #50b050;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+    }
+
     .form-footer {
       display: flex;
       align-items: center;
@@ -1135,6 +1175,72 @@
                 </div>
               </div>
 
+              <!-- Bot Agendado -->
+              <div>
+                <div class="section-divider">Bot de Mensagem Agendada</div>
+                <div class="toggle-row" style="border-top:none;padding-top:0">
+                  <div class="toggle-info">
+                    <span class="toggle-label">Ativar bot agendado</span>
+                    <span class="toggle-desc">Envia mensagem automática em horários definidos e atende respostas dentro da janela de tempo</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="f-scheduledEnabled" />
+                    <span class="toggle-track"></span>
+                  </label>
+                </div>
+
+                <div id="scheduledBotFields" style="display:none;margin-top:16px">
+
+                  <div class="form-field full" style="margin-bottom:14px">
+                    <label>Expressão Cron <span>define quando a mensagem é enviada</span></label>
+                    <input id="f-scheduledCron" type="text" class="form-input mono" placeholder="0 9 * * 1-5" />
+                    <div class="cron-presets">
+                      <span class="cron-preset-label">Atalhos:</span>
+                      <button type="button" class="btn-cron-preset" data-cron="0 9 * * 1-5">Seg–Sex às 9h</button>
+                      <button type="button" class="btn-cron-preset" data-cron="0 9 * * *">Todo dia às 9h</button>
+                      <button type="button" class="btn-cron-preset" data-cron="0 9,18 * * 1-5">Seg–Sex 9h e 18h</button>
+                      <button type="button" class="btn-cron-preset" data-cron="0 */2 * * *">A cada 2 horas</button>
+                      <button type="button" class="btn-cron-preset" data-cron="*/30 * * * *">A cada 30 min</button>
+                    </div>
+                    <p class="form-hint">
+                      Formato: <code>minuto hora dia mês dia-da-semana</code>.
+                      Ex: <code>0 9 * * 1-5</code> = Segunda a Sexta às 9h00.
+                      Fuso horário: America/Sao_Paulo.
+                    </p>
+                  </div>
+
+                  <div class="form-field full" style="margin-bottom:14px">
+                    <label>Mensagem Automática <span>* enviada automaticamente nos contatos</span></label>
+                    <textarea id="f-scheduledMessage" class="form-input" rows="3" placeholder="Olá! Tudo bem? Estamos com novidades especiais para você hoje. Gostaria de saber mais?"></textarea>
+                    <p class="form-hint">Mensagem enviada automaticamente. Se o contato responder dentro do timeout de inatividade, o bot continua a conversa coletando os campos configurados acima.</p>
+                  </div>
+
+                  <div class="form-field full" style="margin-bottom:14px">
+                    <label>Contatos <span>números que receberão a mensagem</span></label>
+                    <textarea id="f-scheduledContacts" class="form-input mono" rows="3" placeholder="5511999990001@c.us, 5511999990002@c.us"></textarea>
+                    <p class="form-hint">
+                      Números no formato WhatsApp: <code>55 + DDD + número + @c.us</code>.
+                      Ex: <code>5511999990001@c.us</code>. Separe por vírgula ou uma linha por contato.
+                    </p>
+                  </div>
+
+                  <div class="form-field full">
+                    <label>Template do Resumo (Self-Message) <span>mensagem enviada ao próprio número ao fim da interação</span></label>
+                    <textarea id="f-scheduledSelfTemplate" class="form-input" rows="6" placeholder="📋 *Nova Interação*
+Contato: {{contact}}
+Data: {{date}}
+Nome: {{nome}}
+Interesse: {{interesse}}
+Observações: {{observacoes}}"></textarea>
+                    <p class="form-hint">
+                      Placeholders disponíveis: <code>{{contact}}</code> (número do contato) · <code>{{date}}</code> (data/hora) · <code>{{session}}</code> · <code>{{agentName}}</code> · <code>{{nome_do_campo}}</code> (campos coletados).<br>
+                      O resumo é enviado ao número da própria sessão ao encerrar a conversa.
+                    </p>
+                  </div>
+
+                </div>
+              </div>
+
               <!-- RAG -->
               <div>
                 <div class="section-divider">Base de Conhecimento (RAG)</div>
@@ -1339,11 +1445,13 @@
       const endpointLine = a.ragEnabled
         ? `<div class="agent-endpoint"><span class="rag-badge">RAG</span>Base de Conhecimento Interna</div>`
         : `<div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method)} ${esc(a.endpoint)}</div>`;
+      const scheduledBadge = a.scheduledBot?.enabled
+        ? `<span class="badge-scheduled">⏰ ${esc(a.scheduledBot.cronExpr || 'Agendado')}</span>` : '';
       return `
         <div class="agent-card">
           <div class="agent-card-top">
             <div>
-              <div class="agent-name">${esc(a.name)}</div>
+              <div class="agent-name">${esc(a.name)}${scheduledBadge ? ' ' + scheduledBadge : ''}</div>
               ${a.description ? `<div class="agent-desc">${esc(a.description)}</div>` : ''}
             </div>
             <span class="agent-status ${a.active ? 'active' : 'inactive'}">
@@ -1389,6 +1497,15 @@
       document.getElementById('f-ragTopK').value               = a?.ragTopK ?? 5;
       document.getElementById('f-ragNoDataMessage').value      = a?.ragNoDataMessage || '';
       document.getElementById('ragFormFields').style.display   = a?.ragEnabled ? '' : 'none';
+
+      const sb = a?.scheduledBot || {};
+      document.getElementById('f-scheduledEnabled').checked        = sb.enabled || false;
+      document.getElementById('f-scheduledCron').value             = sb.cronExpr || '';
+      document.getElementById('f-scheduledMessage').value          = sb.message || '';
+      document.getElementById('f-scheduledContacts').value         = sb.contacts || '';
+      document.getElementById('f-scheduledSelfTemplate').value     = sb.selfMessageTemplate || '';
+      document.getElementById('scheduledBotFields').style.display  = sb.enabled ? '' : 'none';
+
       document.getElementById('agentsListView').style.display = 'none';
       document.getElementById('agentsFormView').style.display = '';
     }
@@ -1410,13 +1527,17 @@
     }
 
     async function saveAgent() {
-      const name       = document.getElementById('f-name').value.trim();
-      const endpoint   = document.getElementById('f-endpoint').value.trim();
-      const prompt     = document.getElementById('f-prompt').value.trim();
-      const ragEnabled = document.getElementById('f-ragEnabled').checked;
+      const name            = document.getElementById('f-name').value.trim();
+      const endpoint        = document.getElementById('f-endpoint').value.trim();
+      const prompt          = document.getElementById('f-prompt').value.trim();
+      const ragEnabled      = document.getElementById('f-ragEnabled').checked;
+      const scheduledEnabled = document.getElementById('f-scheduledEnabled').checked;
       if (!name) return alert('Informe o nome do agente.');
-      if (!ragEnabled && !endpoint) return alert('Informe a URL do endpoint (ou ative o modo RAG).');
-      if (!ragEnabled && !prompt)   return alert('Informe o prompt do sistema.');
+      // Se não é bot agendado simples, exige endpoint ou RAG
+      if (!ragEnabled && !endpoint && !scheduledEnabled)
+        return alert('Informe a URL do endpoint, ative o modo RAG ou ative o bot agendado simples.');
+      if (!ragEnabled && !prompt && !scheduledEnabled)
+        return alert('Informe o prompt do sistema.');
 
       const btn = document.getElementById('saveAgentBtn');
       btn.disabled = true;
@@ -1431,6 +1552,11 @@
         if (!Array.isArray(requiredFields))
           return alert('Campos para Coletar deve ser um array JSON (começar com [).');
       }
+
+      // Normaliza contatos: aceita vírgula ou quebra de linha
+      const rawContacts = document.getElementById('f-scheduledContacts').value;
+      const normalizedContacts = rawContacts
+        .split(/[\n,]/).map(c => c.trim()).filter(Boolean).join(', ');
 
       const payload = {
         name, prompt, endpoint,
@@ -1449,6 +1575,13 @@
         ragEnabled,
         ragTopK:          parseInt(document.getElementById('f-ragTopK').value) || 5,
         ragNoDataMessage: document.getElementById('f-ragNoDataMessage').value.trim(),
+        scheduledBot: {
+          enabled:             scheduledEnabled,
+          cronExpr:            document.getElementById('f-scheduledCron').value.trim(),
+          message:             document.getElementById('f-scheduledMessage').value.trim(),
+          contacts:            normalizedContacts,
+          selfMessageTemplate: document.getElementById('f-scheduledSelfTemplate').value.trim(),
+        },
       };
 
       try {
@@ -1490,6 +1623,18 @@
     document.getElementById('saveAgentBtn').addEventListener('click', saveAgent);
     document.getElementById('cancelFormBtn').addEventListener('click', closeForm);
     document.getElementById('backToListBtn').addEventListener('click', closeForm);
+
+    /* Toggle visibilidade do bot agendado */
+    document.getElementById('f-scheduledEnabled').addEventListener('change', function () {
+      document.getElementById('scheduledBotFields').style.display = this.checked ? '' : 'none';
+    });
+
+    /* Presets de cron */
+    document.querySelectorAll('.btn-cron-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('f-scheduledCron').value = btn.dataset.cron;
+      });
+    });
 
     /* ── TEST PANEL ── */
     async function refreshTestSession() {

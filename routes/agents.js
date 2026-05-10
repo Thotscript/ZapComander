@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { SESSIONS } from '../state.js';
 import { loadAgents, writeAgents, runAgent } from '../services/agentProcessor.js';
+import { refreshScheduler } from '../services/botScheduler.js';
 
 const router = Router();
 
@@ -47,6 +48,7 @@ router.post('/api/agents', (req, res) => {
   agent.endKeywords = sanitizeEndKeywords(agent.endKeywords);
   agents.push(agent);
   writeAgents(email, agents);
+  refreshScheduler();
   res.status(201).json(agent);
 });
 
@@ -60,6 +62,7 @@ router.put('/api/agents/:id', (req, res) => {
   updated.endKeywords = sanitizeEndKeywords(updated.endKeywords);
   agents[idx] = updated;
   writeAgents(email, agents);
+  refreshScheduler();
   res.json(agents[idx]);
 });
 
@@ -70,6 +73,7 @@ router.delete('/api/agents/:id', (req, res) => {
   const filtered = agents.filter(a => a.id !== req.params.id);
   if (filtered.length === agents.length) return res.status(404).json({ error: 'Agente não encontrado' });
   writeAgents(email, filtered);
+  refreshScheduler();
   res.json({ success: true });
 });
 

@@ -8,6 +8,7 @@ import { criarOuIgnorarSessao, atualizarStatusSessao } from '../db/sessions.js';
 import { criarOuIgnorarUsuario } from '../db/usuarios.js';
 import { enqueueProcessing } from '../utils/helpers.js';
 import { runAgent } from './agentProcessor.js';
+import { refreshScheduler } from './botScheduler.js';
 import { myTokenStore, TOKEN_DIR, TEMP_DIR, PUPPETEER_ARGS } from '../config/constants.js';
 import pool from '../db/index.js';
 
@@ -115,6 +116,7 @@ export function attachStateListener(client, sessionName, email) {
       }
 
       broadcastSessionAuthenticated(sessionName);
+      refreshScheduler();
     } else if (['DISCONNECTED', 'CLOSE', 'UNPAIRED', 'CONFLICT'].includes(state)) {
       console.warn(`⚠️ ${sessionName} → ${state}. Limpando...`);
       await cleanupSession(sessionName);

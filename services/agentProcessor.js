@@ -38,9 +38,51 @@ export function writeAgents(email, agents) {
    Chave: `${sessionName}::${from}`
    Valor: { agentId, email, turns, startedAt, lastActivity, collectedFields, awaitingField }
 ───────────────────────────────────────────────────────────── */
-const activeConversations = new Map();
+export const activeConversations = new Map();
 
-setInterval(() => {
+export function startScheduledConversation(sessionName, contact, agentId, email) {
+  const convKey = `${sessionName}::${contact}`;
+  activeConversations.set(convKey, {
+    agentId,
+    email,
+    turns:           0,
+    startedAt:       Date.now(),
+    lastActivity:    Date.now(),
+    collectedFields: {},
+    awaitingField:   null,
+    isScheduled:     true,
+    scheduledContact: contact,
+  });
+  console.log(`⏰ Conversa agendada aberta: ${convKey}`);
+}
+
+async function sendSelfMessage(sessionName, agent, conv) {
+  const template = (agent?.scheduledBot?.selfMessageTemplate || '').trim();
+  if (!template || !conv?.isScheduled) return;
+
+  const session = SESSIONS.get(sessionName);
+  if (!session?.client || !session.myNumber) return;
+
+  const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  let summary = template
+    .replace(/\{\{contact\}\}/g, conv.scheduledContact || '')
+    .replace(/\{\{date\}\}/g, now)
+    .replace(/\{\{session\}\}/g, sessionName)
+    .replace(/\{\{agentName\}\}/g, agent.name || '');
+
+  for (const [k, v] of Object.entries(conv.collectedFields || {})) {
+    summary = summary.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v ?? '');
+  }
+
+  try {
+    await session.client.sendText(session.myNumber, summary);
+    console.log(`📩 Self-message enviada para ${session.myNumber}`);
+  } catch (err) {
+    console.error('❌ Erro ao enviar self-message:', err.message);
+  }
+}
+
+setInterval(async () => {
   const now = Date.now();
   for (const [key, conv] of activeConversations.entries()) {
     const agents    = loadAgents(conv.email);
@@ -49,6 +91,8 @@ setInterval(() => {
     if (now - conv.lastActivity > timeoutMs) {
       activeConversations.delete(key);
       console.log(`⏰ Conversa expirada por inatividade: ${key}`);
+      const sessionName = key.split('::')[0];
+      await sendSelfMessage(sessionName, agent, conv).catch(() => {});
     }
   }
 }, 60_000);
@@ -104,6 +148,8 @@ async function sendAndClose(client, from, convKey, reason) {
   activeConversations.delete(convKey);
   console.log(`🔚 Conversa encerrada (${reason}): ${convKey}`);
   await client.sendText(from, endMsg).catch(() => {});
+  const sessionName = convKey.split('::')[0];
+  await sendSelfMessage(sessionName, agent, conv).catch(() => {});
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -207,6 +253,12 @@ export async function runAgent(sessionName, from, messageText) {
   }
 
   console.log(`🤖 Agente "${agent.name}" processando | "${messageText.slice(0, 60)}"`);
+
+  // Bot agendado simples: sem endpoint nem RAG — encerra após coletar campos
+  if (conv?.isScheduled && !agent.endpoint && !agent.ragEnabled) {
+    await sendAndClose(session.client, from, convKey, 'bot agendado simples');
+    return true;
+  }
 
   try {
     if (agent.ragEnabled) {
@@ -324,6 +376,7 @@ export async function runAgent(sessionName, from, messageText) {
     if (shouldQuit) {
       activeConversations.delete(convKey);
       console.log(`🔚 [${sessionName}] Conversa encerrada via \\quit do LLM`);
+      await sendSelfMessage(sessionName, agent, conv).catch(() => {});
     }
     return true;
   } catch (err) {

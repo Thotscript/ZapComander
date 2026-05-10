@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { TOKEN_DIR, SESSION_LOGS_DIR, QR_CODES_DIR, AUDIO_DIR, TEMP_DIR } from './config/constants.js';
 import { initWss, setupWebSocket } from './ws/websocket.js';
 import { restoreSessions } from './services/session.js';
+import { refreshScheduler } from './services/botScheduler.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import messagesRouter from './routes/messages.js';
@@ -118,6 +119,7 @@ app.use(ragRouter);
 setupWebSocket();
 
 restoreSessions().then(() => {
+  refreshScheduler();
   const port = process.env.PORT;
   server.listen(port, () => console.log(`🚀 Servidor rodando na porta ${port}`));
 });

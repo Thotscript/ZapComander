@@ -6,7 +6,17 @@
       "Bash(node -e \"const p = require\\('./node_modules/@wppconnect-team/wppconnect/node_modules/puppeteer-core/package.json'\\); console.log\\('puppeteer-core interno:', p.version\\)\")",
       "Bash(node -e ' *)",
       "Bash(mkdir -p \"C:/Projetos Github/Orlando_AI_Broker/public/painel\")",
-      "Bash(mkdir -p \"C:/Projetos Github/Orlando_AI_Broker/public/login\")"
+      "Bash(mkdir -p \"C:/Projetos Github/Orlando_AI_Broker/public/login\")",
+      "Bash(Get-ChildItem -Path \"E:\\\\Projetos Github\\\\ZapComander\" -Depth 2)",
+      "Bash(Select-Object -Property FullName, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(npm install *)",
+      "Bash(node -e \"import\\('node-cron'\\).then\\(m => console.log\\('OK', Object.keys\\(m.default\\)\\)\\)\")",
+      "Bash(node --input-type=module)",
+      "Bash(node --check services/botScheduler.js)",
+      "Bash(node --check services/agentProcessor.js)",
+      "Bash(node --check routes/agents.js)",
+      "Bash(node --check server.js)"
     ]
   }
 }
