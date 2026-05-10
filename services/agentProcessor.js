@@ -28,9 +28,21 @@ export function loadAgents(email) {
   catch { return []; }
 }
 
+const INDEX_FILE = path.join(AGENTS_DIR, '_index.json');
+
+function loadEmailIndex() {
+  try { return JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); }
+  catch { return {}; }
+}
+
 export function writeAgents(email, agents) {
   if (!fs.existsSync(AGENTS_DIR)) fs.mkdirSync(AGENTS_DIR, { recursive: true });
   fs.writeFileSync(agentsFile(email), JSON.stringify(agents, null, 2), 'utf8');
+  // Persiste o mapeamento safe-name → email para o scheduler reler após restart
+  const safe  = email.replace(/[^a-z0-9._-]/gi, '_');
+  const index = loadEmailIndex();
+  index[safe] = email;
+  fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2), 'utf8');
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -74,9 +86,15 @@ async function sendSelfMessage(sessionName, agent, conv) {
     summary = summary.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v ?? '');
   }
 
+  if (!summary.trim()) return;
+
+  // Normaliza para número@c.us — getWid() pode retornar @s.whatsapp.net ou número:device@...
+  const rawNumber = String(session.myNumber).split('@')[0].split(':')[0];
+  const to = `${rawNumber}@c.us`;
+
   try {
-    await session.client.sendText(session.myNumber, summary);
-    console.log(`📩 Self-message enviada para ${session.myNumber}`);
+    await session.client.sendText(to, summary);
+    console.log(`📩 Self-message enviada para ${to}`);
   } catch (err) {
     console.error('❌ Erro ao enviar self-message:', err.message);
   }

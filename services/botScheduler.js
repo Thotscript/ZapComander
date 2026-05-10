@@ -8,11 +8,22 @@ import { startScheduledConversation } from './agentProcessor.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 const AGENTS_DIR = path.join(__dirname, '..', 'data', 'agents');
+const INDEX_FILE = path.join(AGENTS_DIR, '_index.json');
 
 // Map: `${email}::${agentId}` -> ScheduledTask
 const jobs = new Map();
 
+function loadEmailIndex() {
+  try { return JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); }
+  catch { return {}; }
+}
+
 function resolveEmail(safeName) {
+  // Fonte primária: índice persistido — funciona mesmo sem sessões ativas
+  const index = loadEmailIndex();
+  if (index[safeName]) return index[safeName];
+
+  // Fallback: sessões em memória (caso o índice ainda não exista)
   for (const session of SESSIONS.values()) {
     const safe = (session.email || '').replace(/[^a-z0-9._-]/gi, '_');
     if (safe === safeName) return session.email;
@@ -26,7 +37,7 @@ export function refreshScheduler() {
 
   if (!fs.existsSync(AGENTS_DIR)) return;
 
-  const files = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.json'));
+  const files = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.json') && !f.startsWith('_'));
   let count = 0;
 
   for (const file of files) {
