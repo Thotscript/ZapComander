@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZapComander — Guia de Uso e Configuração</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0f;
+      --surface:   #18181c;
+      --border:    #2a2a30;
+      --border2:   #1e1e26;
+      --gold:      #b0a06e;
+      --gold-dim:  rgba(176,160,110,.12);
+      --green:     #40c070;
+      --green-dim: rgba(64,192,112,.12);
+      --blue:      #64a0f0;
+      --blue-dim:  rgba(100,160,240,.12);
+      --amber:     #f0c040;
+      --amber-dim: rgba(240,192,64,.10);
+      --red:       #e06060;
+      --text:      #e8e8ea;
+      --muted:     #606070;
+      --subtle:    #404050;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    /* ── LAYOUT ── */
+    .layout { display: flex; min-height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: 260px;
+      min-height: 100vh;
+      background: #111115;
+      border-right: 1px solid var(--border2);
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-brand {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .brand-name {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+    .brand-sub {
+      font-size: 0.71rem;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    .toc { padding: 14px 12px; flex: 1; }
+    .toc-section {
+      font-size: 0.64rem;
+      font-weight: 700;
+      color: var(--subtle);
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      padding: 14px 8px 6px;
+    }
+    .toc-item {
+      display: block;
+      padding: 6px 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-decoration: none;
+      border-radius: 6px;
+      transition: color .15s, background .15s;
+    }
+    .toc-item:hover  { color: var(--text); background: #1a1a22; }
+    .toc-item.active { color: var(--text); background: #1e1e26; border-left: 2px solid var(--gold); padding-left: 6px; }
+    .toc-sub {
+      padding-left: 16px;
+      font-size: 0.75rem;
+      color: #505060;
+    }
+    .toc-sub:hover { color: var(--text); background: #1a1a22; }
+
+    .sidebar-back {
+      padding: 12px 12px 16px;
+      border-top: 1px solid var(--border2);
+    }
+    .sidebar-back a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 7px 8px;
+      border-radius: 6px;
+      transition: color .15s, background .15s;
+    }
+    .sidebar-back a:hover { color: var(--text); background: #1a1a22; }
+
+    /* ── CONTENT ── */
+    .content {
+      flex: 1;
+      max-width: 860px;
+      padding: 52px 52px 80px;
+      overflow-x: hidden;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .content { padding: 32px 20px 60px; }
+    }
+
+    /* ── TYPOGRAPHY ── */
+    .doc-title {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #f0f0f2;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+    .doc-lead {
+      font-size: 1rem;
+      color: var(--muted);
+      margin-bottom: 40px;
+      line-height: 1.65;
+    }
+
+    h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #f0f0f2;
+      letter-spacing: -0.02em;
+      margin: 52px 0 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border2);
+    }
+    h3 {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #d8d8e0;
+      margin: 28px 0 10px;
+    }
+    h4 {
+      font-size: 0.87rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin: 20px 0 8px;
+    }
+
+    p { color: #b0b0bc; margin-bottom: 14px; font-size: 0.93rem; }
+    p:last-child { margin-bottom: 0; }
+
+    strong { color: var(--text); font-weight: 600; }
+
+    /* ── ANCHORS ── */
+    .anchor { scroll-margin-top: 28px; }
+
+    /* ── CALLOUTS ── */
+    .callout {
+      display: flex;
+      gap: 14px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      border-left: 3px solid;
+      margin: 20px 0;
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+    .callout-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+    .callout-body { flex: 1; }
+    .callout-body strong { display: block; margin-bottom: 4px; font-size: 0.85rem; }
+    .callout.info    { background: var(--blue-dim);  border-color: var(--blue);  color: #a0c4ff; }
+    .callout.warning { background: var(--amber-dim); border-color: var(--amber); color: #f0d070; }
+    .callout.success { background: var(--green-dim); border-color: var(--green); color: #70d490; }
+    .callout.tip     { background: var(--gold-dim);  border-color: var(--gold);  color: #c8b870; }
+
+    /* ── CODE ── */
+    code {
+      font-family: 'SF Mono','Fira Code','Consolas',monospace;
+      font-size: 0.82em;
+      background: #1a1a22;
+      border: 1px solid var(--border2);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--gold);
+    }
+    pre {
+      background: #111118;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      overflow-x: auto;
+      margin: 16px 0;
+      font-size: 0.82rem;
+      line-height: 1.65;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #c0c8d8;
+      font-size: inherit;
+    }
+    .code-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--subtle);
+      margin-bottom: 4px;
+    }
+
+    /* ── TABLES ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin: 16px 0;
+    }
+    th {
+      text-align: left;
+      padding: 9px 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #111118;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--border2);
+      color: #b0b0bc;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { color: var(--text); font-weight: 500; }
+    td code { font-size: 0.8em; }
+
+    /* ── CARDS DE TIPO DE BOT ── */
+    .bot-types { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 20px 0; }
+    @media (max-width: 600px) { .bot-types { grid-template-columns: 1fr; } }
+
+    .bot-type-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .bot-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+    }
+    .badge-keyword   { background: var(--gold-dim);  color: var(--gold);  border: 1px solid rgba(176,160,110,.25); }
+    .badge-rag       { background: var(--blue-dim);  color: var(--blue);  border: 1px solid rgba(100,160,240,.25); }
+    .badge-scheduled { background: var(--green-dim); color: var(--green); border: 1px solid rgba(64,192,112,.25); }
+    .badge-hybrid    { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(240,192,64,.25); }
+
+    .bot-type-name { font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .bot-type-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.55; }
+
+    /* ── STEPS ── */
+    .steps { display: flex; flex-direction: column; gap: 0; margin: 20px 0; }
+    .step {
+      display: flex;
+      gap: 16px;
+      padding-bottom: 24px;
+      position: relative;
+    }
+    .step:not(:last-child)::before {
+      content: '';
+      position: absolute;
+      left: 15px;
+      top: 36px;
+      bottom: 0;
+      width: 1px;
+      background: var(--border);
+    }
+    .step-num {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--gold);
+    }
+    .step-body { flex: 1; padding-top: 4px; }
+    .step-title { font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+    .step-desc  { font-size: 0.84rem; color: #909098; line-height: 1.6; }
+
+    /* ── FIELD REFERENCE ── */
+    .field-ref {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .field-ref-header {
+      padding: 12px 16px;
+      background: #111118;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .field-item {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border2);
+      align-items: start;
+    }
+    .field-item:last-child { border-bottom: none; }
+    .field-key {
+      font-family: 'SF Mono','Fira Code','Consolas',monospace;
+      font-size: 0.78rem;
+      color: var(--gold);
+    }
+    .field-key span {
+      font-size: 0.65rem;
+      color: var(--subtle);
+      display: block;
+      font-family: inherit;
+      margin-top: 2px;
+    }
+    .field-desc { font-size: 0.8rem; color: #909098; line-height: 1.55; }
+    .field-desc code { font-size: 0.78em; }
+
+    /* ── PLACEHOLDER TABLE ── */
+    .placeholder-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    @media (max-width: 600px) { .placeholder-grid { grid-template-columns: 1fr; } }
+    .ph-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .ph-code { font-family: 'SF Mono','Fira Code',monospace; font-size: 0.78rem; color: var(--gold); }
+    .ph-desc { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+
+    /* ── CRON TABLE ── */
+    .cron-table { width: 100%; }
+
+    /* ── STATUS LEGEND ── */
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--green); }
+    .dot-amber  { background: var(--amber); }
+    .dot-red    { background: var(--red); }
+    .dot-gray   { background: #555; }
+
+    /* ── DIVIDER ── */
+    hr { border: none; border-top: 1px solid var(--border2); margin: 40px 0; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR TOC -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-name">ZapComander</div>
+      <div class="brand-sub">Guia de Uso e Configuração</div>
+    </div>
+
+    <nav class="toc">
+      <div class="toc-section">Início</div>
+      <a class="toc-item" href="#introducao">O que é o ZapComander</a>
+      <a class="toc-item" href="#primeiros-passos">Primeiros Passos</a>
+
+      <div class="toc-section">Sessões WhatsApp</div>
+      <a class="toc-item" href="#autenticar-sessao">Autenticar uma Sessão</a>
+      <a class="toc-item" href="#status-sessao">Status da Sessão</a>
+      <a class="toc-item" href="#multi-sessao">Multi-Sessão</a>
+
+      <div class="toc-section">Configurando Bots</div>
+      <a class="toc-item" href="#tipos-de-bot">Tipos de Bot</a>
+      <a class="toc-item" href="#criar-bot">Criar um Bot</a>
+      <a class="toc-item toc-sub" href="#config-identidade">↳ Identidade</a>
+      <a class="toc-item toc-sub" href="#config-keywords">↳ Palavras-chave</a>
+      <a class="toc-item toc-sub" href="#config-endpoint">↳ Endpoint de Dados</a>
+      <a class="toc-item toc-sub" href="#config-prompt">↳ Prompt da IA</a>
+      <a class="toc-item toc-sub" href="#config-conversa">↳ Controle de Conversa</a>
+      <a class="toc-item toc-sub" href="#config-campos">↳ Campos para Coletar</a>
+
+      <div class="toc-section">Funcionalidades</div>
+      <a class="toc-item" href="#bot-agendado">Bot Agendado</a>
+      <a class="toc-item" href="#rag">Base de Conhecimento (RAG)</a>
+      <a class="toc-item" href="#transcricao">Transcrição de Áudio</a>
+      <a class="toc-item" href="#teste-bot">Testar um Bot</a>
+
+      <div class="toc-section">Referência</div>
+      <a class="toc-item" href="#referencia-campos">Referência de Campos</a>
+      <a class="toc-item" href="#placeholders">Placeholders Disponíveis</a>
+      <a class="toc-item" href="#cron-referencia">Expressões Cron</a>
+      <a class="toc-item" href="#extract-types">Tipos de Extração</a>
+      <a class="toc-item" href="#faq">Perguntas Frequentes</a>
+    </nav>
+
+    <div class="sidebar-back">
+      <a href="/painel">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+        Voltar ao Painel
+      </a>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+
+    <h1 class="doc-title">Guia de Uso e Configuração</h1>
+    <p class="doc-lead">
+      Aprenda a conectar sessões WhatsApp, criar bots inteligentes, configurar fluxos de conversa,
+      usar a base de conhecimento RAG e agendar disparos automáticos.
+    </p>
+
+    <!-- ════════════════════ INTRODUÇÃO ════════════════════ -->
+    <h2 id="introducao" class="anchor">O que é o ZapComander</h2>
+
+    <p>
+      O <strong>ZapComander</strong> é uma plataforma de automação WhatsApp com IA que permite
+      criar bots personalizados que respondem mensagens, coletam dados de clientes, consultam
+      APIs externas e enviam campanhas proativas agendadas — tudo vinculado ao seu número WhatsApp.
+    </p>
+
+    <div class="bot-types">
+      <div class="bot-type-card">
+        <div class="bot-type-badge badge-keyword">Keyword</div>
+        <div class="bot-type-name">Bot de Resposta</div>
+        <div class="bot-type-desc">Ativado por palavras-chave. Consulta sua API e responde com IA.</div>
+      </div>
+      <div class="bot-type-card">
+        <div class="bot-type-badge badge-rag">RAG</div>
+        <div class="bot-type-name">Base de Conhecimento</div>
+        <div class="bot-type-desc">Responde baseado em documentos que você carregou internamente.</div>
+      </div>
+      <div class="bot-type-card">
+        <div class="bot-type-badge badge-scheduled">Agendado</div>
+        <div class="bot-type-name">Bot Proativo</div>
+        <div class="bot-type-desc">Dispara mensagens em horários definidos e continua a conversa.</div>
+      </div>
+      <div class="bot-type-card">
+        <div class="bot-type-badge badge-hybrid">Híbrido</div>
+        <div class="bot-type-name">Keyword + Agendado</div>
+        <div class="bot-type-desc">Responde por keyword E dispara proativamente pelo cron.</div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ PRIMEIROS PASSOS ════════════════════ -->
+    <h2 id="primeiros-passos" class="anchor">Primeiros Passos</h2>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Crie sua conta</div>
+          <div class="step-desc">Acesse <code>/login</code> e cadastre-se com e-mail e senha. Sua conta isola seus bots e sessões dos outros usuários.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Autentique uma sessão WhatsApp</div>
+          <div class="step-desc">No painel, acesse <strong>Autenticar Sessões</strong>, informe o número e escaneie o QR Code com o WhatsApp do celular.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Crie um bot</div>
+          <div class="step-desc">Acesse <strong>Configurar Agentes</strong> e clique em <strong>+ Novo Agente</strong>. Configure nome, palavras-chave, endpoint e prompt.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Teste o bot</div>
+          <div class="step-desc">Use o painel de <strong>Disparar Teste</strong> para enviar uma mensagem e verificar a resposta antes de ativar para clientes reais.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <div class="step-title">Ative e monitore</div>
+          <div class="step-desc">Com o agente ativo, ele interceptará automaticamente mensagens que contenham as palavras-chave configuradas.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ SESSÕES ════════════════════ -->
+    <h2 id="autenticar-sessao" class="anchor">Autenticar uma Sessão</h2>
+
+    <p>
+      Uma <strong>sessão</strong> é a conexão do seu número WhatsApp à plataforma.
+      Cada sessão vincula um número a sua conta e permite que os bots enviados e recebidos por aquele número
+      sejam gerenciados pela plataforma.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Informe o número</div>
+          <div class="step-desc">Digite o número no formato <code>55XXXXXXXXXXX</code> (DDI + DDD + número, sem espaços ou símbolos).</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Clique em Iniciar Sessão</div>
+          <div class="step-desc">O servidor iniciará um navegador Chromium headless que abrirá o WhatsApp Web e gerará o QR code.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Escaneie o QR Code</div>
+          <div class="step-desc">No WhatsApp do celular: <strong>Configurações → Dispositivos conectados → Conectar dispositivo</strong>. Aponte para o QR exibido na tela.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Aguarde a confirmação</div>
+          <div class="step-desc">O painel exibirá "Autenticado!" quando a conexão for estabelecida. A sessão persiste automaticamente — reinícios do servidor reconectam sem novo QR.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-icon">ℹ️</div>
+      <div class="callout-body">
+        <strong>Persistência automática</strong>
+        A sessão é salva localmente em <code>tokens/</code>. Ao reiniciar o servidor, sessões autenticadas são restauradas automaticamente em até 3 simultâneas sem necessidade de novo QR code.
+      </div>
+    </div>
+
+    <h2 id="status-sessao" class="anchor">Status da Sessão</h2>
+
+    <div class="legend">
+      <div class="legend-item"><span class="dot dot-green"></span> Conectado</div>
+      <div class="legend-item"><span class="dot dot-amber"></span> Aguardando QR / Offline</div>
+      <div class="legend-item"><span class="dot dot-red"></span> Erro / Desconectado</div>
+      <div class="legend-item"><span class="dot dot-gray"></span> Desconhecido</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Status</th><th>Significado</th><th>O que fazer</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Conectado</td><td>Sessão ativa e recebendo mensagens</td><td>Nenhuma ação necessária</td></tr>
+        <tr><td>Offline</td><td>Conexão perdida; o servidor tentará reiniciar automaticamente</td><td>Aguarde ou reconecte manualmente</td></tr>
+        <tr><td>Desconectado</td><td>Sessão encerrada (logout, conflito ou QR expirado)</td><td>Inicie nova sessão e escaneie novo QR</td></tr>
+        <tr><td>Desconhecido</td><td>Estado não reportado (sessão em inicialização)</td><td>Aguarde alguns segundos e atualize</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="multi-sessao" class="anchor">Multi-Sessão</h2>
+
+    <p>
+      Você pode conectar <strong>múltiplos números WhatsApp</strong> à mesma conta.
+      Cada sessão opera independentemente, com seus próprios bots vinculados via e-mail.
+      Os bots criados na sua conta respondem em <em>todas</em> as sessões autenticadas associadas ao seu e-mail.
+    </p>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <strong>Atenção: não use o mesmo número em dois navegadores simultâneos</strong>
+        O WhatsApp Web permite apenas uma sessão ativa por número. Abrir o WhatsApp Web no navegador enquanto a sessão está ativa na plataforma causará desconexão.
+      </div>
+    </div>
+
+    <!-- ════════════════════ TIPOS DE BOT ════════════════════ -->
+    <h2 id="tipos-de-bot" class="anchor">Tipos de Bot</h2>
+
+    <h3>Bot de Resposta por Keyword</h3>
+    <p>
+      O tipo mais comum. O bot monitora todas as mensagens recebidas e é ativado quando
+      a mensagem contém uma das palavras-chave configuradas. Consulta um endpoint externo (sua API)
+      e usa a IA para formatar a resposta.
+    </p>
+    <p><strong>Quando usar:</strong> catálogos de produtos, listagem de imóveis, cardápios, consulta de status de pedidos.</p>
+
+    <h3>Bot RAG (Base de Conhecimento)</h3>
+    <p>
+      Ao invés de consultar uma API externa, o bot pesquisa em documentos que você carregou
+      internamente. Ideal quando as respostas são baseadas em textos fixos como manuais, FAQs e políticas.
+    </p>
+    <p><strong>Quando usar:</strong> suporte técnico, FAQ de produtos, políticas de empresa, documentação.</p>
+
+    <h3>Bot Agendado (Proativo)</h3>
+    <p>
+      Dispara mensagens automaticamente para uma lista de contatos em horários definidos por expressão cron.
+      Quando o contato responde, o bot entra no fluxo de conversa normal, coletando campos e consultando o endpoint.
+    </p>
+    <p><strong>Quando usar:</strong> cobrança, lembretes de consulta, promoções, follow-up de vendas.</p>
+
+    <!-- ════════════════════ CRIAR BOT ════════════════════ -->
+    <h2 id="criar-bot" class="anchor">Criar um Bot — Passo a Passo</h2>
+
+    <h3 id="config-identidade" class="anchor">1. Identidade do Bot</h3>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Campos</div>
+      <div class="field-item">
+        <div class="field-key">Nome do Agente <span>obrigatório</span></div>
+        <div class="field-desc">Nome interno para identificar o bot no painel. Ex: <code>Agente Imobiliário</code>, <code>Bot de Cobrança</code>.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Descrição <span>opcional</span></div>
+        <div class="field-desc">Texto curto exibido no card do bot. Ajuda a identificar sua função rapidamente.</div>
+      </div>
+    </div>
+
+    <h3 id="config-keywords" class="anchor">2. Palavras-chave de Ativação</h3>
+
+    <p>
+      Define quais mensagens ativarão o bot. O sistema verifica se a mensagem do contato
+      <strong>contém</strong> qualquer uma das palavras configuradas (não precisa ser exata).
+    </p>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Exemplos</div>
+      <div class="field-item">
+        <div class="field-key"><code>imovel, casa, apartamento</code></div>
+        <div class="field-desc">Ativa quando a mensagem contém qualquer uma dessas palavras. Case-insensitive.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key"><code>*</code></div>
+        <div class="field-desc">Asterisco sozinho: ativa para <strong>todas</strong> as mensagens recebidas. Use com cuidado — apenas um bot pode usar <code>*</code> de forma útil.</div>
+      </div>
+    </div>
+
+    <div class="callout tip">
+      <div class="callout-icon">💡</div>
+      <div class="callout-body">
+        <strong>Dica: Especificidade das keywords</strong>
+        Se você tem múltiplos bots, use keywords específicas para cada um. Um bot imobiliário pode usar <code>imovel, casa, alugar</code> enquanto um bot de suporte usa <code>problema, ajuda, erro, suporte</code>. Evite sobreposição.
+      </div>
+    </div>
+
+    <h3 id="config-endpoint" class="anchor">3. Endpoint de Dados</h3>
+
+    <p>
+      O endpoint é a URL da sua API que fornece os dados para o bot responder.
+      O bot chama esse endpoint a cada mensagem e injeta a resposta no contexto da IA.
+    </p>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Configuração</div>
+      <div class="field-item">
+        <div class="field-key">URL do Endpoint <span>obrigatório</span></div>
+        <div class="field-desc">URL completa da sua API. Ex: <code>https://api.minhaempresa.com/imoveis</code></div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Método HTTP</div>
+        <div class="field-desc"><code>GET</code>, <code>POST</code>, <code>PUT</code> ou <code>PATCH</code>. Para enviar dados (como a mensagem do usuário), use <code>POST</code>.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Template da Requisição</div>
+        <div class="field-desc">
+          JSON enviado no body para métodos POST/PUT. Use placeholders:
+          <code>{{message}}</code> (mensagem do usuário), <code>{{session}}</code> (número da sessão),
+          e qualquer campo coletado como <code>{{nome}}</code>, <code>{{data}}</code>.
+          Deixe vazio para GET sem body.
+        </div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Caminho da Resposta</div>
+        <div class="field-desc">
+          Notação de ponto para extrair parte específica da resposta JSON.
+          Se a API retorna <code>{"data": {"imoveis": [...]}}</code>, insira <code>data.imoveis</code>.
+          Deixe vazio para usar toda a resposta.
+        </div>
+      </div>
+    </div>
+
+    <div class="code-label">Exemplo — Template de Requisição</div>
+    <pre><code>{
+  "query": "{{message}}",
+  "session": "{{session}}",
+  "data_inicio": "{{data_inicio}}",
+  "limit": 5
+}</code></pre>
+
+    <h3 id="config-prompt" class="anchor">4. Prompt da IA</h3>
+
+    <p>
+      O prompt instrui a IA (OpenAI GPT) sobre como formatar e apresentar a resposta ao usuário.
+      Os dados retornados pelo endpoint são automaticamente anexados ao prompt antes do envio à IA.
+    </p>
+
+    <div class="callout tip">
+      <div class="callout-icon">💡</div>
+      <div class="callout-body">
+        <strong>Como escrever um bom prompt</strong>
+        Seja específico sobre o tom, formato e o que incluir. Indique que é para WhatsApp (respostas curtas, emojis se adequado). Mencione que os dados vêm de um JSON e peça para a IA usá-los.
+      </div>
+    </div>
+
+    <div class="code-label">Exemplo — Prompt para imobiliária</div>
+    <pre><code>Você é um assistente de uma imobiliária. Com base no JSON de imóveis disponíveis,
+responda de forma clara e amigável ao cliente no WhatsApp.
+Destaque até 3 opções mais relevantes, incluindo preço, localização e
+características principais. Seja conciso e use emojis adequados. 🏠</code></pre>
+
+    <h3 id="config-conversa" class="anchor">5. Controle de Conversa</h3>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Configurações de controle</div>
+      <div class="field-item">
+        <div class="field-key">Palavras de Encerramento</div>
+        <div class="field-desc">
+          Palavras que encerram a conversa. Quando o usuário enviar qualquer uma, o bot finaliza e envia a mensagem de despedida.
+          Ex: <code>obrigado, tchau, encerrar, ok, parar</code>
+        </div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Mensagem de Encerramento</div>
+        <div class="field-desc">Texto enviado ao encerrar a conversa. Ex: <code>Fico por aqui! Se precisar é só chamar. 😊</code></div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Máximo de Turnos <span>padrão: 0 (ilimitado)</span></div>
+        <div class="field-desc">Número máximo de trocas de mensagem. Após atingir, o bot encerra automaticamente e envia a mensagem de despedida. <code>0</code> = sem limite.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Timeout de Inatividade <span>padrão: 15 min</span></div>
+        <div class="field-desc">Minutos sem resposta do usuário para encerrar a sessão automaticamente. A sessão é limpa da memória após o timeout.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Limite de Resultados <span>padrão: 0 (todos)</span></div>
+        <div class="field-desc">Quantos itens do array JSON da API enviar ao GPT. Use <code>1</code> para mostrar apenas o primeiro resultado. <code>0</code> = enviar todos.</div>
+      </div>
+    </div>
+
+    <h3 id="config-campos" class="anchor">6. Campos para Coletar</h3>
+
+    <p>
+      Defina dados que o bot precisa coletar do usuário <strong>antes</strong> de chamar o endpoint.
+      O bot fará perguntas sequencialmente e só chamará a API após coletar todos os campos.
+    </p>
+
+    <div class="code-label">Formato JSON dos campos</div>
+    <pre><code>[
+  {
+    "name": "nome",
+    "question": "Qual é o seu nome?",
+    "extractType": "uppercase"
+  },
+  {
+    "name": "data_visita",
+    "question": "Qual a data da visita? (DD/MM/AAAA)",
+    "extractType": "date"
+  },
+  {
+    "name": "quartos",
+    "question": "Quantos quartos você precisa?",
+    "extractType": "number"
+  }
+]</code></pre>
+
+    <p>Cada campo coletado fica disponível como <code>{{nome_do_campo}}</code> no Request Template e no Self-Message Template.</p>
+
+    <!-- ════════════════════ BOT AGENDADO ════════════════════ -->
+    <h2 id="bot-agendado" class="anchor">Bot Agendado</h2>
+
+    <p>
+      O bot agendado envia mensagens automáticas para uma lista de contatos em horários definidos
+      por expressão cron. Quando o contato responde, o bot entra no fluxo normal de conversa.
+    </p>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Configurações do Bot Agendado</div>
+      <div class="field-item">
+        <div class="field-key">Expressão Cron</div>
+        <div class="field-desc">Define o horário de disparo. Fuso horário: <strong>America/Sao_Paulo</strong>. Ex: <code>0 9 * * 1-5</code> = Seg–Sex às 9h.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Mensagem Automática</div>
+        <div class="field-desc">Mensagem enviada aos contatos no horário definido. Esta é a mensagem inicial — se o contato responder, a conversa continua.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Contatos</div>
+        <div class="field-desc">
+          Números no formato WhatsApp: <code>55XXXXXXXXXXX@c.us</code>.
+          Separe por vírgula ou uma linha por contato.
+          Ex: <code>5511999990001@c.us, 5511999990002@c.us</code>
+        </div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">Template do Resumo (Self-Message)</div>
+        <div class="field-desc">
+          Mensagem enviada ao número da <em>própria sessão</em> ao fim de cada conversa agendada.
+          Útil para o operador receber um resumo estruturado da interação.
+        </div>
+      </div>
+    </div>
+
+    <h3 id="cron-referencia" class="anchor">Expressões Cron — Referência</h3>
+
+    <p>Formato: <code>minuto hora dia-do-mês mês dia-da-semana</code></p>
+
+    <table class="cron-table">
+      <thead>
+        <tr><th>Expressão</th><th>Significado</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>0 9 * * 1-5</code></td><td>Seg–Sex às 9h00</td></tr>
+        <tr><td><code>0 9 * * *</code></td><td>Todo dia às 9h00</td></tr>
+        <tr><td><code>0 9,18 * * 1-5</code></td><td>Seg–Sex às 9h e 18h</td></tr>
+        <tr><td><code>0 */2 * * *</code></td><td>A cada 2 horas</td></tr>
+        <tr><td><code>*/30 * * * *</code></td><td>A cada 30 minutos</td></tr>
+        <tr><td><code>0 10 1 * *</code></td><td>Todo dia 1 do mês às 10h</td></tr>
+        <tr><td><code>0 8 * * 6</code></td><td>Todo sábado às 8h</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout success">
+      <div class="callout-icon">✅</div>
+      <div class="callout-body">
+        <strong>Disparo imediato</strong>
+        Use o botão <strong>⏰ Disparar</strong> no card do bot para enviar a mensagem agora, independentemente do horário configurado no cron. Útil para testes e envios pontuais urgentes.
+      </div>
+    </div>
+
+    <!-- ════════════════════ RAG ════════════════════ -->
+    <h2 id="rag" class="anchor">Base de Conhecimento (RAG)</h2>
+
+    <p>
+      O modo RAG (<em>Retrieval-Augmented Generation</em>) permite que o bot responda baseado
+      em documentos que você carregou. Ao invés de consultar uma API, o sistema busca os
+      trechos mais relevantes dos seus documentos e os injeta no prompt da IA.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Ative o modo RAG no bot</div>
+          <div class="step-desc">No formulário do bot, ative a chave <strong>Ativar modo RAG</strong>. Configure o número de trechos por consulta (padrão: 5) e a mensagem quando não há resultado.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Salve o bot</div>
+          <div class="step-desc">O botão RAG aparecerá no card do bot na listagem.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Selecione a sessão e carregue documentos</div>
+          <div class="step-desc">Clique em <strong>RAG</strong> no card, selecione a sessão WhatsApp e faça upload dos arquivos. Formatos aceitos: <code>.txt</code>, <code>.md</code>, <code>.csv</code>, <code>.json</code>, <code>.html</code> (máx. 2MB por arquivo).</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Teste a consulta</div>
+          <div class="step-desc">Use o campo <strong>Testar Consulta</strong> para verificar quais trechos serão retornados para uma determinada pergunta.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout info">
+      <div class="callout-icon">ℹ️</div>
+      <div class="callout-body">
+        <strong>Como funciona internamente</strong>
+        Cada documento é dividido em pedaços de 1.200 caracteres com sobreposição de 200 caracteres. Cada pedaço é convertido em um vetor numérico (embedding) usando OpenAI. Na consulta, a pergunta também é vetorizada e comparada com todos os vetores armazenados — os mais similares (similaridade coseno ≥ 0.25) são usados como contexto.
+      </div>
+    </div>
+
+    <!-- ════════════════════ TRANSCRIÇÃO ════════════════════ -->
+    <h2 id="transcricao" class="anchor">Transcrição de Áudio</h2>
+
+    <p>
+      A plataforma transcreve automaticamente mensagens de áudio (PTT) recebidas.
+      O texto transcrito é enviado de volta ao operador ou ao remetente, conforme configuração.
+    </p>
+
+    <h4>Pipeline de Transcrição</h4>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Áudio recebido</div>
+          <div class="step-desc">Mensagem de voz (PTT) ou áudio recebida na sessão.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Redução de ruído</div>
+          <div class="step-desc">FFmpeg aplica filtro <code>afftdn</code> para limpar o áudio antes da transcrição.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Transcrição Whisper local</div>
+          <div class="step-desc">Whisper local é executado com o modelo configurado (<code>WHISPER_MODEL</code>). Se falhar, usa a API OpenAI como fallback.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Envio do texto</div>
+          <div class="step-desc">O texto é enviado ao número da sessão (<code>self</code>) ou de volta ao remetente (<code>sender</code>), conforme <code>TRANSCRIPTION_DESTINATION</code>.</div>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <thead><tr><th>Modelo Whisper</th><th>Velocidade</th><th>Qualidade</th><th>Uso de RAM</th></tr></thead>
+      <tbody>
+        <tr><td><code>tiny</code></td><td>Muito rápido</td><td>Básica</td><td>~390 MB</td></tr>
+        <tr><td><code>base</code></td><td>Rápido</td><td>Boa</td><td>~740 MB</td></tr>
+        <tr><td><code>small</code></td><td>Médio</td><td>Muito boa</td><td>~2,3 GB</td></tr>
+        <tr><td><code>medium</code></td><td>Lento</td><td>Excelente</td><td>~5 GB</td></tr>
+        <tr><td><code>large</code></td><td>Muito lento</td><td>Melhor</td><td>~10 GB</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ════════════════════ TESTE ════════════════════ -->
+    <h2 id="teste-bot" class="anchor">Testar um Bot</h2>
+
+    <p>
+      O <strong>Painel de Teste</strong> na seção de agentes permite enviar uma mensagem diretamente
+      à primeira sessão ativa e ver a resposta antes de expor o bot a usuários reais.
+    </p>
+
+    <div class="callout warning">
+      <div class="callout-icon">⚠️</div>
+      <div class="callout-body">
+        <strong>A resposta do teste é enviada ao número da própria sessão</strong>
+        A mensagem de teste e a resposta da IA chegam no WhatsApp do número autenticado, não a um cliente externo.
+      </div>
+    </div>
+
+    <!-- ════════════════════ REFERÊNCIA CAMPOS ════════════════════ -->
+    <h2 id="referencia-campos" class="anchor">Referência Completa de Campos</h2>
+
+    <div class="field-ref">
+      <div class="field-ref-header">Configuração do Agente — todos os campos</div>
+
+      <div class="field-item">
+        <div class="field-key">name <span>obrigatório · string</span></div>
+        <div class="field-desc">Nome do agente exibido no painel.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">description <span>opcional · string</span></div>
+        <div class="field-desc">Descrição curta exibida no card do agente.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">keywords <span>obrigatório · string</span></div>
+        <div class="field-desc">Palavras separadas por vírgula. Use <code>*</code> para capturar tudo.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">active <span>boolean · padrão: true</span></div>
+        <div class="field-desc">Quando <code>false</code>, o agente não intercepta nenhuma mensagem.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">endpoint <span>string (URL)</span></div>
+        <div class="field-desc">URL da API de dados. Obrigatório se RAG estiver desativado.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">method <span>GET | POST | PUT | PATCH</span></div>
+        <div class="field-desc">Método HTTP para chamar o endpoint.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">requestTemplate <span>string (JSON com placeholders)</span></div>
+        <div class="field-desc">Body da requisição com placeholders. Vazio = sem body (GET simples).</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">responsePath <span>string (notação de ponto)</span></div>
+        <div class="field-desc">Caminho para extrair dados do JSON de resposta. Vazio = usa tudo.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">responseLimit <span>number · padrão: 0</span></div>
+        <div class="field-desc">Limita itens do array enviados ao LLM. <code>0</code> = todos.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">prompt <span>string</span></div>
+        <div class="field-desc">Instrução para o GPT formatar a resposta. Obrigatório se RAG estiver desativado.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">endKeywords <span>string</span></div>
+        <div class="field-desc">Palavras de encerramento, separadas por vírgula.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">endMessage <span>string</span></div>
+        <div class="field-desc">Mensagem enviada ao encerrar a conversa.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">maxTurns <span>number · padrão: 0</span></div>
+        <div class="field-desc">Máximo de trocas. <code>0</code> = ilimitado.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">sessionTimeout <span>number · padrão: 15</span></div>
+        <div class="field-desc">Minutos de inatividade antes de encerrar a sessão do bot.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">requiredFields <span>array de objetos JSON</span></div>
+        <div class="field-desc">Campos coletados em conversa antes de chamar o endpoint. Ver formato abaixo.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">ragEnabled <span>boolean · padrão: false</span></div>
+        <div class="field-desc">Ativa modo RAG — usa base de documentos interna ao invés de endpoint.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">ragTopK <span>number · padrão: 5</span></div>
+        <div class="field-desc">Número de trechos retornados por consulta na base RAG.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">ragNoDataMessage <span>string</span></div>
+        <div class="field-desc">Mensagem enviada quando a consulta RAG não encontra resultados relevantes.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">scheduledBot.enabled <span>boolean</span></div>
+        <div class="field-desc">Ativa o disparo agendado.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">scheduledBot.cronExpr <span>string (cron)</span></div>
+        <div class="field-desc">Expressão cron do agendamento. Fuso: America/Sao_Paulo.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">scheduledBot.message <span>string</span></div>
+        <div class="field-desc">Mensagem inicial enviada automaticamente aos contatos.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">scheduledBot.contacts <span>string</span></div>
+        <div class="field-desc">Contatos separados por vírgula no formato <code>55XXXXXXXXXXX@c.us</code>.</div>
+      </div>
+      <div class="field-item">
+        <div class="field-key">scheduledBot.selfMessageTemplate <span>string</span></div>
+        <div class="field-desc">Template do resumo enviado ao número da sessão após cada interação.</div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ PLACEHOLDERS ════════════════════ -->
+    <h2 id="placeholders" class="anchor">Placeholders Disponíveis</h2>
+
+    <p>Use estes placeholders nos campos <strong>Request Template</strong> e <strong>Self-Message Template</strong>:</p>
+
+    <div class="placeholder-grid">
+      <div class="ph-item">
+        <div class="ph-code">{{message}}</div>
+        <div class="ph-desc">Texto da mensagem enviada pelo contato</div>
+      </div>
+      <div class="ph-item">
+        <div class="ph-code">{{session}}</div>
+        <div class="ph-desc">Número da sessão WhatsApp ativa</div>
+      </div>
+      <div class="ph-item">
+        <div class="ph-code">{{contact}}</div>
+        <div class="ph-desc">JID do contato (55XXXXXXXXXXX@c.us)</div>
+      </div>
+      <div class="ph-item">
+        <div class="ph-code">{{date}}</div>
+        <div class="ph-desc">Data e hora da interação (fuso da sessão)</div>
+      </div>
+      <div class="ph-item">
+        <div class="ph-code">{{agentName}}</div>
+        <div class="ph-desc">Nome do agente em uso</div>
+      </div>
+      <div class="ph-item">
+        <div class="ph-code">{{nome_do_campo}}</div>
+        <div class="ph-desc">Qualquer campo definido em requiredFields</div>
+      </div>
+    </div>
+
+    <!-- ════════════════════ EXTRACT TYPES ════════════════════ -->
+    <h2 id="extract-types" class="anchor">Tipos de Extração de Campo</h2>
+
+    <table>
+      <thead><tr><th>extractType</th><th>Comportamento</th><th>Exemplo de entrada</th><th>Resultado</th></tr></thead>
+      <tbody>
+        <tr><td><code>text</code></td><td>Texto livre, sem transformação</td><td>"João Silva"</td><td>"João Silva"</td></tr>
+        <tr><td><code>uppercase</code></td><td>Converte para maiúsculo</td><td>"joão silva"</td><td>"JOÃO SILVA"</td></tr>
+        <tr><td><code>number</code></td><td>Extrai apenas dígitos</td><td>"2 quartos"</td><td>"2"</td></tr>
+        <tr><td><code>date</code></td><td>Extrai data no formato DD/MM/YYYY</td><td>"15 de maio" / "15/05/2026"</td><td>"15/05/2026"</td></tr>
+        <tr><td><code>date_us</code></td><td>Extrai data e converte para MM/DD/YYYY</td><td>"15/05/2026"</td><td>"05/15/2026"</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ════════════════════ FAQ ════════════════════ -->
+    <h2 id="faq" class="anchor">Perguntas Frequentes</h2>
+
+    <h3>O bot não está respondendo — o que verificar?</h3>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Sessão está conectada?</div>
+          <div class="step-desc">Verifique em <strong>Minhas Sessões</strong> se o status é <span style="color:var(--green)">Conectado</span>. Se não estiver, autentique novamente.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Bot está ativo?</div>
+          <div class="step-desc">No card do bot, verifique se o badge mostra <span style="color:var(--green)">● Ativo</span>. Clique em <strong>Ativar</strong> se estiver inativo.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Keyword correta?</div>
+          <div class="step-desc">Teste com a keyword exata configurada. Lembre que é case-insensitive mas a palavra precisa estar presente na mensagem.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Endpoint acessível?</div>
+          <div class="step-desc">Use o <strong>Disparar Teste</strong> para ver o erro retornado. Verifique se o endpoint está online e retornando JSON válido.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Posso ter múltiplos bots ativos ao mesmo tempo?</h3>
+    <p>Sim. Cada bot monitora suas próprias keywords. Se uma mensagem contém keywords de múltiplos bots, apenas o primeiro match (por ordem de criação) é ativado. Use keywords específicas e não sobrepostas.</p>
+
+    <h3>O que acontece se o contato não responder?</h3>
+    <p>Após o <strong>Timeout de Inatividade</strong> (padrão: 15 minutos), a sessão de conversa é limpa da memória. Se o contato mandar uma mensagem depois, o bot tratará como uma nova conversa.</p>
+
+    <h3>Posso usar o bot sem endpoint externo?</h3>
+    <p>Sim, de duas formas: (1) ative o <strong>modo RAG</strong> e carregue documentos internos; (2) use um <strong>bot agendado simples</strong> sem campos obrigatórios — ele envia a mensagem configurada e aguarda resposta do contato sem precisar de API.</p>
+
+    <h3>Como formatar a lista de contatos para o bot agendado?</h3>
+    <p>Use o formato <code>55XXXXXXXXXXX@c.us</code> onde <code>55</code> é o DDI do Brasil, seguido do DDD e número. Separe por vírgula ou uma linha por contato:</p>
+    <pre><code>5511999990001@c.us
+5521988887777@c.us
+5531977776666@c.us</code></pre>
+
+    <h3>O bot responde mensagens de grupos?</h3>
+    <p>Por padrão, o bot processa apenas mensagens diretas (chats 1:1). Mensagens de grupos são ignoradas pelo listener para evitar ativações indesejadas.</p>
+
+    <hr>
+
+    <p style="color:var(--subtle);font-size:0.8rem;text-align:center">
+      ZapComander — Plataforma de Automação WhatsApp com IA
+    </p>
+
+  </main>
+</div>
+
+<script>
+  // Highlight active TOC item on scroll
+  const anchors = document.querySelectorAll('.anchor');
+  const tocItems = document.querySelectorAll('.toc-item');
+
+  function updateActive() {
+    let active = null;
+    anchors.forEach(el => {
+      if (el.getBoundingClientRect().top <= 80) active = el.id;
+    });
+    tocItems.forEach(item => {
+      const href = item.getAttribute('href').slice(1);
+      item.classList.toggle('active', href === active);
+    });
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+</script>
+
+</body>
+</html>

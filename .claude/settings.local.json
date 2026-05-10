@@ -16,7 +16,10 @@
       "Bash(node --check services/botScheduler.js)",
       "Bash(node --check services/agentProcessor.js)",
       "Bash(node --check routes/agents.js)",
-      "Bash(node --check server.js)"
+      "Bash(node --check server.js)",
+      "Bash(Get-ChildItem -Path \"E:\\\\Projetos Github\\\\ZapComander\" -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(node *)"
     ]
   }
 }

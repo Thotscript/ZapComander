@@ -869,6 +869,114 @@
       font-family: inherit;
     }
     .btn-link:hover { opacity: 0.8; }
+
+    /* ── LEGEND PANEL ── */
+    .legend-panel {
+      background: #111118;
+      border: 1px solid #1e1e28;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .legend-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .legend-panel-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #505060;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .legend-panel-toggle {
+      background: none;
+      border: none;
+      font-size: 0.72rem;
+      color: #505060;
+      cursor: pointer;
+      padding: 0;
+      transition: color .15s;
+    }
+    .legend-panel-toggle:hover { color: #b0a06e; }
+
+    .legend-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .legend-section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: #404050;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .legend-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.74rem;
+      color: #707080;
+      background: #18181c;
+      border: 1px solid #2a2a30;
+      border-radius: 20px;
+      padding: 4px 11px;
+      white-space: nowrap;
+    }
+
+    /* ── BOT TYPE BADGES ── */
+    .bot-type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .badge-keyword   { background: rgba(176,160,110,.12); color: #b0a06e; border: 1px solid rgba(176,160,110,.22); }
+    .badge-rag       { background: rgba(100,160,240,.12); color: #64a0f0; border: 1px solid rgba(100,160,240,.22); }
+    .badge-scheduled { background: rgba(64,192,112,.12);  color: #40c070; border: 1px solid rgba(64,192,112,.22); }
+    .badge-hybrid    { background: rgba(240,192,64,.10);  color: #f0c040; border: 1px solid rgba(240,192,64,.22); }
+
+    /* ── AGENT CARD FOOTER INFO ── */
+    .agent-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .agent-meta-item {
+      font-size: 0.67rem;
+      color: #404050;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .agent-meta-item svg { opacity: 0.5; }
+
+    /* ── LEGEND DOT ── */
+    .ldot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .ldot-green  { background: #40c070; }
+    .ldot-gray   { background: #555; }
+    .ldot-amber  { background: #f0c040; animation: pulse 1.4s ease-in-out infinite; }
   </style>
 </head>
 <body>
@@ -911,6 +1019,15 @@
         </svg>
         <span class="nav-label">Minhas Sessões</span>
       </button>
+
+      <a class="nav-item" href="/docs" target="_blank" style="text-decoration:none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span class="nav-label">Documentação</span>
+      </a>
     </nav>
 
     <div class="sidebar-spacer"></div>
@@ -1003,9 +1120,48 @@
           <div class="agents-header">
             <div>
               <h1>Configurar Agentes</h1>
-              <p>Crie agentes com prompts e endpoints configuráveis para automatizar respostas</p>
+              <p>Crie bots de resposta, RAG ou agendados — vinculados às suas sessões WhatsApp.
+                <a href="/docs" target="_blank" style="color:#b0a06e;text-decoration:none;font-size:0.78rem;margin-left:6px">Ver guia completo ↗</a>
+              </p>
             </div>
             <button class="btn" id="newAgentBtn">+ Novo Agente</button>
+          </div>
+
+          <!-- Painel de legenda -->
+          <div class="legend-panel" id="legendPanel">
+            <div class="legend-panel-header">
+              <span class="legend-panel-title">Guia Rápido — Tipos e Status</span>
+              <button class="legend-panel-toggle" id="legendToggle" title="Recolher">▲ Recolher</button>
+            </div>
+            <div class="legend-rows" id="legendRows">
+              <div>
+                <div class="legend-section-title">Tipos de Bot</div>
+                <div class="legend-items">
+                  <span class="legend-item"><span class="bot-type-badge badge-keyword">Keyword</span> Ativado por palavras-chave — consulta API externa</span>
+                  <span class="legend-item"><span class="bot-type-badge badge-rag">RAG</span> Usa base de documentos interna (sem API)</span>
+                  <span class="legend-item"><span class="bot-type-badge badge-scheduled">Agendado</span> Disparo automático por cron em horários definidos</span>
+                  <span class="legend-item"><span class="bot-type-badge badge-hybrid">Híbrido</span> Keyword + Agendado ativos simultaneamente</span>
+                </div>
+              </div>
+              <div>
+                <div class="legend-section-title">Status do Bot</div>
+                <div class="legend-items">
+                  <span class="legend-item"><span class="ldot ldot-green"></span> Ativo — interceptando mensagens</span>
+                  <span class="legend-item"><span class="ldot ldot-gray"></span> Inativo — não intercepta mensagens</span>
+                  <span class="legend-item"><span class="bot-type-badge badge-scheduled" style="font-size:0.58rem">⏰</span> Badge de cron — exibe a expressão de agendamento</span>
+                </div>
+              </div>
+              <div>
+                <div class="legend-section-title">Botões do Card</div>
+                <div class="legend-items">
+                  <span class="legend-item"><b style="color:#9090a0">Editar</b> — Abre o formulário completo de configuração</span>
+                  <span class="legend-item"><b style="color:#64a0f0">RAG</b> — Gerencia documentos da base de conhecimento</span>
+                  <span class="legend-item"><b style="color:#40c070">⏰ Disparar</b> — Envia agora (ignora horário do cron)</span>
+                  <span class="legend-item"><b style="color:#9090a0">Ativar / Desativar</b> — Alterna o estado do bot</span>
+                  <span class="legend-item"><b style="color:#e06060">Excluir</b> — Remove permanentemente o bot</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Painel de teste -->
@@ -1420,7 +1576,10 @@ Observações: {{observacoes}}"></textarea>
                 <path d="M20 13a8 8 0 1 0-16 0"/><line x1="12" y1="13" x2="12" y2="16"/>
               </svg>
               <h3>Nenhum agente configurado</h3>
-              <p>Crie seu primeiro agente para automatizar respostas<br>usando IA e endpoints externos de dados.</p>
+              <p>Clique em <strong style="color:#b0a06e">+ Novo Agente</strong> para criar seu primeiro bot.<br>
+              Você pode criar bots de resposta por keyword, bots com base de conhecimento (RAG)<br>
+              ou bots agendados que disparam mensagens automaticamente.<br>
+              <a href="/docs" target="_blank" style="color:#b0a06e">Ver guia de configuração ↗</a></p>
             </div>`;
           return;
         }
@@ -1444,28 +1603,60 @@ Observações: {{observacoes}}"></textarea>
       const kws = (a.keywords || '').split(',').map(k => k.trim()).filter(Boolean);
       const kwHTML = kws.slice(0,5).map(k => `<span class="keyword-tag">${esc(k)}</span>`).join('')
         + (kws.length > 5 ? `<span class="keyword-tag">+${kws.length-5}</span>` : '');
-      const endpointLine = a.ragEnabled
+
+      // Determina tipo do bot e badge correspondente
+      const isRAG       = !!a.ragEnabled;
+      const isScheduled = !!a.scheduledBot?.enabled;
+      const hasKeywords = kws.length > 0 && !(kws.length === 1 && kws[0] === '');
+      let botTypeBadge, botTypeClass;
+      if (isRAG && isScheduled)          { botTypeBadge = 'RAG + Agendado'; botTypeClass = 'badge-hybrid'; }
+      else if (isRAG)                    { botTypeBadge = 'RAG';            botTypeClass = 'badge-rag'; }
+      else if (isScheduled && hasKeywords){ botTypeBadge = 'Híbrido';       botTypeClass = 'badge-hybrid'; }
+      else if (isScheduled)              { botTypeBadge = 'Agendado';       botTypeClass = 'badge-scheduled'; }
+      else                               { botTypeBadge = 'Keyword';        botTypeClass = 'badge-keyword'; }
+
+      // Linha de endpoint / base de conhecimento
+      const endpointLine = isRAG
         ? `<div class="agent-endpoint"><span class="rag-badge">RAG</span>Base de Conhecimento Interna</div>`
-        : `<div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method)} ${esc(a.endpoint)}</div>`;
-      const scheduledBadge = a.scheduledBot?.enabled
-        ? `<span class="badge-scheduled">⏰ ${esc(a.scheduledBot.cronExpr || 'Agendado')}</span>` : '';
+        : a.endpoint
+          ? `<div class="agent-endpoint" title="${esc(a.endpoint)}">${esc(a.method || 'GET')} ${esc(a.endpoint)}</div>`
+          : `<div class="agent-endpoint" style="color:#3a3a50;font-style:italic">Sem endpoint configurado</div>`;
+
+      // Badge de cron
+      const cronBadge = isScheduled
+        ? `<span class="badge-scheduled" style="font-size:0.62rem;padding:2px 7px;border-radius:4px;margin-left:6px">⏰ ${esc(a.scheduledBot.cronExpr || 'cron')}</span>` : '';
+
+      // Metadados do card
+      const fieldCount = Array.isArray(a.requiredFields) ? a.requiredFields.length : 0;
+      const timeout    = a.sessionTimeout || 15;
+      const maxTurns   = a.maxTurns || 0;
+      const metaItems  = [];
+      if (fieldCount > 0)  metaItems.push(`<span class="agent-meta-item"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>${fieldCount} campo${fieldCount > 1 ? 's' : ''}</span>`);
+      if (maxTurns > 0)   metaItems.push(`<span class="agent-meta-item"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>máx ${maxTurns} turnos</span>`);
+      metaItems.push(`<span class="agent-meta-item"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>timeout ${timeout}min</span>`);
+
       return `
         <div class="agent-card">
           <div class="agent-card-top">
-            <div>
-              <div class="agent-name">${esc(a.name)}${scheduledBadge ? ' ' + scheduledBadge : ''}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px">
+                <span class="bot-type-badge ${botTypeClass}">${botTypeBadge}</span>
+                ${cronBadge}
+              </div>
+              <div class="agent-name">${esc(a.name)}</div>
               ${a.description ? `<div class="agent-desc">${esc(a.description)}</div>` : ''}
             </div>
-            <span class="agent-status ${a.active ? 'active' : 'inactive'}">
+            <span class="agent-status ${a.active ? 'active' : 'inactive'}" style="flex-shrink:0">
               ${a.active ? '● Ativo' : '○ Inativo'}
             </span>
           </div>
           ${endpointLine}
           ${kwHTML ? `<div class="agent-keywords">${kwHTML}</div>` : ''}
+          ${metaItems.length ? `<div class="agent-meta">${metaItems.join('')}</div>` : ''}
           <div class="agent-actions">
             <button class="btn-ghost flex-grow" data-edit="${a.id}">Editar</button>
-            ${a.ragEnabled ? `<button class="btn-ghost" data-rag="${esc(a.id)}" data-rag-name="${esc(a.name)}">RAG</button>` : ''}
-            ${a.scheduledBot?.enabled ? `<button class="btn-ghost btn-fire" data-fire="${esc(a.id)}">⏰ Disparar</button>` : ''}
+            ${isRAG ? `<button class="btn-ghost" data-rag="${esc(a.id)}" data-rag-name="${esc(a.name)}">RAG</button>` : ''}
+            ${isScheduled ? `<button class="btn-ghost" data-fire="${esc(a.id)}" style="color:#40c070;border-color:rgba(64,192,112,.25)">⏰ Disparar</button>` : ''}
             <button class="btn-ghost" data-toggle="${a.id}">${a.active ? 'Desativar' : 'Ativar'}</button>
             <button class="btn-ghost danger" data-delete="${a.id}">Excluir</button>
           </div>
@@ -1647,6 +1838,20 @@ Observações: {{observacoes}}"></textarea>
     document.getElementById('newAgentBtn').addEventListener('click', () => openForm(null));
     document.getElementById('saveAgentBtn').addEventListener('click', saveAgent);
     document.getElementById('cancelFormBtn').addEventListener('click', closeForm);
+
+    /* ── LEGEND TOGGLE ── */
+    const legendRows   = document.getElementById('legendRows');
+    const legendToggle = document.getElementById('legendToggle');
+    let legendOpen = true;
+    function setLegendOpen(open) {
+      legendOpen = open;
+      legendRows.style.display   = open ? '' : 'none';
+      legendToggle.textContent   = open ? '▲ Recolher' : '▼ Expandir';
+      try { localStorage.setItem('zapbot_legend_open', open ? '1' : '0'); } catch {}
+    }
+    // Restore preference
+    try { if (localStorage.getItem('zapbot_legend_open') === '0') setLegendOpen(false); } catch {}
+    legendToggle.addEventListener('click', () => setLegendOpen(!legendOpen));
     document.getElementById('backToListBtn').addEventListener('click', closeForm);
 
     /* Toggle visibilidade do bot agendado */
