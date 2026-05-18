@@ -1820,13 +1820,18 @@ Observações: {{observacoes}}"></textarea>
         return;
       }
 
-      // Connect — open OAuth popup
+      // Abre o popup ANTES do await — o browser exige que window.open seja
+      // chamado no mesmo tick síncrono do evento de clique do usuário.
+      const popup = window.open('about:blank', 'google-oauth', 'width=520,height=620,scrollbars=yes,resizable=yes');
+      if (!popup) return alert('Permita pop-ups neste site para conectar o Google Agenda.');
+
       try {
         const { url } = await apiFetch(`/api/google/auth-url?email=${encodeURIComponent(userEmail)}`);
-        const popup = window.open(url, 'google-oauth', 'width=520,height=620,scrollbars=yes,resizable=yes');
-        if (!popup) return alert('Permita pop-ups neste site para conectar o Google Agenda.');
-        // Success is received via postMessage from the callback page
-      } catch (e) { alert('Erro: ' + e.message); }
+        popup.location.href = url;
+      } catch (e) {
+        popup.close();
+        alert('Erro ao obter URL de autorização: ' + e.message);
+      }
     }
 
     // Receive success signal from OAuth popup
