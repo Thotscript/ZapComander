@@ -1777,14 +1777,18 @@ Observações: {{observacoes}}"></textarea>
 
     /* ── GOOGLE CALENDAR INTEGRATION ── */
     async function checkGoogleCalStatus() {
+      console.log('[Google] checkGoogleCalStatus chamado');
       const statusEl = document.getElementById('googleCalStatus');
       const btnEl    = document.getElementById('googleCalBtn');
-      if (!statusEl || !btnEl) return;
+      console.log('[Google] statusEl:', statusEl, '| btnEl:', btnEl);
+      if (!statusEl || !btnEl) { console.warn('[Google] elementos não encontrados, abortando'); return; }
       statusEl.textContent = 'Verificando...';
       statusEl.className   = 'integration-status';
       btnEl.disabled = true;
       try {
+        console.log('[Google] buscando status em /api/google/status ...');
         const { connected } = await apiFetch(`/api/google/status?email=${encodeURIComponent(userEmail)}`);
+        console.log('[Google] connected:', connected);
         if (connected) {
           statusEl.textContent = '● Conectado';
           statusEl.className   = 'integration-status connected';
@@ -1798,18 +1802,22 @@ Observações: {{observacoes}}"></textarea>
           btnEl.className      = 'btn-integration';
           btnEl.dataset.googleAction = 'connect';
         }
-      } catch {
+      } catch (err) {
+        console.error('[Google] erro no status:', err);
         statusEl.textContent = 'Erro ao verificar';
         btnEl.textContent    = 'Conectar';
         btnEl.className      = 'btn-integration';
         btnEl.dataset.googleAction = 'connect';
       }
       btnEl.disabled = false;
+      console.log('[Google] botão habilitado, action:', btnEl.dataset.googleAction);
     }
 
     async function toggleGoogleCal() {
+      console.log('[Google] toggleGoogleCal chamado');
       const btnEl  = document.getElementById('googleCalBtn');
       const action = btnEl?.dataset.googleAction;
+      console.log('[Google] action:', action, '| btnEl.disabled:', btnEl?.disabled);
 
       if (action === 'disconnect') {
         if (!confirm('Desconectar o Google Agenda desta conta?')) return;
@@ -1820,15 +1828,18 @@ Observações: {{observacoes}}"></textarea>
         return;
       }
 
-      // Abre o popup ANTES do await — o browser exige que window.open seja
-      // chamado no mesmo tick síncrono do evento de clique do usuário.
+      console.log('[Google] abrindo popup about:blank...');
       const popup = window.open('about:blank', 'google-oauth', 'width=520,height=620,scrollbars=yes,resizable=yes');
+      console.log('[Google] popup:', popup);
       if (!popup) return alert('Permita pop-ups neste site para conectar o Google Agenda.');
 
       try {
+        console.log('[Google] buscando auth-url...');
         const { url } = await apiFetch(`/api/google/auth-url?email=${encodeURIComponent(userEmail)}`);
+        console.log('[Google] url obtida, navegando popup para:', url.slice(0, 60) + '...');
         popup.location.href = url;
       } catch (e) {
+        console.error('[Google] erro ao obter url:', e);
         popup.close();
         alert('Erro ao obter URL de autorização: ' + e.message);
       }
