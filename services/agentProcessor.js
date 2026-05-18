@@ -403,6 +403,16 @@ export async function runAgent(sessionName, from, messageText) {
     const responseLimit = parseInt(agent.responseLimit) || 0;
     if (responseLimit > 0 && Array.isArray(payload)) payload = payload.slice(0, responseLimit);
 
+    // Se o endpoint sinalizar resetField (ex: conflito de horário), limpa o campo
+    // para que o bot colete um novo valor na próxima mensagem do usuário.
+    const resetFieldName = typeof endpointResponse?.resetField === 'string'
+      ? endpointResponse.resetField : null;
+    if (resetFieldName && conv?.collectedFields) {
+      delete conv.collectedFields[resetFieldName];
+      conv.awaitingField = null;
+      console.log(`🔄 Campo "${resetFieldName}" resetado por sinal do endpoint`);
+    }
+
     const endKwList = (agent.endKeywords || '').split(',').map(k => k.trim()).filter(Boolean);
     const quitInstruction = endKwList.length
       ? `Quando o usuário demonstrar satisfação, agradecimento ou usar qualquer uma destas palavras de encerramento: ${endKwList.join(', ')} — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`

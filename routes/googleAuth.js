@@ -224,6 +224,35 @@ router.post('/api/google/calendar/create', async (req, res) => {
     const startStr = `${year}-${month}-${day}T${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}:00`;
     const endStr   = `${year}-${month}-${day}T${endH}:${endM}:00`;
 
+    // Verifica conflito antes de criar
+    const tzOffset = '-03:00';
+    const { data: conflictData } = await calendar.events.list({
+      calendarId:   'primary',
+      timeMin:      `${startStr}${tzOffset}`,
+      timeMax:      `${endStr}${tzOffset}`,
+      singleEvents: true,
+      maxResults:   5,
+    });
+
+    if (conflictData.items?.length > 0) {
+      const ocupado = conflictData.items[0];
+      const ocupInicio = ocupado.start?.dateTime
+        ? new Date(ocupado.start.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+        : '';
+      console.log(`⚠️  Conflito de agenda: "${ocupado.summary}" no horário ${startStr}`);
+      return res.json({
+        sucesso:     false,
+        conflito:    true,
+        resetField:  'horario',
+        mensagem:    `O horário ${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')} já está ocupado com "${ocupado.summary}"${ocupInicio ? ` (às ${ocupInicio})` : ''}. Por favor, escolha outro horário.`,
+        horarioOcupado: {
+          titulo: ocupado.summary,
+          inicio: ocupInicio,
+        },
+        camposRecebidos: body,
+      });
+    }
+
     const { data: event } = await calendar.events.insert({
       calendarId: 'primary',
       requestBody: {
