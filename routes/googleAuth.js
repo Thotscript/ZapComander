@@ -180,4 +180,77 @@ router.post('/api/google/calendar/query', async (req, res) => {
   }
 });
 
+/* ── CALENDAR CREATE (endpoint para o bot criar eventos) ──
+   Body esperado: { data, horario, titulo, duracao?, descricao? }
+   Exemplo de requestTemplate do bot:
+     { "data": "{{data}}", "horario": "{{horario}}", "titulo": "{{titulo}}" }
+──────────────────────────────────────────────────────────── */
+router.post('/api/google/calendar/create', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'email obrigatório' });
+
+  const tokens = loadTokens(email);
+  if (!tokens) return res.status(401).json({ error: 'Google Agenda não conectado para este usuário.' });
+
+  try {
+    const client = makeOAuth2Client(tokens);
+    client.on('tokens', (refreshed) => saveTokens(email, { ...tokens, ...refreshed }));
+
+    const calendar = google.calendar({ version: 'v3', auth: client });
+    const body = req.body || {};
+
+    const dateRaw  = String(body.data   || body.date  || '').trim();
+    const timeRaw  = String(body.horario || body.hora  || body.time || '09:00').trim();
+    const titulo   = String(body.titulo  || body.title || body.tipo || 'Agendamento').trim();
+    const duracao  = Math.max(15, parseInt(body.duracao) || 60);
+    const descricao = String(body.descricao || body.observacao || '').trim();
+
+    // Parseia dd/mm/yyyy
+    const dm = dateRaw.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+    if (!dm) return res.status(400).json({ error: `Data inválida: "${dateRaw}". Use dd/mm/aaaa.` });
+    const year  = dm[3] ? (dm[3].length === 2 ? '20' + dm[3] : dm[3]) : new Date().getFullYear();
+    const month = dm[2].padStart(2, '0');
+    const day   = dm[1].padStart(2, '0');
+
+    // Parseia HH:MM — aceita "14h", "14:30", "14h30", "9", etc.
+    const tm     = timeRaw.replace('h', ':').match(/(\d{1,2})(?::(\d{2}))?/);
+    const startH = parseInt(tm?.[1] ?? 9);
+    const startM = parseInt(tm?.[2] ?? 0);
+
+    const endTotalMin = startH * 60 + startM + duracao;
+    const endH = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
+    const endM = String(endTotalMin % 60).padStart(2, '0');
+
+    const startStr = `${year}-${month}-${day}T${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}:00`;
+    const endStr   = `${year}-${month}-${day}T${endH}:${endM}:00`;
+
+    const { data: event } = await calendar.events.insert({
+      calendarId: 'primary',
+      requestBody: {
+        summary:     titulo,
+        description: descricao,
+        start: { dateTime: startStr, timeZone: 'America/Sao_Paulo' },
+        end:   { dateTime: endStr,   timeZone: 'America/Sao_Paulo' },
+      },
+    });
+
+    console.log(`📅 Evento criado no Google Calendar: ${titulo} em ${startStr}`);
+
+    res.json({
+      sucesso: true,
+      evento: {
+        titulo,
+        data:   `${day}/${month}/${year}`,
+        inicio: `${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}`,
+        fim:    `${endH}:${endM}`,
+        link:   event.htmlLink,
+      },
+      camposRecebidos: body,
+    });
+  } catch (err) {
+    console.error('Erro Google Calendar create:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

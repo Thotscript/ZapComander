@@ -1482,9 +1482,11 @@ Observações: {{observacoes}}"></textarea>
                   </div>
                   <button class="btn-integration" id="googleCalBtn" disabled>...</button>
                 </div>
-                <p class="form-hint" style="margin-top:8px">
-                  Conecte sua conta Google e use <code style="background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px">/api/google/calendar/query?email=<em>seu@email</em></code> como endpoint do bot para consultar eventos pelo WhatsApp.
-                </p>
+                <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <code id="googleCalEndpointHint" style="background:rgba(255,255,255,.06);padding:3px 8px;border-radius:5px;font-size:0.75rem;color:#a0a0c0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></code>
+                  <button class="btn-ghost" id="googleCalCopyBtn" style="font-size:0.74rem;padding:4px 10px;flex-shrink:0">Copiar</button>
+                </div>
+                <p class="form-hint" style="margin-top:6px">Cole essa URL no campo <b>Endpoint</b> do bot para consultar o Google Agenda pelo WhatsApp.</p>
               </div>
 
               <!-- Toggle ativo -->
@@ -1851,6 +1853,22 @@ Observações: {{observacoes}}"></textarea>
     });
 
     document.getElementById('googleCalBtn').addEventListener('click', toggleGoogleCal);
+
+    (function initGoogleCalHint() {
+      const endpointUrl = `/api/google/calendar/query?email=${encodeURIComponent(userEmail)}`;
+      const hint = document.getElementById('googleCalEndpointHint');
+      const copyBtn = document.getElementById('googleCalCopyBtn');
+      if (hint) hint.textContent = endpointUrl;
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(endpointUrl).then(() => {
+            const orig = copyBtn.textContent;
+            copyBtn.textContent = 'Copiado!';
+            setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+          });
+        });
+      }
+    })();
 
     /* ── SAVE ── */
     const RESERVED_KW = ['\\quit', '\\q', '\\exit', '\\stop', '\\end', '/quit', '/exit', '/stop'];
