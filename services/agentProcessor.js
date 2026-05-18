@@ -331,7 +331,8 @@ export async function runAgent(sessionName, from, messageText) {
       const fDef = requiredFields.find(f => f.name === conv.awaitingField);
       if (fDef) {
         let v = extractFieldValue(fDef.extractType || 'text', messageText);
-        if (v !== null && !['date', 'date_us', 'number', 'uppercase'].includes(fDef.extractType)) {
+        const promptMentionsField = agent.prompt?.includes(`{${fDef.name}}`);
+        if (v !== null && promptMentionsField && !['date', 'date_us', 'number', 'uppercase'].includes(fDef.extractType)) {
           v = (await normalizeFieldWithLLM(agent, fDef, v).catch(() => v)) ?? null;
         }
         if (v !== null) {
@@ -446,6 +447,8 @@ export async function runAgent(sessionName, from, messageText) {
     const responseLimit = parseInt(agent.responseLimit) || 0;
     if (responseLimit > 0 && Array.isArray(payload)) payload = payload.slice(0, responseLimit);
 
+    const closeAfter = endpointResponse?.closeAfter === true;
+
     // Se o endpoint sinalizar resetField (ex: conflito de horário), limpa o campo,
     // envia a mensagem de conflito direto ao usuário e aguarda nova resposta.
     // Não passa pelo LLM nessa rodada para evitar que ele encerre a conversa.
@@ -507,9 +510,9 @@ export async function runAgent(sessionName, from, messageText) {
     await session.client.sendText(from, reply);
     console.log(`✅ Agente "${agent.name}" respondeu para ${from}`);
 
-    if (shouldQuit) {
+    if (shouldQuit || closeAfter) {
       activeConversations.delete(convKey);
-      console.log(`🔚 [${sessionName}] Conversa encerrada via \\quit do LLM`);
+      console.log(`🔚 [${sessionName}] Conversa encerrada via ${closeAfter ? 'closeAfter do endpoint' : '\\quit do LLM'}`);
       await sendSelfMessage(sessionName, agent, conv).catch(() => {});
     }
     return true;

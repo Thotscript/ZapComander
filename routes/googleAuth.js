@@ -271,7 +271,8 @@ router.post('/api/google/calendar/create', async (req, res) => {
     console.log(`📅 Evento criado no Google Calendar: ${titulo} em ${startStr}`);
 
     res.json({
-      sucesso: true,
+      sucesso:     true,
+      closeAfter:  true,
       evento: {
         titulo,
         data:   `${day}/${month}/${year}`,
