@@ -469,15 +469,27 @@ export async function runAgent(sessionName, from, messageText) {
       ? `Quando o usuário demonstrar satisfação, agradecimento ou usar qualquer uma destas palavras de encerramento: ${endKwList.join(', ')} — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`
       : `Quando perceber que a conversa chegou ao fim (agradecimento, despedida, satisfação) — finalize sua resposta adicionando exatamente \\quit na última linha (sem aspas, sem explicação). Esse é um sinal interno que não será exibido ao usuário.`;
 
-    const systemContent = [
-      agent.prompt.trim(),
-      '',
-      'REGRA: Responda EXCLUSIVAMENTE com base nos dados JSON fornecidos abaixo.',
-      'Não invente, não acrescente informações externas, não cite fontes que não estejam nos dados.',
-      'Se a informação não estiver nos dados, diga apenas que não possui essa informação.',
-      '',
-      quitInstruction,
-    ].join('\n');
+    const systemContent = closeAfter
+      ? [
+          agent.prompt.trim(),
+          '',
+          'RESULTADO: O agendamento foi CONFIRMADO COM SUCESSO e o evento já foi criado na agenda.',
+          'INSTRUÇÕES OBRIGATÓRIAS:',
+          '- Envie UMA ÚNICA mensagem amigável confirmando o agendamento.',
+          '- Inclua no mínimo: nome do cliente, serviço/tipo, data e horário confirmado.',
+          '- NÃO mencione "ocupado", "conflito", "horário indisponível" ou qualquer problema.',
+          '- NÃO faça nenhuma pergunta adicional.',
+          '- NÃO invente informações além das que estão no JSON abaixo.',
+        ].join('\n')
+      : [
+          agent.prompt.trim(),
+          '',
+          'REGRA: Responda EXCLUSIVAMENTE com base nos dados JSON fornecidos abaixo.',
+          'Não invente, não acrescente informações externas, não cite fontes que não estejam nos dados.',
+          'Se a informação não estiver nos dados, diga apenas que não possui essa informação.',
+          '',
+          quitInstruction,
+        ].join('\n');
 
     const userContent = [
       'Dados disponíveis:',
