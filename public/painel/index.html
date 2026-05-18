@@ -1480,7 +1480,7 @@ Observações: {{observacoes}}"></textarea>
                     <span class="integration-name">Google Agenda</span>
                     <span class="integration-status" id="googleCalStatus">Verificando...</span>
                   </div>
-                  <button class="btn-integration" id="googleCalBtn" onclick="toggleGoogleCal()" disabled>...</button>
+                  <button class="btn-integration" id="googleCalBtn" disabled>...</button>
                 </div>
                 <p class="form-hint" style="margin-top:8px">
                   Conecte sua conta Google e use <code style="background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px">/api/google/calendar/query?email=<em>seu@email</em></code> como endpoint do bot para consultar eventos pelo WhatsApp.
@@ -1849,6 +1849,8 @@ Observações: {{observacoes}}"></textarea>
     window.addEventListener('message', (e) => {
       if (e.data?.type === 'google-auth-success') checkGoogleCalStatus();
     });
+
+    document.getElementById('googleCalBtn').addEventListener('click', toggleGoogleCal);
 
     /* ── SAVE ── */
     const RESERVED_KW = ['\\quit', '\\q', '\\exit', '\\stop', '\\end', '/quit', '/exit', '/stop'];
