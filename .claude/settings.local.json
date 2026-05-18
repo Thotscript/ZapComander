@@ -19,7 +19,9 @@
       "Bash(node --check server.js)",
       "Bash(Get-ChildItem -Path \"E:\\\\Projetos Github\\\\ZapComander\" -Force)",
       "Bash(Select-Object FullName, PSIsContainer)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(Get-ChildItem -Path \"E:\\\\Projetos Github\\\\ZapComander\" -Recurse -Depth 2)",
+      "PowerShell(Get-ChildItem -Path \"E:\\\\Projetos Github\\\\ZapComander\" -Recurse -Depth 2 | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty FullName | Sort-Object)"
     ]
   }
 }

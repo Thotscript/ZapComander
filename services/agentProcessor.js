@@ -157,6 +157,56 @@ function extractByPath(obj, dotPath) {
   return dotPath.trim().split('.').reduce((acc, k) => acc?.[k], obj) ?? obj;
 }
 
+async function generateIntroMessage(agent, messageText, firstField) {
+  if (!agent.prompt?.trim()) return null;
+  const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
+  const userContent = firstField
+    ? `Mensagem inicial do usuário: "${messageText}"\n\nApós sua saudação, faça naturalmente a seguinte pergunta: "${firstField.question}"`
+    : `Mensagem inicial do usuário: "${messageText}"\n\nResponda com uma saudação inicial adequada.`;
+  const completion = await getOpenAI().chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: agent.prompt.trim() },
+      { role: 'user',   content: userContent },
+    ],
+    temperature: 0.4,
+    max_tokens: 300,
+  });
+  return (completion.choices[0].message.content || '').trim() || null;
+}
+
+async function normalizeFieldWithLLM(agent, fieldDef, rawValue) {
+  if (!agent.prompt?.trim()) return rawValue;
+  const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
+  const systemContent = [
+    agent.prompt.trim(),
+    '',
+    'Sua única tarefa agora é extrair e formatar o valor do campo abaixo da resposta do usuário.',
+    'Retorne SOMENTE o valor formatado, sem explicações, pontuação extra ou frases adicionais.',
+    'Se o sistema definir um formato específico para este campo, siga-o rigorosamente.',
+    'Se não for possível identificar ou formatar o valor corretamente, retorne apenas: __INVALIDO__',
+  ].join('\n');
+  const userContent = [
+    `Campo: "${fieldDef.name}"`,
+    `Pergunta feita ao usuário: "${fieldDef.question}"`,
+    `Resposta do usuário: "${rawValue}"`,
+    '',
+    `Extraia e formate o valor do campo "${fieldDef.name}" conforme as instruções do sistema:`,
+  ].join('\n');
+  const completion = await getOpenAI().chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user',   content: userContent },
+    ],
+    temperature: 0,
+    max_tokens: 60,
+  });
+  const normalized = (completion.choices[0].message.content || '').trim();
+  if (!normalized || normalized.toLowerCase().includes('__invalido__')) return null;
+  return normalized;
+}
+
 async function sendAndClose(client, from, convKey, reason) {
   const conv    = activeConversations.get(convKey);
   const agents  = loadAgents(conv?.email);
@@ -249,7 +299,10 @@ export async function runAgent(sessionName, from, messageText) {
     } else if (conv.awaitingField) {
       const fDef = requiredFields.find(f => f.name === conv.awaitingField);
       if (fDef) {
-        const v = extractFieldValue(fDef.extractType || 'text', messageText);
+        let v = extractFieldValue(fDef.extractType || 'text', messageText);
+        if (v !== null && !['date', 'date_us', 'number', 'uppercase'].includes(fDef.extractType)) {
+          v = (await normalizeFieldWithLLM(agent, fDef, v).catch(() => v)) ?? null;
+        }
         if (v !== null) {
           conv.collectedFields[conv.awaitingField] = v;
           conv.awaitingField = null;
@@ -264,7 +317,12 @@ export async function runAgent(sessionName, from, messageText) {
     const missing = requiredFields.find(f => !conv.collectedFields[f.name]);
     if (missing) {
       conv.awaitingField = missing.name;
-      await session.client.sendText(from, missing.question);
+      if (isNewConversation && agent.prompt?.trim()) {
+        const intro = await generateIntroMessage(agent, messageText, missing).catch(() => null);
+        await session.client.sendText(from, intro || missing.question);
+      } else {
+        await session.client.sendText(from, missing.question);
+      }
       return true;
     }
     console.log(`✅ Todos os campos coletados:`, JSON.stringify(conv.collectedFields));
