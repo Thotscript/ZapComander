@@ -175,6 +175,37 @@ async function generateIntroMessage(agent, messageText, firstField) {
   return (completion.choices[0].message.content || '').trim() || null;
 }
 
+async function deriveFieldWithLLM(agent, fieldDef, collectedFields) {
+  if (!agent.prompt?.trim()) return null;
+  const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
+  const systemContent = [
+    agent.prompt.trim(),
+    '',
+    'Sua única tarefa agora é derivar o valor do campo abaixo com base nos campos já coletados.',
+    'Retorne SOMENTE o valor final, sem explicações, frases ou unidades extras.',
+    'Se não conseguir determinar o valor, retorne: __INVALIDO__',
+  ].join('\n');
+  const userContent = [
+    `Campo a derivar: "${fieldDef.name}"`,
+    `Instrução: "${fieldDef.question}"`,
+    `Campos já coletados: ${JSON.stringify(collectedFields)}`,
+    '',
+    `Qual o valor de "${fieldDef.name}"?`,
+  ].join('\n');
+  const completion = await getOpenAI().chat.completions.create({
+    model,
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user',   content: userContent },
+    ],
+    temperature: 0,
+    max_tokens: 20,
+  });
+  const val = (completion.choices[0].message.content || '').trim();
+  if (!val || val.toLowerCase().includes('__invalido__')) return null;
+  return val;
+}
+
 async function normalizeFieldWithLLM(agent, fieldDef, rawValue) {
   if (!agent.prompt?.trim()) return rawValue;
   const model = process.env.AGENT_MODEL || 'gpt-4o-mini';
@@ -314,8 +345,20 @@ export async function runAgent(sessionName, from, messageText) {
       }
     }
 
-    const missing = requiredFields.find(f => !conv.collectedFields[f.name]);
-    if (missing) {
+    // Loop: campos silent são derivados pelo LLM; campos normais pedem ao usuário
+    while (true) {
+      const missing = requiredFields.find(f => !conv.collectedFields[f.name]);
+      if (!missing) break;
+
+      if (missing.silent && agent.prompt?.trim()) {
+        const derived = await deriveFieldWithLLM(agent, missing, conv.collectedFields).catch(() => null);
+        if (derived) {
+          conv.collectedFields[missing.name] = derived;
+          console.log(`🤖 Campo "${missing.name}" derivado = ${derived}`);
+          continue;
+        }
+      }
+
       conv.awaitingField = missing.name;
       if (isNewConversation && agent.prompt?.trim()) {
         const intro = await generateIntroMessage(agent, messageText, missing).catch(() => null);

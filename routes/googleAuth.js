@@ -235,19 +235,24 @@ router.post('/api/google/calendar/create', async (req, res) => {
     });
 
     if (conflictData.items?.length > 0) {
-      const ocupado = conflictData.items[0];
-      const ocupInicio = ocupado.start?.dateTime
-        ? new Date(ocupado.start.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+      const ocupado    = conflictData.items[0];
+      const fmtTime    = (dt) => dt
+        ? new Date(dt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
         : '';
-      console.log(`⚠️  Conflito de agenda: "${ocupado.summary}" no horário ${startStr}`);
+      const ocupInicio = fmtTime(ocupado.start?.dateTime);
+      const ocupFim    = fmtTime(ocupado.end?.dateTime);
+      const horárioSolicitado = `${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')}`;
+
+      console.log(`⚠️  Conflito de agenda: "${ocupado.summary}" (${ocupInicio}–${ocupFim}) bloqueia ${horárioSolicitado}`);
       return res.json({
-        sucesso:     false,
-        conflito:    true,
-        resetField:  'horario',
-        mensagem:    `O horário ${String(startH).padStart(2,'0')}:${String(startM).padStart(2,'0')} já está ocupado com "${ocupado.summary}"${ocupInicio ? ` (às ${ocupInicio})` : ''}. Por favor, escolha outro horário.`,
+        sucesso:    false,
+        conflito:   true,
+        resetField: 'horario',
+        mensagem:   `O horário ${horárioSolicitado} já está ocupado. O próximo horário disponível é a partir das ${ocupFim}. Por favor, escolha outro horário.`,
         horarioOcupado: {
           titulo: ocupado.summary,
           inicio: ocupInicio,
+          fim:    ocupFim,
         },
         camposRecebidos: body,
       });
