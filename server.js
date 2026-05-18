@@ -20,6 +20,7 @@ import agentsRouter from './routes/agents.js';
 import usuariosRouter from './routes/usuarios.js';
 import adminRouter from './routes/admin.js';
 import ragRouter from './routes/rag.js';
+import googleAuthRouter from './routes/googleAuth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -74,7 +75,7 @@ app.use(cors({
     if (PROD_ORIGINS.includes(origin)) return cb(null, true);
     cb(null, false);
   },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
@@ -115,6 +116,7 @@ app.use(agentsRouter);
 app.use(usuariosRouter);
 app.use(adminRouter);
 app.use(ragRouter);
+app.use(googleAuthRouter);
 
 setupWebSocket();
 

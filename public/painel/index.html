@@ -977,6 +977,45 @@
     .ldot-green  { background: #40c070; }
     .ldot-gray   { background: #555; }
     .ldot-amber  { background: #f0c040; animation: pulse 1.4s ease-in-out infinite; }
+
+    /* ── INTEGRATION CARD (Google etc.) ── */
+    .integration-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .integration-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .integration-info { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+    .integration-name { font-size: 0.87rem; font-weight: 600; color: #e0e0f0; }
+    .integration-status { font-size: 0.74rem; color: #55557a; }
+    .integration-status.connected { color: #40c070; }
+    .btn-integration {
+      font-size: 0.78rem;
+      padding: 6px 14px;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: transparent;
+      color: #b0b0d0;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-integration:hover { border-color: rgba(176,160,110,.6); color: #d4c080; }
+    .btn-integration.danger:hover { border-color: rgba(220,80,80,.5); color: #e07070; }
+    .btn-integration:disabled { opacity: 0.4; cursor: default; }
   </style>
 </head>
 <body>
@@ -1425,6 +1464,29 @@ Observações: {{observacoes}}"></textarea>
                 </div>
               </div>
 
+              <!-- Integrações -->
+              <div>
+                <div class="section-divider">Integrações</div>
+                <div class="integration-card">
+                  <div class="integration-icon">
+                    <!-- Google Calendar icon -->
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                      <rect x="3" y="4" width="18" height="17" rx="2" stroke="#4285F4" stroke-width="1.8"/>
+                      <path d="M16 2v4M8 2v4M3 10h18" stroke="#4285F4" stroke-width="1.8" stroke-linecap="round"/>
+                      <rect x="7" y="13" width="4" height="4" rx="0.5" fill="#EA4335"/>
+                    </svg>
+                  </div>
+                  <div class="integration-info">
+                    <span class="integration-name">Google Agenda</span>
+                    <span class="integration-status" id="googleCalStatus">Verificando...</span>
+                  </div>
+                  <button class="btn-integration" id="googleCalBtn" onclick="toggleGoogleCal()" disabled>...</button>
+                </div>
+                <p class="form-hint" style="margin-top:8px">
+                  Conecte sua conta Google e use <code style="background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px">/api/google/calendar/query?email=<em>seu@email</em></code> como endpoint do bot para consultar eventos pelo WhatsApp.
+                </p>
+              </div>
+
               <!-- Toggle ativo -->
               <div class="toggle-row">
                 <div class="toggle-info">
@@ -1702,6 +1764,8 @@ Observações: {{observacoes}}"></textarea>
 
       document.getElementById('agentsListView').style.display = 'none';
       document.getElementById('agentsFormView').style.display = '';
+
+      checkGoogleCalStatus();
     }
 
     function closeForm() {
@@ -1710,6 +1774,65 @@ Observações: {{observacoes}}"></textarea>
       document.getElementById('agentsListView').style.display = '';
       renderList();
     }
+
+    /* ── GOOGLE CALENDAR INTEGRATION ── */
+    async function checkGoogleCalStatus() {
+      const statusEl = document.getElementById('googleCalStatus');
+      const btnEl    = document.getElementById('googleCalBtn');
+      if (!statusEl || !btnEl) return;
+      statusEl.textContent = 'Verificando...';
+      statusEl.className   = 'integration-status';
+      btnEl.disabled = true;
+      try {
+        const { connected } = await apiFetch(`/api/google/status?email=${encodeURIComponent(userEmail)}`);
+        if (connected) {
+          statusEl.textContent = '● Conectado';
+          statusEl.className   = 'integration-status connected';
+          btnEl.textContent    = 'Desconectar';
+          btnEl.className      = 'btn-integration danger';
+          btnEl.dataset.googleAction = 'disconnect';
+        } else {
+          statusEl.textContent = 'Não conectado';
+          statusEl.className   = 'integration-status';
+          btnEl.textContent    = 'Conectar';
+          btnEl.className      = 'btn-integration';
+          btnEl.dataset.googleAction = 'connect';
+        }
+      } catch {
+        statusEl.textContent = 'Erro ao verificar';
+        btnEl.textContent    = 'Conectar';
+        btnEl.className      = 'btn-integration';
+        btnEl.dataset.googleAction = 'connect';
+      }
+      btnEl.disabled = false;
+    }
+
+    async function toggleGoogleCal() {
+      const btnEl  = document.getElementById('googleCalBtn');
+      const action = btnEl?.dataset.googleAction;
+
+      if (action === 'disconnect') {
+        if (!confirm('Desconectar o Google Agenda desta conta?')) return;
+        try {
+          await fetch(`${API_BASE}/api/google/disconnect?email=${encodeURIComponent(userEmail)}`, { method: 'DELETE' });
+          checkGoogleCalStatus();
+        } catch (e) { alert('Erro ao desconectar: ' + e.message); }
+        return;
+      }
+
+      // Connect — open OAuth popup
+      try {
+        const { url } = await apiFetch(`/api/google/auth-url?email=${encodeURIComponent(userEmail)}`);
+        const popup = window.open(url, 'google-oauth', 'width=520,height=620,scrollbars=yes,resizable=yes');
+        if (!popup) return alert('Permita pop-ups neste site para conectar o Google Agenda.');
+        // Success is received via postMessage from the callback page
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    // Receive success signal from OAuth popup
+    window.addEventListener('message', (e) => {
+      if (e.data?.type === 'google-auth-success') checkGoogleCalStatus();
+    });
 
     /* ── SAVE ── */
     const RESERVED_KW = ['\\quit', '\\q', '\\exit', '\\stop', '\\end', '/quit', '/exit', '/stop'];
