@@ -403,14 +403,19 @@ export async function runAgent(sessionName, from, messageText) {
     const responseLimit = parseInt(agent.responseLimit) || 0;
     if (responseLimit > 0 && Array.isArray(payload)) payload = payload.slice(0, responseLimit);
 
-    // Se o endpoint sinalizar resetField (ex: conflito de horário), limpa o campo
-    // para que o bot colete um novo valor na próxima mensagem do usuário.
+    // Se o endpoint sinalizar resetField (ex: conflito de horário), limpa o campo,
+    // envia a mensagem de conflito direto ao usuário e aguarda nova resposta.
+    // Não passa pelo LLM nessa rodada para evitar que ele encerre a conversa.
     const resetFieldName = typeof endpointResponse?.resetField === 'string'
       ? endpointResponse.resetField : null;
     if (resetFieldName && conv?.collectedFields) {
       delete conv.collectedFields[resetFieldName];
-      conv.awaitingField = null;
+      const fDef = requiredFields.find(f => f.name === resetFieldName);
+      conv.awaitingField = resetFieldName;
+      const conflictMsg = endpointResponse?.mensagem || fDef?.question || `Por favor, informe um novo valor para ${resetFieldName}.`;
       console.log(`🔄 Campo "${resetFieldName}" resetado por sinal do endpoint`);
+      await session.client.sendText(from, conflictMsg);
+      return true;
     }
 
     const endKwList = (agent.endKeywords || '').split(',').map(k => k.trim()).filter(Boolean);
